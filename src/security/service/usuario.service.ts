@@ -19,6 +19,16 @@ import { Persona } from '../entities/persona.entity';
 import { RolPermiso } from '../entities/rol-permiso.entity';
 import { Permiso } from '../entities/permiso.entity';
 import { PersonaService } from './persona.service';
+import { RolResponseDto } from '../dto/roles-response.dto';
+import { FiltrosListarUsuariosDto } from '../dto/filtros-listar-usuarios.dto';
+
+interface FiltrosListarUsuarios {
+  page: number;
+  limit: number;
+  busqueda?: string;
+  idRol?: number;
+  activo?: boolean;
+}
 
 @Injectable()
 export class UsuarioService {
@@ -35,7 +45,7 @@ export class UsuarioService {
     @InjectRepository(UsuarioRol, 'ci')
     private readonly usuarioRolRepository: Repository<UsuarioRol>,
 
-    @InjectDataSource('ci') // Especificar el nombre de la conexión
+    @InjectDataSource('ci')
     private dataSource: DataSource,
   ) {}
 
@@ -151,194 +161,166 @@ export class UsuarioService {
     }
   }
 
-  async update2(registerUsuarioDto: UpdateUsuarioDto, user: Usuario): Promise<Usuario> {
-
-
-
-
-
-
-
-
-
-
-
-
-    return user
-  }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  async update(idUsuario: string, updateUsuarioDto: UpdateUsuarioDto, user: Usuario) {
-  const {
-    usuario,
-    contrasena,
-    idRol,
-    persona: datosPersona,
-  } = updateUsuarioDto;
-
-  // 1. Verificar si el usuario existe y cargar sus relaciones actuales
-  const usuarioActual: Usuario = await this.usuarioRepository.findOne({
-    where: { id: idUsuario },
-     relations: {
-      persona: true, // Esta es la forma más explícita y segura en las últimas versiones de TypeORM
-    },
-  });
-
-  if (!usuarioActual) {
-    throw new NotFoundException(`No se encontró ningún usuario con el ID: ${idUsuario}`);
-  }
-
-  // 2. VALIDACIONES DE DUPLICADOS (Evitando validar contra sí mismo)
-
-  if (usuario && usuario !== usuarioActual.usuario) {
-    const usuarioExistente = await this.usuarioRepository.findOne({ where: { usuario } });
-    if (usuarioExistente) {
-      throw new ConflictException(`El nombre de usuario '${usuario}' ya se encuentra registrado`);
-    }
-  }
-
-  if (datosPersona) {
-    const idPersonaActual = usuarioActual.persona.id;
-
-    // B. Validar duplicados de Documento (Excluyendo a la persona actual)
-    if (datosPersona.numeroDocumento) {
-      const existeNumeroDocumento = await this.personaRepository.findOne({
-        where: { 
-          numeroDocumento: datosPersona.numeroDocumento, 
-          activo: true 
-        },
-      });
-      // Si existe y pertenece a otra persona, lanza error
-      if (existeNumeroDocumento && existeNumeroDocumento.id !== idPersonaActual) {
-        throw new ConflictException(`El número de documento '${datosPersona.numeroDocumento}' ya está registrado`);
-      }
-    }
-
-    // C. Validar duplicados de Correo (Excluyendo a la persona actual)
-    if (datosPersona.correoElectronico) {
-      const existeCorreo = await this.personaRepository.findOne({
-        where: { 
-          correoElectronico: datosPersona.correoElectronico, 
-          activo: true 
-        },
-      });
-      if (existeCorreo && existeCorreo.id !== idPersonaActual) {
-        throw new ConflictException(`El correo electrónico '${datosPersona.correoElectronico}' ya está registrado`);
-      }
-    }
-  }
-
-  // 3. Verificar que el nuevo rol exista si se solicita un cambio
-  let nuevoRol;
-  if (idRol) {
-    nuevoRol = await this.rolRepository.findOne({ where: { id: idRol } });
-    if (!nuevoRol) {
-      throw new BadRequestException(`El rol con ID '${idRol}' no existe`);
-    }
-  }
-
-  // 4. Encriptar contraseña solo si el cliente envía una nueva
-  let hashContrasena;
-  if (contrasena) {
-    const salt = await bcrypt.genSalt(10);
-    hashContrasena = await bcrypt.hash(contrasena, salt);
-  }
-
-  // 5. Iniciar transacción
-  const queryRunner = this.dataSource.createQueryRunner();
-  await queryRunner.connect();
-  await queryRunner.startTransaction();
-
-  try {
-    let personaActualizada = usuarioActual.persona;
-    if (datosPersona) {
-      await queryRunner.manager.update(Persona, usuarioActual.persona?.id, {
-        ...datosPersona,
-        usuarioUltimaModificacion: user.usuario,
-        fechaUltimaModificacion: new Date(),
-      });
-      // Recuperamos los datos frescos de la persona
-      personaActualizada = await queryRunner.manager.findOne(Persona, { 
-        where: { id: usuarioActual.persona?.id } 
-      });
-    }
-
-    // B. Actualizar Usuario (construyendo objeto parcial dinámico)
-    const datosActualizarUsuario: any = {};
-    if (usuario) datosActualizarUsuario.usuario = usuario;
-    if (hashContrasena) datosActualizarUsuario.contrasena = hashContrasena;
-    
-    // Solo ejecutamos update en DB si hay cambios reales para la tabla Usuario
-    if (Object.keys(datosActualizarUsuario).length > 0) {
-      datosActualizarUsuario.usuarioUltimaModificacion = user.usuario;
-      datosActualizarUsuario.fechaUltimaModificacion = new Date();
-      await queryRunner.manager.update(Usuario, idUsuario, datosActualizarUsuario);
-    }
-
-    // C. Actualizar Relación de Rol (UsuarioRol) si se envió un nuevo idRol
-    if (nuevoRol) {
-      // Modificamos el registro de la tabla intermedia asignando el nuevo rol
-      await queryRunner.manager.update(
-        UsuarioRol, 
-        { usuario: { id: idUsuario } }, // Criterio de búsqueda (ID del usuario)
-        { 
-          rol: nuevoRol,
-          usuarioUltimaModificacion: user.usuario,
-          fechaUltimaModificacion: new Date()
-        }
+  async update(
+    idUsuario: string,
+    updateUsuarioDto: UpdateUsuarioDto,
+    user: Usuario,
+  ) {
+    const {
+      usuario,
+      contrasena,
+      idRol,
+      persona: datosPersona,
+    } = updateUsuarioDto;
+    // 1. Verificar si el usuario existe y cargar sus relaciones actuales
+    const usuarioActual: Usuario = await this.usuarioRepository.findOne({
+      where: { id: idUsuario },
+      relations: {
+        persona: true, // Esta es la forma más explícita y segura en las últimas versiones de TypeORM
+      },
+    });
+    if (!usuarioActual) {
+      throw new NotFoundException(
+        `No se encontró ningún usuario con el ID: ${idUsuario}`,
       );
     }
+    // 2. VALIDACIONES DE DUPLICADOS (Evitando validar contra sí mismo)
 
-    // Confirmar transacción
-    await queryRunner.commitTransaction();
+    if (usuario && usuario !== usuarioActual.usuario) {
+      const usuarioExistente = await this.usuarioRepository.findOne({
+        where: { usuario },
+      });
+      if (usuarioExistente) {
+        throw new ConflictException(
+          `El nombre de usuario '${usuario}' ya se encuentra registrado`,
+        );
+      }
+    }
 
-    // 6. Obtener el usuario final actualizado para la respuesta limpia
-    const usuarioFinal = await this.usuarioRepository.findOne({
-      where: { id: idUsuario },
-    });
+    if (datosPersona) {
+      const idPersonaActual = usuarioActual.persona.id;
 
-    const { contrasena: _, ...resultadoUsuario } = usuarioFinal;
-    return {
-      ...resultadoUsuario,
-      persona: personaActualizada,
-      //rolAsignado: nuevoRol || 'Sin cambios en el rol',
-    };
+      // B. Validar duplicados de Documento (Excluyendo a la persona actual)
+      if (datosPersona.numeroDocumento) {
+        const existeNumeroDocumento = await this.personaRepository.findOne({
+          where: {
+            numeroDocumento: datosPersona.numeroDocumento,
+            activo: true,
+          },
+        });
+        // Si existe y pertenece a otra persona, lanza error
+        if (
+          existeNumeroDocumento &&
+          existeNumeroDocumento.id !== idPersonaActual
+        ) {
+          throw new ConflictException(
+            `El número de documento '${datosPersona.numeroDocumento}' ya está registrado`,
+          );
+        }
+      }
 
-  } catch (error) {
-    await queryRunner.rollbackTransaction();
-    throw error;
-  } finally {
-    await queryRunner.release();
+      // C. Validar duplicados de Correo (Excluyendo a la persona actual)
+      if (datosPersona.correoElectronico) {
+        const existeCorreo = await this.personaRepository.findOne({
+          where: {
+            correoElectronico: datosPersona.correoElectronico,
+            activo: true,
+          },
+        });
+        if (existeCorreo && existeCorreo.id !== idPersonaActual) {
+          throw new ConflictException(
+            `El correo electrónico '${datosPersona.correoElectronico}' ya está registrado`,
+          );
+        }
+      }
+    }
+
+    // 3. Verificar que el nuevo rol exista si se solicita un cambio
+    let nuevoRol;
+    if (idRol) {
+      nuevoRol = await this.rolRepository.findOne({ where: { id: idRol } });
+      if (!nuevoRol) {
+        throw new BadRequestException(`El rol con ID '${idRol}' no existe`);
+      }
+    }
+
+    // 4. Encriptar contraseña solo si el cliente envía una nueva
+    let hashContrasena;
+    if (contrasena) {
+      const salt = await bcrypt.genSalt(10);
+      hashContrasena = await bcrypt.hash(contrasena, salt);
+    }
+
+    // 5. Iniciar transacción
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      let personaActualizada = usuarioActual.persona;
+      if (datosPersona) {
+        await queryRunner.manager.update(Persona, usuarioActual.persona?.id, {
+          ...datosPersona,
+          usuarioUltimaModificacion: user.usuario,
+          fechaUltimaModificacion: new Date(),
+        });
+        // Recuperamos los datos frescos de la persona
+        personaActualizada = await queryRunner.manager.findOne(Persona, {
+          where: { id: usuarioActual.persona?.id },
+        });
+      }
+
+      // B. Actualizar Usuario (construyendo objeto parcial dinámico)
+      const datosActualizarUsuario: any = {};
+      if (usuario) datosActualizarUsuario.usuario = usuario;
+      if (hashContrasena) datosActualizarUsuario.contrasena = hashContrasena;
+
+      // Solo ejecutamos update en DB si hay cambios reales para la tabla Usuario
+      if (Object.keys(datosActualizarUsuario).length > 0) {
+        datosActualizarUsuario.usuarioUltimaModificacion = user.usuario;
+        datosActualizarUsuario.fechaUltimaModificacion = new Date();
+        await queryRunner.manager.update(
+          Usuario,
+          idUsuario,
+          datosActualizarUsuario,
+        );
+      }
+
+      // C. Actualizar Relación de Rol (UsuarioRol) si se envió un nuevo idRol
+      if (nuevoRol) {
+        // Modificamos el registro de la tabla intermedia asignando el nuevo rol
+        await queryRunner.manager.update(
+          UsuarioRol,
+          { usuario: { id: idUsuario } }, // Criterio de búsqueda (ID del usuario)
+          {
+            rol: nuevoRol,
+            usuarioUltimaModificacion: user.usuario,
+            fechaUltimaModificacion: new Date(),
+          },
+        );
+      }
+
+      // Confirmar transacción
+      await queryRunner.commitTransaction();
+
+      // 6. Obtener el usuario final actualizado para la respuesta limpia
+      const usuarioFinal = await this.usuarioRepository.findOne({
+        where: { id: idUsuario },
+      });
+
+      const { contrasena: _, ...resultadoUsuario } = usuarioFinal;
+      return {
+        ...resultadoUsuario,
+        persona: personaActualizada,
+        //rolAsignado: nuevoRol || 'Sin cambios en el rol',
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   async findAll(): Promise<Usuario[]> {
     return await this.usuarioRepository.find({
@@ -348,48 +330,10 @@ export class UsuarioService {
   }
 
   async findOne(id: string): Promise<Usuario> {
-    return await this.buscarPorId(id);
+    return await this.getUserById(id);
   }
 
-  // async update(id: string, updateUsuarioDto: UpdateUsuarioDto): Promise<Usuario> {
-  //   const usuario = await this.buscarPorId(id);
-
-  //   if (updateUsuarioDto.usuario && updateUsuarioDto.usuario !== usuario.usuario) {
-  //     const existeNombre = await this.usuarioRepository.findOne({ where: { usuario: updateUsuarioDto.usuario } });
-  //     if (existeNombre) {
-  //       throw new ConflictException(`El nombre de usuario '${updateUsuarioDto.usuario}' ya existe`);
-  //     }
-  //   }
-
-  //   const usuarioActualizado = this.usuarioRepository.merge(usuario, updateUsuarioDto);
-  //   return await this.usuarioRepository.save(usuarioActualizado);
-  // }
-
-  async activar(id: string): Promise<{ message: string }> {
-    const usuario = await this.buscarPorId(id);
-    usuario.activo = true;
-    await this.usuarioRepository.save(usuario);
-    return { message: `Usuario activado correctamente` };
-  }
-
-  async desactivar(id: string): Promise<{ message: string }> {
-    const usuario = await this.buscarPorId(id);
-    await this.usuarioRepository.softRemove(usuario);
-    return { message: `Usuario desactivado correctamente` };
-  }
-
-  async buscarPorUsuario(username: string): Promise<Usuario> {
-    const usuario = await this.usuarioRepository.findOne({
-      where: { usuario: username, activo: true },
-      //relations: ['persona'],
-    });
-    if (!usuario) {
-      throw new NotFoundException(`El usuario '${username}' no fue encontrado`);
-    }
-    return usuario;
-  }
-
-  async buscarPorId(id: string): Promise<Usuario> {
+  async getUserById(id: string): Promise<Usuario> {
     const usuario = await this.usuarioRepository.findOne({
       where: { id, activo: true },
       //relations: ['persona'],
@@ -406,7 +350,7 @@ export class UsuarioService {
     id: string,
     contrasenaNueva: string,
   ): Promise<{ message: string }> {
-    const usuario = await this.buscarPorId(id);
+    const usuario = await this.getUserById(id);
 
     const salt = await bcrypt.genSalt(10);
     usuario.contrasena = await bcrypt.hash(contrasenaNueva, salt);
@@ -416,51 +360,83 @@ export class UsuarioService {
     return { message: 'Contraseña actualizada exitosamente' };
   }
 
-  async asignarRol(idUsuario: string, idRol: string): Promise<UsuarioRol> {
-    const existeRelacion = await this.usuarioRolRepository.findOne({
-      where: { idUsuario, idRol },
+  async cambiarEstadoUser(id: string, activo: boolean, user: Usuario) {
+    const updateResult = await this.usuarioRepository.update(id, {
+      usuarioUltimaModificacion: user.usuario,
+      activo,
     });
-
-    if (existeRelacion) {
-      if (existeRelacion.activo) {
-        throw new BadRequestException(
-          'El usuario ya tiene asignado este rol de forma activa',
-        );
-      }
-      existeRelacion.activo = true;
-      return await this.usuarioRolRepository.save(existeRelacion);
+    if (updateResult.affected === 0) {
+      throw new NotFoundException(`Usuario con ID ${id} no fue encontrado`);
     }
-
-    const nuevoUsuarioRol = this.usuarioRolRepository.create({
-      idUsuario,
-      idRol,
+    const usuarioActualizado = await this.usuarioRepository.findOne({
+      where: { id },
     });
-    return await this.usuarioRolRepository.save(nuevoUsuarioRol);
+
+    if (!usuarioActualizado) {
+      throw new NotFoundException(`Error al recuperar el usuario actualizado`);
+    }
+    const { contrasena, ...usuarioLimpio } = usuarioActualizado;
+    return usuarioLimpio;
   }
 
-  async quitarRol(
-    idUsuario: string,
-    idRol: string,
-  ): Promise<{ message: string }> {
-    const relacion = await this.usuarioRolRepository.findOne({
-      where: { idUsuario, idRol, activo: true },
-    });
+  async listarPaginado(filtros: FiltrosListarUsuariosDto) {
+    const { page, limit, busqueda, idRol, activo } = filtros;
+    const skip = (page - 1) * limit;
 
-    if (!relacion) {
-      throw new NotFoundException(
-        'El usuario no tiene asignado ese rol de forma activa',
+    const queryBuilder = this.usuarioRepository
+      .createQueryBuilder('usuario')
+      .leftJoinAndSelect('usuario.persona', 'persona')
+      .leftJoinAndSelect('usuario.roles', 'rol');
+
+    if (activo !== undefined) {
+      queryBuilder.andWhere('usuario.activo = :activo', { activo });
+    }
+
+    if (idRol) {
+      queryBuilder.andWhere('rol.id = :idRol', { idRol });
+    }
+
+    if (busqueda) {
+      queryBuilder.andWhere(
+        `(usuario.usuario ILIKE :busqueda OR persona.nombres ILIKE :busqueda OR persona.apellidos ILIKE :busqueda)`,
+        { busqueda: `%${busqueda}%` },
       );
     }
 
-    await this.usuarioRolRepository.softRemove(relacion);
-    return { message: 'Rol revocado exitosamente' };
+    queryBuilder.orderBy('usuario.id', 'DESC').skip(skip).take(limit);
+
+    const [data, total] = await queryBuilder.getManyAndCount();
+
+    // Excluir la contraseña de la respuesta
+    const datosLimpios = data.map((user) => {
+      const { contrasena, ...resto } = user;
+      return resto;
+    });
+
+    return {
+      data: datosLimpios,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit), // añadido para consistencia
+    };
   }
 
-  async obtenerRoles(idUsuario: string): Promise<UsuarioRol[]> {
-    await this.buscarPorId(idUsuario);
-    return await this.usuarioRolRepository.find({
-      where: { idUsuario, activo: true },
-      //relations: ['rol'],
+  async findAllRolesByAdmin(user: Usuario): Promise<RolResponseDto[]> {
+    const roles = await this.rolRepository.find({
+      where: { activo: true },
+      select: {
+        id: true,
+        nombre: true,
+      },
     });
+    const esAdministrador = user?.roles?.some(
+      (rol) => rol.id === '1' || rol.nombre === 'ADMINISTRADOR',
+    );
+    if (!esAdministrador) {
+      const rolesFiltrados = roles.filter((rol) => rol.id !== '1');
+      return rolesFiltrados as RolResponseDto[];
+    }
+    return roles as RolResponseDto[];
   }
 }

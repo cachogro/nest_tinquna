@@ -5,6 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SecurityModule } from './security/security.module';
 import { CommonModule } from './common/common.module';
+import { ClusterModule } from './cluster/cluster.module';
 
 @Module({
   imports: [
@@ -22,6 +23,8 @@ import { CommonModule } from './common/common.module';
     }),
     SecurityModule,
     CommonModule,
+    ClusterModule,
+    ConfigModule,
   ],
   controllers: [AppController],
   providers: [AppService],

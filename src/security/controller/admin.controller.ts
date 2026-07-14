@@ -1,10 +1,14 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
+  ParseBoolPipe,
   ParseIntPipe,
+  Patch,
   Post,
   Put,
+  Query,
   Req,
 } from '@nestjs/common';
 import {
@@ -17,6 +21,12 @@ import { UsuarioService } from '../service/usuario.service';
 import { Usuario } from '../entities/usuario.entity';
 import { CreateUsuarioDto } from '../dto/usuario/create-usuario.dto';
 import { UpdateUsuarioDto } from '../dto/usuario/update-usuario.dto';
+import { Auth, GetUser } from '../decorators';
+import { ValidRoles } from '../models/interfaces/valid-roles';
+import { Rol } from '../entities/rol.entity';
+import { RolResponseDto } from '../dto/roles-response.dto';
+import { FiltrosListarUsuariosDto } from '../dto/filtros-listar-usuarios.dto';
+
 
 @ApiTags('Administrador')
 @Controller('administrador')
@@ -44,9 +54,6 @@ export class AdministradorController {
     return this.$usuario.create(registerUsuarioDto, user);
   }
 
-
-
-
   @Put('actualizar_usuario/:id')
   @ApiHeader({
     name: 'Authorization',
@@ -65,5 +72,53 @@ export class AdministradorController {
     return this.$usuario.update(id, updateUsuarioDto, user);
   }
 
+  @Get('usuarioby_id/:id')
+  @Auth(ValidRoles.administrador, ValidRoles.operador)
+  @ApiResponse({
+    status: 201,
+    description: 'Obtener todos los roles existentes',
+  })
+  findUserById(@Param('id') id: string): Promise<Usuario> {
+    return this.$usuario.getUserById(id);
+  }
 
+  @Get('listar_usuarios')
+    async listarUsuarios(@Query() filtros: FiltrosListarUsuariosDto) {
+    return this.$usuario.listarPaginado(filtros);
+  }
+
+
+  // @Patch('cambiar_estado_usuario/:id')
+  // async cambiarEstadoUsuario(
+  //   @Param('id') id: string,
+  //   @Body('activo', ParseBoolPipe) activo: boolean, // Valida que el body contenga un booleano real
+  // ) {
+  //   return this.$usuario.cambiarEstado(id, activo);
+  // }
+
+  @Get('roles')
+  @Auth(ValidRoles.administrador, ValidRoles.operador)
+  @ApiResponse({
+    status: 201,
+    description: 'Obtener todos los roles existentes',
+  })
+  findAllRoles(@GetUser() user: Usuario): Promise<RolResponseDto[]> {
+    return this.$usuario.findAllRolesByAdmin(user);
+  }
+
+
+  
+  @Patch('cambiar_estado_usuario/:id')
+  @Auth(ValidRoles.administrador)
+  @ApiResponse({
+    status: 201,
+    description: 'Servicio para cambiar de estado un usuario',
+  })
+  changeStateUser(
+    @Param('id') id: string,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ) {
+    return this.$usuario.cambiarEstadoUser(id, activo, user);
+  }
 }

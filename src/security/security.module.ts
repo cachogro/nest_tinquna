@@ -15,7 +15,10 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { AdministradorController } from './controller/admin.controller';
 import { UsuarioService } from './service/usuario.service';
 import { AuthController } from './controller/auth.controller';
+
 import { AuthService } from './service/auth.service';
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { RefreshTokenStrategy } from './strategies/refreshToken.strategy';
 
 @Module({
   controllers: [AdministradorController, AuthController],
@@ -23,6 +26,8 @@ import { AuthService } from './service/auth.service';
     PersonaService,
     UsuarioService,
     AuthService,
+    JwtStrategy,
+    RefreshTokenStrategy,
   ],
   imports: [
     ConfigModule,
@@ -40,26 +45,20 @@ import { AuthService } from './service/auth.service';
         };
       },
     }),
-      TypeOrmModule.forFeature(
-      [
-        Persona,
-        Usuario,
-        Rol,
-        UsuarioRol,
-        Permiso,
-        RolPermiso,
-        RefreshToken,
-
-      ],
+    TypeOrmModule.forFeature(
+      [Persona, Usuario, Rol, UsuarioRol, Permiso, RolPermiso, RefreshToken],
       'ci',
     ),
     //forwardRef(() => ),
   ],
 
-
   exports: [
     TypeOrmModule,
-
+    JwtStrategy,
+    PassportModule,
+    JwtModule,
+    AuthService,
+    UsuarioService,
   ],
 })
 export class SecurityModule {}

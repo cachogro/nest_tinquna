@@ -10,7 +10,7 @@ export const GetUser = createParamDecorator(
     const user = req.user;
     if (!user)
       throw new InternalServerErrorException(
-        'Usuario no encontrado (Petición)',
+        'Usuario logueado no encontrado (Petición)',
       );
 
     return !data ? user : user[data];
