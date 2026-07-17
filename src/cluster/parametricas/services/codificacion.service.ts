@@ -20,7 +20,6 @@ export class CodificacionService {
     createCodificacionDto: CreateCodificacionDto,
   ): Promise<Codificacion> {
     const { codigo, nombre, minerales } = createCodificacionDto;
-
     // Verifica que no exista el código
     const existeCodigo = await this.codificacionRepository.exists({
       where: { codigo },
@@ -57,7 +56,6 @@ export class CodificacionService {
         descripcion: mineral.descripcion,
       })),
     });
-
     return await this.codificacionRepository.save(codificacion);
   }
 

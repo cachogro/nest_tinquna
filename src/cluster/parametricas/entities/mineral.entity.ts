@@ -1,5 +1,7 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
+import { ColumnNumericTransformer } from 'src/common/utils/handle.transform_data';
+import { CotizacionMineral } from './cotizacion-mineral.entity';
 
 @Entity({ name: 'mineral', schema: 'parametrica' })
 export class Mineral extends Auditoria {
@@ -9,44 +11,49 @@ export class Mineral extends Auditoria {
   id: string;
 
   @Column({
-    length: 50,
+    name: 'descripcion',
+    type: 'varchar',
   })
   descripcion: string;
 
   @Column({
-    length: 30,
-    nullable: true,
+    name: 'simbolo',
+    type: 'varchar',
   })
-  simbolo?: string;
+  simbolo: string;
 
   @Column({
     name: 'unidad_cotizacion',
-    length: 3,
+    type: 'varchar',
   })
   unidadCotizacion: string;
 
   @Column({
     name: 'detalle_mineral',
-    length: 45,
+    type: 'varchar',
   })
   detalleMineral: string;
 
   @Column({
     name: 'factor_conversion',
-    type: 'double precision',
-    nullable: true,
+    type: 'float',
+    transformer: new ColumnNumericTransformer(),
   })
-  factorConversion?: number;
+  factorConversion: number;
 
   @Column({
-    name: 'calculo_regalia',
-    type: 'bytea',
-    nullable: true,
+    name: 'tipo',
+    type: 'varchar',
   })
-  calculoRegalia?: Buffer;
+  tipo: string;
 
-  @Column({
-    nullable: true,
-  })
-  tipo?: string;
+  @OneToOne(
+    () => CotizacionMineral,
+    (cotizacionMineral) => cotizacionMineral.mineral,
+    {
+      eager: false,
+    },
+  )
+  cotizacionMineral?: CotizacionMineral;
+  
 }

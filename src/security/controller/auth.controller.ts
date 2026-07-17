@@ -35,7 +35,7 @@ export class AuthController {
     return this.$usuario.login(loginUsuarioDto);
   }
 
-  @Get('refresh_token')
+  @Post('refresh_token')
   @UseGuards(RefreshTokenGuard)
   @ApiResponse({
     status: 200,

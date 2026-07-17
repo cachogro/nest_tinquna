@@ -13,28 +13,36 @@ import { PersonaTipo } from './entities/persona-tipo.entity';
 import { RecepcionMineral } from '../comercio_interno/entities/recepcion-mineral.entity';
 import { EstadoRegistro } from './entities/estado-registro.entity';
 import { ConfigModule } from '@nestjs/config';
+import { CotizacionMineralService } from './services/cotizacion-mineral.service';
+import { CotizacionMineral } from './entities/cotizacion-mineral.entity';
+import { Ingenio } from './entities/ingenio.entity';
+import { IngenioService } from './services/ingenio.service';
 
 @Module({
   controllers: [ParametricasController],
-  providers: [CodificacionService, ParametricasService],
+  providers: [
+    CodificacionService,
+    ParametricasService,
+    CotizacionMineralService,
+    IngenioService,
+  ],
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature(
       [
-        Codificacion, 
-        Mineral, 
-        TipoDocumento, 
+        Codificacion,
+        Mineral,
+        TipoDocumento,
         LugarEmisionDocumento,
         EstadoRegistro,
         PersonaTipo,
+        CotizacionMineral,
+        Ingenio
       ],
       'ci',
     ),
     forwardRef(() => SecurityModule),
   ],
-    exports: [
-    TypeOrmModule,
-      
-  ],
+  exports: [TypeOrmModule],
 })
 export class ParametricasModule {}
