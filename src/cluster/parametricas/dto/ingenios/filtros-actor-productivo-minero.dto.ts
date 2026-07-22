@@ -8,7 +8,7 @@ import {
   Min,
 } from 'class-validator';
 
-export class FiltrosIngenioDto {
+export class FiltrosActorProductivoMineroDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -26,11 +26,19 @@ export class FiltrosIngenioDto {
   busqueda?: string;
 
   @IsOptional()
-  @IsString() // ✅ Recibimos como string
-  activo?: string;
+  @Type(() => Number)
+  @IsInt()
+  idTipoActorProductivoMinero?: number;
 
   @IsOptional()
-  @IsIn(['id', 'nombre', 'direccion', 'telefono'])
+  @Transform(({ value }) =>
+    value !== undefined ? value === 'true' : undefined,
+  )
+  @IsBoolean()
+  activo?: boolean;
+
+  @IsOptional()
+  @IsIn(['id', 'nombre', 'direccion', 'telefono', 'tipoActorProductivoMinero'])
   orderBy = 'nombre';
 
   @IsOptional()

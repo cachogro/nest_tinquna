@@ -1,6 +1,22 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsPositive,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
-export class CreateIngenioDto {
+export class CreateActorProductivoMineroDto {
+  @IsNotEmpty({
+    message: 'El tipo de actor productivo minero es obligatorio.',
+  })
+  @Type(() => Number)
+  @IsPositive({
+    message: 'El tipo de actor productivo minero seleccionado no es válido.',
+  })
+  idTipoActorProductivoMinero: number;
+
   @IsNotEmpty({
     message: 'El nombre es obligatorio.',
   })

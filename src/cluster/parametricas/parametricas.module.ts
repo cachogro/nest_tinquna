@@ -10,13 +10,15 @@ import { ParametricasService } from './services/parametricas.service';
 import { TipoDocumento } from './entities/tipo_documento.entity';
 import { LugarEmisionDocumento } from './entities/lugar_emision_documento.entity';
 import { PersonaTipo } from './entities/persona-tipo.entity';
-import { RecepcionMineral } from '../comercio_interno/entities/recepcion-mineral.entity';
+import { RecepcionMineral } from '../comercio_interno/entities/recepcion_mineral/recepcion-mineral.entity';
 import { EstadoRegistro } from './entities/estado-registro.entity';
 import { ConfigModule } from '@nestjs/config';
 import { CotizacionMineralService } from './services/cotizacion-mineral.service';
 import { CotizacionMineral } from './entities/cotizacion-mineral.entity';
-import { Ingenio } from './entities/ingenio.entity';
-import { IngenioService } from './services/ingenio.service';
+
+import { ActorProductivoMinero } from './entities/actor-productivo-minero.entity';
+import { TipoActorProductivoMinero } from './entities/tipo-actor-productivo-minero.entity';
+import { ActorProdMineroService } from './services/actor-productivo-minero.service';
 
 @Module({
   controllers: [ParametricasController],
@@ -24,12 +26,13 @@ import { IngenioService } from './services/ingenio.service';
     CodificacionService,
     ParametricasService,
     CotizacionMineralService,
-    IngenioService,
+    ActorProdMineroService,
   ],
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature(
       [
+        //  entidades
         Codificacion,
         Mineral,
         TipoDocumento,
@@ -37,7 +40,8 @@ import { IngenioService } from './services/ingenio.service';
         EstadoRegistro,
         PersonaTipo,
         CotizacionMineral,
-        Ingenio
+        ActorProductivoMinero,
+        TipoActorProductivoMinero,
       ],
       'ci',
     ),

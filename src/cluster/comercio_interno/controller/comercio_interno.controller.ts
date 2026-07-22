@@ -34,12 +34,13 @@ import { PersonaCiService } from '../services/persona_ci.service';
 import { PersonaCi } from '../entities/persona-ci.entity';
 import { UpdatePersonaCiDto } from '../dto/update-persona-ci.dto';
 import { CreatePersonaCiDto } from '../dto/create-persona-ci.dto';
-import { UpdateRecepcionMineralDto } from '../dto/update-recepcion-mineral.dto';
-import { RecepcionMineral } from '../entities/recepcion-mineral.entity';
+import { UpdateRecepcionMineralDto } from '../dto/recepcion_mineral/update-recepcion-mineral.dto';
+import { RecepcionMineral } from '../entities/recepcion_mineral/recepcion-mineral.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltrosPersonaDto } from '../dto/filtros-persona-ci.dto';
 import { PersonasPaginadasDto } from '../dto/persona-paginacion.dto';
-import { FiltrosRegistroMineralDto } from '../dto/filtros-registro-mineral.dto';
+import { FiltrosRegistroMineralDto } from '../dto/recepcion_mineral/filtros-registro-mineral.dto';
+import { CreateRecepcionMineralDto } from '../dto/recepcion_mineral/create-recepcion-mineral.dto';
 
 @ApiTags('Registro de Operaciones')
 @Controller('comercio_interno')
@@ -52,7 +53,7 @@ export class ComercioInternoController {
   //--------------------------- filtro personas-------------------
 
   @Get('persona_ci')
-  // @Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Listado paginado de personas',
     description:
@@ -117,23 +118,25 @@ export class ComercioInternoController {
   // ---------------persona----------
 
   @Post('persona_ci')
-  //@Auth()
+  @Auth() // Ajusta roles según necesidad
   @ApiOperation({
-    summary: 'Registrar una nueva persona',
+    summary: 'Registrar o actualizar una persona (crear si no tiene id)',
     description:
-      'Registra una nueva persona en el sistema y la asocia a uno o más tipos de persona (Proveedor, Cliente, Chofer, etc.).',
+      'Si se envía un id, se actualiza; si no, se crea. También se puede asociar a un actor productivo minero. Los datos de auditoría se toman del usuario autenticado.',
   })
   @ApiBody({
-    type: UpdatePersonaCiDto,
-    description: 'Datos de la persona a registrar.',
+    type: UpdatePersonaCiDto, // Puede contener id opcional
   })
   @ApiCreatedResponse({
-    description: 'Persona registrada correctamente.',
+    description: 'Persona registrada/actualizada correctamente.',
     type: PersonaCi,
   })
   @ApiConflictResponse({
+    description: 'Ya existe una persona con el mismo número de documento.',
+  })
+  @ApiNotFoundResponse({
     description:
-      'Ya existe una persona registrada con el mismo número de documento.',
+      'Actor productivo minero no encontrado o tipo de persona no existe.',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token inválido o no proporcionado.',
@@ -141,8 +144,18 @@ export class ComercioInternoController {
   @ApiInternalServerErrorResponse({
     description: 'Error interno del servidor.',
   })
-  async create(@Body() data: UpdatePersonaCiDto): Promise<PersonaCi> {
-    return await this.personaCiService.create(data);
+  async create(
+    @Body() data: UpdatePersonaCiDto, // DTO que puede contener id
+    @GetUser() user: Usuario, // Usuario autenticado
+  ): Promise<PersonaCi> {
+    // Decidir si es create o update por la presencia de id
+    if (data.id) {
+      // Actualización
+      return await this.personaCiService.update(data, user);
+    } else {
+      // Creación
+      return await this.personaCiService.create(data, user);
+    }
   }
 
   @Patch('persona_ci/cambiar_estado_persona/:id')
@@ -161,7 +174,7 @@ export class ComercioInternoController {
   }
 
   @Get('persona_ci/allPersonaCi')
-  //@Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Obtener todos las personas comercio interno',
     description:
@@ -184,41 +197,100 @@ export class ComercioInternoController {
 
   ////---------------------------registro mineral----------------------------------
   @Post('registro_mineral')
-  // @Auth()
+  @Auth()
   @ApiOperation({
-    summary: 'Crear o actualizar una recepción de mineral',
+    summary: 'Registrar o actualizar una recepción de mineral',
     description:
-      'Si el cuerpo de la petición contiene el campo id se actualiza el registro; caso contrario se crea una nueva recepción.',
+      'Si no se envía el campo id se registra una nueva recepción de mineral. Si se envía el id, se actualiza la recepción siempre que permanezca en estado PENDIENTE.',
   })
   @ApiBody({
-    type: UpdateRecepcionMineralDto,
     description: 'Datos de la recepción de mineral.',
+    examples: {
+      crear: {
+        summary: 'Registrar recepción',
+        value: {
+          idCodificacion: 1,
+          idPersona: 1,
+          numeroSacos: 80,
+          pesoNeto: 2450.568,
+          anticipo: 10000,
+          totalValorBruto: 89500.75,
+          fechaOperacion: '2026-07-10',
+          observaciones: 'Recepción inicial.',
+
+          detalles: [
+            {
+              idMineral: 4,
+              ley: 58.12,
+            },
+          ],
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar recepción',
+        value: {
+          id: 3,
+          idCodificacion: 2,
+          idPersona: 1,
+          numeroSacos: 82,
+          pesoNeto: 2480.75,
+          anticipo: 12000,
+          totalValorBruto: 91250.35,
+          fechaOperacion: '2026-07-10',
+          observaciones: 'Se corrigieron los datos de recepción.',
+
+          detalles: [
+            {
+              idMineral: 4,
+              ley: 56.8,
+            },
+            {
+              idMineral: 7,
+              ley: 11.45,
+            },
+          ],
+        },
+      },
+    },
   })
   @ApiCreatedResponse({
-    description: 'Operación realizada correctamente.',
+    description: 'Recepción registrada o actualizada correctamente.',
     type: RecepcionMineral,
   })
   @ApiBadRequestResponse({
-    description: 'Datos inválidos o la recepción ya fue liquidada.',
+    description:
+      'Datos inválidos, minerales repetidos, minerales que no corresponden a la codificación o la recepción ya no puede modificarse.',
   })
   @ApiNotFoundResponse({
-    description: 'No existe la codificación, proveedor o recepción.',
+    description:
+      'No se encontró la recepción, la codificación, el proveedor o alguno de los minerales enviados.',
   })
   @ApiUnauthorizedResponse({
-    description: 'No autorizado.',
+    description: 'No autorizado. Token no proporcionado o inválido.',
   })
   @ApiInternalServerErrorResponse({
     description: 'Error interno del servidor.',
   })
   async createRM(
     @Body()
-    data: UpdateRecepcionMineralDto,
+    body: CreateRecepcionMineralDto | UpdateRecepcionMineralDto,
+    @GetUser() user: Usuario,
   ): Promise<RecepcionMineral> {
-    return this.comercioInternoService.create(data);
+    console.log('data recibida', body);
+    if ('id' in body && body.id) {
+      return await this.comercioInternoService.update(
+        body as UpdateRecepcionMineralDto,
+        user,
+      );
+    }
+    return await this.comercioInternoService.create(
+      body as CreateRecepcionMineralDto,
+      user,
+    );
   }
 
   @Patch('registro_mineral/cambiar_estado/:id')
-  // @Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Cambiar estado de una recepción',
     description:
@@ -253,13 +325,15 @@ export class ComercioInternoController {
   async cambiarEstado(
     @Param('id') id: string,
     @Body('idEstado', ParseIntPipe) idEstado: number,
+    @GetUser() user: Usuario,
   ): Promise<RecepcionMineral> {
-    return this.comercioInternoService.cambiarEstado(id, idEstado);
+    return this.comercioInternoService.cambiarEstado(id, idEstado, user);
   }
 
   //------------------------------FILTROS-----------------------------
 
   @Get('registro_mineral')
+  @Auth()
   async findAllRecepcionMineral(@Query() filtros: FiltrosRegistroMineralDto) {
     return this.comercioInternoService.findAllRM(filtros);
   }

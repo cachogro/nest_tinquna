@@ -46,12 +46,13 @@ import { UpdateCotizacionMineralDto } from '../dto/cotizacion-mineral/update-cot
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltrosCotizacionDto } from '../dto/cotizacion-mineral/filtros-cotizacion.dto';
 import { CotizacionesPaginadasDto } from '../dto/cotizacion-mineral/cotizacion-paginacion.dto';
-import { Ingenio } from '../entities/ingenio.entity';
-import { CreateIngenioDto } from '../dto/ingenios/create-ingenio.dto';
-import { UpdateIngenioDto } from '../dto/ingenios/update-ingenio.dto';
-import { IngenioService } from '../services/ingenio.service';
-import { FiltrosIngenioDto } from '../dto/ingenios/filtros-ingenio.dto';
-import { IngeniosPaginadosDto } from '../dto/ingenios/ingenio-paginacion.dto';
+
+import { FiltrosActorProductivoMineroDto } from '../dto/ingenios/filtros-actor-productivo-minero.dto';
+import { ActoresProductivosMinerosPaginadosDto } from '../dto/ingenios/actor-productivo-minero-paginacion.dto';
+import { ActorProdMineroService } from '../services/actor-productivo-minero.service';
+import { ActorProductivoMinero } from '../entities/actor-productivo-minero.entity';
+import { UpdateActorProductivoMineroDto } from '../dto/ingenios/update-actor-productivo-minero.dto';
+import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
 
 @ApiTags('Paramétrica - Codificación')
 @Controller('parametricas')
@@ -61,55 +62,11 @@ export class ParametricasController {
     private readonly parametricaService: ParametricasService,
 
     private readonly cotizacionMineralService: CotizacionMineralService,
-    private readonly ingenioService: IngenioService,
+    private readonly actorProdMineroService: ActorProdMineroService,
   ) {}
 
-  // @Post('codificacion')
-  // @Auth()
-  // @HttpCode(HttpStatus.CREATED)
-  // @ApiOperation({
-  //   summary: 'Registrar una nueva codificación',
-  //   description:
-  //     'Permite registrar una nueva codificación asociando uno o varios minerales existentes. El sistema valida que el código no exista previamente y que todos los minerales enviados correspondan a registros válidos. La información de los minerales se almacena como un JSON dentro de la codificación.',
-  // })
-  // @ApiBody({
-  //   type: CreateCodificacionDto,
-  //   description: 'Datos necesarios para registrar una nueva codificación.',
-  //   examples: {
-  //     ejemplo: {
-  //       summary: 'Registro de una codificación',
-  //       value: {
-  //         codigo: 'BZI',
-  //         nombre: 'PLATA Y ZINC',
-  //         minerales: [1, 3],
-  //       },
-  //     },
-  //   },
-  // })
-  // @ApiCreatedResponse({
-  //   description: 'Codificación registrada correctamente.',
-  //   type: Codificacion,
-  // })
-  // @ApiBadRequestResponse({
-  //   description:
-  //     'Los datos enviados son inválidos, el código ya existe o alguno de los minerales no existe.',
-  // })
-  // @ApiUnauthorizedResponse({
-  //   description: 'No autorizado. Token no proporcionado o inválido.',
-  // })
-  // @ApiConflictResponse({
-  //   description: 'Ya existe una codificación registrada con el mismo código.',
-  // })
-  // @ApiInternalServerErrorResponse({
-  //   description: 'Error interno del servidor.',
-  // })
-  // async create(
-  //   @Body() createCodificacionDto: CreateCodificacionDto,
-  // ): Promise<Codificacion> {
-  //   return await this.codificacionService.create(createCodificacionDto);
-  // }
-
   @Post('codificacion')
+  @Auth()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar una nueva codificación',
@@ -148,11 +105,13 @@ export class ParametricasController {
   })
   async create(
     @Body() createCodificacionDto: CreateCodificacionDto,
+    @GetUser() user: Usuario,
   ): Promise<Codificacion> {
-    return await this.codificacionService.create(createCodificacionDto);
+    return await this.codificacionService.create(createCodificacionDto, user);
   }
 
   @Put('codificacion')
+  @Auth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Actualizar una codificación',
@@ -189,12 +148,13 @@ export class ParametricasController {
   })
   async update(
     @Body() updateCodificacionDto: UpdateCodificacionDto,
+    @GetUser() user: Usuario,
   ): Promise<Codificacion> {
-    return await this.codificacionService.update(updateCodificacionDto);
+    return await this.codificacionService.update(updateCodificacionDto, user);
   }
 
   @Get('allCodificacion')
-  // @Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Obtener todas las codificaciones',
     description:
@@ -216,7 +176,7 @@ export class ParametricasController {
   }
 
   @Get('tiposDocumento')
-  // @Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Obtener todos los tipos de documento',
     description:
@@ -238,7 +198,7 @@ export class ParametricasController {
   }
 
   @Get('lugaresEmision')
-  // @Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Obtener todos los lugares de emisión',
     description:
@@ -260,7 +220,7 @@ export class ParametricasController {
   }
 
   @Get('allMinerales')
-  //@Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Obtener todos los minerales',
     description:
@@ -282,7 +242,7 @@ export class ParametricasController {
   }
 
   @Get('allPersonaTipo')
-  //@Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Obtener todos los minerales',
     description:
@@ -368,6 +328,7 @@ export class ParametricasController {
   }
   // -------filtrado y paginado---------------
   @Get('cotizacion')
+  @Auth()
   @ApiOperation({
     summary: 'Listar cotizaciones',
     description:
@@ -443,48 +404,66 @@ export class ParametricasController {
     return await this.cotizacionMineralService.findAllCotizacion(filtros);
   }
 
-  //--------------------------------INGENIO------------------------------------
+  //--------------------------------Actor productivo minero ------------------------------------
   //---------------------------------------------------------------------------
 
-  @Post('ingenio')
+  @Post('actor-productivo-minero')
   @Auth()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Registrar o actualizar un ingenio',
+    summary: 'Registrar o actualizar un actor productivo minero',
     description:
-      'Si no se envía el campo id se registra un nuevo ingenio. Si se envía el id, se actualiza el ingenio correspondiente.',
+      'Si no se envía el campo id se registra un nuevo actor productivo minero. Si se envía el id, se actualiza el registro correspondiente.',
   })
   @ApiBody({
-    description: 'Datos del ingenio.',
+    type: UpdateActorProductivoMineroDto,
+    description: 'Datos del actor productivo minero.',
     examples: {
-      crear: {
-        summary: 'Registrar ingenio',
+      crearIngenio: {
+        summary: 'Registrar Ingenio',
         value: {
+          idTipoActorProductivoMinero: 1,
           nombre: 'Ingenio Minero San Cristóbal',
           direccion: 'Carretera Uyuni - Atocha Km. 35',
           telefono: '72451234',
         },
       },
+      crearCooperativa: {
+        summary: 'Registrar Cooperativa',
+        value: {
+          idTipoActorProductivoMinero: 2,
+          nombre: 'Cooperativa Minera Chorolque',
+          direccion: 'Atocha - Potosí',
+          telefono: '72459876',
+        },
+      },
       actualizar: {
-        summary: 'Actualizar ingenio',
+        summary: 'Actualizar Actor Productivo Minero',
         value: {
           id: 1,
+          idTipoActorProductivoMinero: 1,
           nombre: 'Ingenio Minero San Cristóbal',
           direccion: 'Av. Industrial N° 123',
-          telefono: '72451234',
+          telefono: '72450000',
         },
       },
     },
   })
   @ApiCreatedResponse({
-    description: 'Ingenio registrado o actualizado correctamente.',
-    type: Ingenio,
+    description:
+      'Actor productivo minero registrado o actualizado correctamente.',
+    type: ActorProductivoMinero,
   })
   @ApiBadRequestResponse({
     description: 'Los datos enviados no son válidos.',
   })
+  @ApiNotFoundResponse({
+    description:
+      'No se encontró el actor productivo minero o el tipo de actor productivo minero seleccionado.',
+  })
   @ApiConflictResponse({
-    description: 'Ya existe un ingenio registrado con ese nombre.',
+    description:
+      'Ya existe un actor productivo minero registrado con ese nombre.',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -492,20 +471,20 @@ export class ParametricasController {
   @ApiInternalServerErrorResponse({
     description: 'Error interno del servidor.',
   })
-  async createIngenio(
-    @Body() body: UpdateIngenioDto,
+  async createActorProductivoMinero(
+    @Body() body: UpdateActorProductivoMineroDto,
     @GetUser() user: Usuario,
-  ): Promise<Ingenio> {
+  ): Promise<ActorProductivoMinero> {
     if (body.id) {
-      return this.ingenioService.update(body, user);
+      return await this.actorProdMineroService.update(body, user);
     }
 
-    return this.ingenioService.create(body, user);
+    return await this.actorProdMineroService.create(body, user);
   }
 
   //cambiar de estado
 
-  @Patch('ingenio/cambiar_estado/:id')
+  @Patch('actor-productivo-minero/cambiar_estado/:id')
   @Auth()
   @ApiResponse({
     status: 201,
@@ -516,17 +495,17 @@ export class ParametricasController {
     @Body('activo', ParseBoolPipe) activo: boolean,
     @GetUser() user: Usuario,
   ) {
-    console.log('entraaaaaaaaaaa  id', id);
-    return this.ingenioService.cambiarEstadoIngenio(id, activo, user);
+    // console.log('entraaaaaaaaaaa  id', id);
+    return this.actorProdMineroService.cambiarEstadoIngenio(id, activo, user);
   }
   //----------filtros y busqueda:
 
-  @Get('ingenio')
-  // @Auth()
+  @Get('actor-productivo-minero')
+  @Auth()
   @ApiOperation({
-    summary: 'Listado paginado de ingenios',
+    summary: 'Listado paginado de actores productivos mineros',
     description:
-      'Obtiene un listado paginado de ingenios registrados con búsqueda y filtro por estado.',
+      'Obtiene un listado paginado de actores productivos mineros con filtros por nombre, tipo de actor, estado y ordenamiento.',
   })
   @ApiQuery({
     name: 'page',
@@ -544,17 +523,37 @@ export class ParametricasController {
     name: 'busqueda',
     required: false,
     type: String,
-    description: 'Busca por nombre, dirección o teléfono.',
+  })
+  @ApiQuery({
+    name: 'idTipoActorProductivoMinero',
+    required: false,
+    type: Number,
+    example: 1,
   })
   @ApiQuery({
     name: 'activo',
     required: false,
     type: Boolean,
-    example: true,
+  })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: [
+      'id',
+      'nombre',
+      'direccion',
+      'telefono',
+      'tipoActorProductivoMinero',
+    ],
+  })
+  @ApiQuery({
+    name: 'orderDirection',
+    required: false,
+    enum: ['ASC', 'DESC'],
   })
   @ApiOkResponse({
     description: 'Listado paginado obtenido correctamente.',
-    type: IngeniosPaginadosDto,
+    type: ActoresProductivosMinerosPaginadosDto,
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado.',
@@ -562,9 +561,53 @@ export class ParametricasController {
   @ApiInternalServerErrorResponse({
     description: 'Error interno del servidor.',
   })
-  async findAllIngenios(@Query() filtros: FiltrosIngenioDto) {
-    const xxx = await this.ingenioService.findAll(filtros);
-    console.log('xxxx', xxx);
-    return xxx;
+  async findAllAPM(@Query() filtros: FiltrosActorProductivoMineroDto) {
+    return await this.actorProdMineroService.findAll(filtros);
+  }
+
+  @Get('actor-productivo-minero/allTipoActor')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los minerales',
+    description:
+      'Retorna una lista completa de los minerales registrados en el sistema.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de lugares de emisión obtenida exitosamente.',
+    type: [PersonaTipo],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAlltipoActorPrdcMinero(): Promise<TipoActorProductivoMinero[]> {
+    return await this.parametricaService.findAlltipoActorPrdcMinero();
+  }
+
+
+
+  @Get('actor-productivo-minero/allActorMineros')
+  //@Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los minerales',
+    description:
+      'Retorna una lista completa de los minerales registrados en el sistema.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de lugares de emisión obtenida exitosamente.',
+    type: [ActorProductivoMinero],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllActorPrdcMinero(): Promise<ActorProductivoMinero[]> {
+    return await this.actorProdMineroService.findAllActorPrdcMinero();
   }
 }

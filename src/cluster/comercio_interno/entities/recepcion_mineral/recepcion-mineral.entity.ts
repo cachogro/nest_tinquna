@@ -4,11 +4,13 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
 import { EstadoRegistro } from 'src/cluster/parametricas/entities/estado-registro.entity';
-import { PersonaCi } from './persona-ci.entity';
+import { PersonaCi } from '../persona-ci.entity';
+import { RecepcionMineralDetalle } from './recepcion-mineral-detalle.entity';
 
 @Entity({
   name: 'recepcion_mineral',
@@ -104,30 +106,31 @@ export class RecepcionMineral extends Auditoria {
   })
   anticipo?: number;
 
-  @Column({
-    name: 'ley',
-    type: 'numeric',
-    precision: 5,
-    scale: 2,
-    nullable: true,
-  })
-  ley?: number;
+  // @Column({
+  //   name: 'ley',
+  //   type: 'numeric',
+  //   precision: 5,
+  //   scale: 2,
+  //   nullable: true,
+  // })
+  // ley?: number;
 
-  @Column({
-    name: 'total_valor_bruto',
-    type: 'numeric',
-    precision: 14,
-    scale: 2,
-    nullable: true,
-  })
-  totalValorBruto?: number;
+  // @Column({
+  //   name: 'total_valor_bruto',
+  //   type: 'numeric',
+  //   precision: 14,
+  //   scale: 2,
+  //   nullable: true,
+  // })
+  // totalValorBruto?: number;
 
   @Column({
     name: 'fecha_operacion',
-    type: 'date',
+    type: 'varchar', // o 'text'
+    length: 50, // opcional, solo si usas varchar
     nullable: false,
   })
-  fechaOperacion: Date;
+  fechaOperacion: string; // Ahora es string, no Date
 
   @Column({
     name: 'observaciones',
@@ -136,6 +139,15 @@ export class RecepcionMineral extends Auditoria {
     nullable: true,
   })
   observaciones?: string;
+
+  @OneToMany(
+    () => RecepcionMineralDetalle,
+    (detalle) => detalle.recepcionMineral,
+    {
+      eager: false,
+    },
+  )
+  detalles?: RecepcionMineralDetalle[];
 
   // ============================
   // Estado

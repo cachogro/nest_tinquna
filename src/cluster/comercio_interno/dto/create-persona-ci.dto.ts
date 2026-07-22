@@ -87,4 +87,13 @@ export class CreatePersonaCiDto {
     message: 'Debe seleccionar al menos un tipo de persona.',
   })
   tiposPersona: number[];
+
+  @ApiProperty({
+    description: 'ID del actor productivo minero asociado (opcional)',
+    required: false,
+    example: '123',
+  })
+  @IsOptional()
+  @IsString()
+  idActorProductivoMinero?: string;
 }

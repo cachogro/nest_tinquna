@@ -49,24 +49,12 @@ export class AuthService {
         usuario: true,
         contrasena: true,
         id: true,
-        
-        // estado: true,
-        // primeraSession: true,
-        // correoFacturacion: true,
       },
     });
     if (!userLogged)
       throw new BadRequestException('Credenciales no válidas (Usuario)');
     if (!bcrypt.compareSync(contrasena, userLogged.contrasena))
       throw new BadRequestException('Credenciales no válidas (Contraseña)');
-    // if (!userLogged.estado)
-    //   throw new BadRequestException(
-    //     'Usuario inválido, contáctese con un administrador',
-    //   );
-    // console.log(userLogged);
-    // if (userLogged.primeraSession) {
-    //   throw new UnauthorizedException('Password change required');
-    // }
     delete userLogged.contrasena;
     const { token, refreshToken } = this.getJwtTokens({ id: userLogged.id });
     return {
@@ -91,6 +79,7 @@ export class AuthService {
   public async getUserById(id: string): Promise<Usuario> {
     const user = await this.usuarioRepository.findOneBy({ id });
     if (user) return user;
-    throw new NotFoundException('Nomse ha encontrado al usuario');
+    throw new NotFoundException('No se ha encontrado al usuario');
   }
+  
 }

@@ -1,4 +1,4 @@
-import { RecepcionMineral } from 'src/cluster/comercio_interno/entities/recepcion-mineral.entity';
+import { RecepcionMineral } from 'src/cluster/comercio_interno/entities/recepcion_mineral/recepcion-mineral.entity';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 

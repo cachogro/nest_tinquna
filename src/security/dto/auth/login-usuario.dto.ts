@@ -3,14 +3,14 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class LoginUsuarioDto {
   @ApiProperty({
-    example: 'aduana.nacional',
+    example: 'admin.admin',
     description: 'nombre de usuario',
   })
   @IsString()
   usuario: string;
 
   @ApiProperty({
-    example: '7777777Lp',
+    example: 'admin123',
     description: 'referencia a contraseña',
   })
   @IsString()

@@ -1,13 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsDateString,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsPositive,
   IsString,
+  Matches,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { CreateRecepcionMineralDetalleDto } from './create-recepcion-mineral-detalle.dto';
 
 export class CreateRecepcionMineralDto {
   @ApiProperty({
@@ -68,42 +74,43 @@ export class CreateRecepcionMineralDto {
   )
   anticipo?: number;
 
-  @ApiPropertyOptional({
-    description: 'Ley referencial del mineral.',
-    example: 58.75,
-  })
-  @IsOptional()
-  @IsNumber(
-    {},
-    {
-      message: 'La ley debe ser un número válido.',
-    },
-  )
-  ley?: number;
+  // @ApiPropertyOptional({
+  //   description: 'Ley referencial del mineral.',
+  //   example: 58.75,
+  // })
+  // @IsOptional()
+  // @IsNumber(
+  //   {},
+  //   {
+  //     message: 'La ley debe ser un número válido.',
+  //   },
+  // )
+  // ley?: number;
 
-  @ApiPropertyOptional({
-    description: 'Valor bruto referencial de la compra.',
-    example: 98500.75,
-  })
-  @IsOptional()
-  @IsNumber(
-    {},
-    {
-      message: 'El valor bruto debe ser un número válido.',
-    },
-  )
-  totalValorBruto?: number;
+  // @ApiPropertyOptional({
+  //   description: 'Valor bruto referencial de la compra.',
+  //   example: 98500.75,
+  // })
+  // @IsOptional()
+  // @IsNumber(
+  //   {},
+  //   {
+  //     message: 'El valor bruto debe ser un número válido.',
+  //   },
+  // )
+  // totalValorBruto?: number;
 
   @ApiProperty({
     description: 'Fecha de la transacción.',
     example: '2026-07-10',
     format: 'date',
   })
-  @IsString(
-    {
-      message: 'La fecha de operación no es válida.',
-    },
-  )
+  @IsString({
+    message: 'La fecha de operación no es válida.',
+  })
+  @Matches(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[-+]\d{2}:\d{2}$/, {
+    message: 'Formato de fecha inválido, debe ser ISO 8601 con zona horaria',
+  })
   fechaOperacion: string;
 
   @ApiPropertyOptional({
@@ -116,4 +123,16 @@ export class CreateRecepcionMineralDto {
     message: 'Las observaciones no pueden superar los 255 caracteres.',
   })
   observaciones?: string;
+
+  @IsArray({
+    message: 'Debe enviar el detalle de minerales.',
+  })
+  @ArrayMinSize(1, {
+    message: 'Debe registrar al menos un mineral.',
+  })
+  @ValidateNested({
+    each: true,
+  })
+  @Type(() => CreateRecepcionMineralDetalleDto)
+  detalles: CreateRecepcionMineralDetalleDto[];
 }

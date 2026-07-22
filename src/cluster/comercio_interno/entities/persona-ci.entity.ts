@@ -9,9 +9,10 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { PersonaPersonaTipo } from './persona-persona-tipo.entity';
-import { RecepcionMineral } from './recepcion-mineral.entity';
+import { RecepcionMineral } from './recepcion_mineral/recepcion-mineral.entity';
+import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 
-@Entity({ name: 'persona', schema: 'comercio_interno' })
+@Entity({ name: 'persona_ci', schema: 'comercio_interno' })
 export class PersonaCi extends Auditoria {
   @PrimaryGeneratedColumn({
     type: 'bigint',
@@ -81,8 +82,28 @@ export class PersonaCi extends Auditoria {
   })
   observaciones?: string;
 
+  // --- NUEVA COLUMNA Y RELACIÓN ---
+  @Column({
+    name: 'id_actor_productivo_minero',
+    type: 'bigint',
+    nullable: true,
+  })
+  idActorProductivoMinero?: string;
+
+  @ManyToOne(() => ActorProductivoMinero, {
+    nullable: true,
+    // eager: true,
+    // onDelete: 'SET NULL', // Opcional, según el comportamiento deseado
+  })
+  @JoinColumn({
+    name: 'id_actor_productivo_minero',
+    referencedColumnName: 'id',
+  })
+  actorProductivoMinero?: ActorProductivoMinero;
+
+  // Relaciones existentes
   @OneToMany(() => PersonaPersonaTipo, (personaTipo) => personaTipo.persona, {
-   // eager: true,
+    // eager: true,
   })
   personaTipos: PersonaPersonaTipo[];
 

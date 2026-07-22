@@ -5,6 +5,7 @@ import { Codificacion } from '../entities/codificacion.entity';
 import { Mineral } from '../entities/mineral.entity';
 import { CreateCodificacionDto } from '../dto/create-codificacion.dto';
 import { UpdateCodificacionDto } from '../dto/update-codificacion.dto';
+import { Usuario } from 'src/security/entities/usuario.entity';
 
 @Injectable()
 export class CodificacionService {
@@ -108,6 +109,7 @@ export class CodificacionService {
 
   async create(
     createCodificacionDto: CreateCodificacionDto,
+    user: Usuario,
   ): Promise<Codificacion> {
     const { codigo, nombre, minerales } = createCodificacionDto;
 
@@ -119,6 +121,7 @@ export class CodificacionService {
       codigo,
       nombre,
       minerales: mineralesJson,
+      usuarioRegistro: user.usuario,
     });
 
     return await this.codificacionRepository.save(codificacion);
@@ -126,6 +129,7 @@ export class CodificacionService {
 
   async update(
     updateCodificacionDto: UpdateCodificacionDto,
+    user: Usuario,
   ): Promise<Codificacion> {
     const { id, codigo, nombre, minerales } = updateCodificacionDto;
     const codificacion = await this.codificacionRepository.findOne({
@@ -143,10 +147,10 @@ export class CodificacionService {
     codificacion.codigo = codigo;
     codificacion.nombre = nombre;
     codificacion.minerales = await this.obtenerMineralesValidos(minerales);
+    codificacion.usuarioUltimaModificacion = user.usuario;
 
     return await this.codificacionRepository.save(codificacion);
   }
-
 
   async findAllCodificaciones(): Promise<Codificacion[]> {
     const codificaciones = await this.codificacionRepository.find({
@@ -156,7 +160,4 @@ export class CodificacionService {
     });
     return codificaciones;
   }
-
-
-
 }

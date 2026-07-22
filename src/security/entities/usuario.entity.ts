@@ -11,7 +11,6 @@ import {
   OneToOne,
 } from 'typeorm';
 import { Persona } from './persona.entity';
-import { UsuarioRol } from './usuario-rol.entity';
 import { RefreshToken } from './refresh-token.entity';
 import { Rol } from './rol.entity';
 
@@ -59,7 +58,7 @@ export class Usuario extends Auditoria {
   })
   ultimoAcceso?: Date;
 
-  @OneToOne(() => Persona,{ eager: true } )
+  @OneToOne(() => Persona, { eager: true })
   @JoinColumn({ name: 'id_persona', referencedColumnName: 'id' })
   persona?: Persona;
 
@@ -68,7 +67,6 @@ export class Usuario extends Auditoria {
 
   @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.usuario)
   refreshTokens?: RefreshToken[];
-
 
   @ManyToMany(() => Rol, { eager: true })
   @JoinTable({
@@ -83,10 +81,4 @@ export class Usuario extends Auditoria {
     },
   })
   roles: Rol[];
-
-
-
-
-
-
 }

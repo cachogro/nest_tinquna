@@ -14,6 +14,7 @@ import { UpdatePersonaCiDto } from '../dto/update-persona-ci.dto';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltrosPersonaDto } from '../dto/filtros-persona-ci.dto';
 import { PersonasPaginadas } from '../models/interfaces/paginacion-persona';
+import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 
 @Injectable()
 export class PersonaCiService {
@@ -24,6 +25,9 @@ export class PersonaCiService {
     @InjectRepository(PersonaTipo, 'ci')
     private readonly personaTipoRepository: Repository<PersonaTipo>,
 
+    @InjectRepository(ActorProductivoMinero, 'ci')
+    private readonly actorProductivoMineroRepo: Repository<ActorProductivoMinero>,
+
     @InjectRepository(PersonaPersonaTipo, 'ci')
     private readonly personaPersonaTipoRepository: Repository<PersonaPersonaTipo>,
 
@@ -31,27 +35,42 @@ export class PersonaCiService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async create(
-    createPersonaDto: CreatePersonaCiDto | UpdatePersonaCiDto,
-  ): Promise<PersonaCi> {
-    if ((createPersonaDto as UpdatePersonaCiDto).id) {
-      return this.update(createPersonaDto as UpdatePersonaCiDto);
-    }
+  // En persona-ci.service.ts
 
-    const { tiposPersona, idTipoDocumento, numeroDocumento, ...personaDto } =
-      createPersonaDto;
+  //import { Usuario } from 'src/auth/entities/usuario.entity'; // ajusta ruta
+
+  async create(
+    createPersonaDto: CreatePersonaCiDto,
+    user: Usuario, // nuevo parámetro
+  ): Promise<PersonaCi> {
+    const {
+      tiposPersona,
+      idTipoDocumento,
+      numeroDocumento,
+      idActorProductivoMinero, // extraer
+      ...personaDto
+    } = createPersonaDto;
 
     // Validar documento duplicado
     if (numeroDocumento) {
       const existeDocumento = await this.personaCiRepository.findOne({
-        where: {
-          numeroDocumento,
-        },
+        where: { numeroDocumento },
       });
-
       if (existeDocumento) {
         throw new ConflictException(
           `Ya existe una persona registrada con el documento ${numeroDocumento}.`,
+        );
+      }
+    }
+
+    // Validar que el actor exista si se envía
+    if (idActorProductivoMinero) {
+      const actor = await this.actorProductivoMineroRepo.findOne({
+        where: { id: String(idActorProductivoMinero) },
+      });
+      if (!actor) {
+        throw new NotFoundException(
+          `Actor productivo minero con id ${idActorProductivoMinero} no existe.`,
         );
       }
     }
@@ -60,47 +79,45 @@ export class PersonaCiService {
     const tipos = await this.personaTipoRepository.findBy({
       id: In(tiposPersona),
     });
-
     if (tipos.length !== tiposPersona.length) {
       throw new NotFoundException('Uno o más tipos de persona no existen.');
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
-
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // Crear persona
+      // Crear persona con auditoría
       const persona = queryRunner.manager.create(PersonaCi, {
         ...personaDto,
         idTipoDocumento,
         numeroDocumento,
+        idActorProductivoMinero, // agregar
+        usuarioRegistro: user.usuario, // auditoría
+        fechaRegistro: new Date(),
       });
 
       const personaGuardada = await queryRunner.manager.save(persona);
 
-      // Crear relaciones
+      // Crear relaciones con tipos de persona
       const relaciones = tiposPersona.map((idTipoPersona) =>
         queryRunner.manager.create(PersonaPersonaTipo, {
           idPersona: personaGuardada.id,
           idPersonaTipo: idTipoPersona,
         }),
       );
-
       await queryRunner.manager.save(relaciones);
 
       await queryRunner.commitTransaction();
 
+      // Retornar persona con relaciones
       return await this.personaCiRepository.findOne({
-        where: {
-          id: personaGuardada.id,
-        },
+        where: { id: personaGuardada.id },
         relations: {
-          personaTipos: {
-            personaTipo: true,
-          },
+          personaTipos: { personaTipo: true },
           tipoDocumento: true,
+          actorProductivoMinero: true, // incluir
         },
       });
     } catch (error) {
@@ -111,34 +128,46 @@ export class PersonaCiService {
     }
   }
 
-  async update(updatePersonaDto: UpdatePersonaCiDto): Promise<PersonaCi> {
+  async update(
+    updatePersonaDto: UpdatePersonaCiDto,
+    user: Usuario, // nuevo parámetro
+  ): Promise<PersonaCi> {
     const {
       id,
       tiposPersona,
       idTipoDocumento,
       numeroDocumento,
+      idActorProductivoMinero, // extraer
       ...personaDto
     } = updatePersonaDto;
 
     const persona = await this.personaCiRepository.findOne({
       where: { id },
     });
-
     if (!persona) {
       throw new NotFoundException(`No existe una persona con el id ${id}.`);
     }
 
-    // Validar documento duplicado
+    // Validar documento duplicado (excluyendo el mismo)
     if (numeroDocumento) {
       const existeDocumento = await this.personaCiRepository.findOne({
-        where: {
-          numeroDocumento,
-        },
+        where: { numeroDocumento },
       });
-
       if (existeDocumento && existeDocumento.id !== id) {
         throw new ConflictException(
           `Ya existe una persona registrada con el documento ${numeroDocumento}.`,
+        );
+      }
+    }
+
+    // Validar actor existente
+    if (idActorProductivoMinero) {
+      const actor = await this.actorProductivoMineroRepo.findOne({
+        where: { id: String(idActorProductivoMinero) },
+      });
+      if (!actor) {
+        throw new NotFoundException(
+          `Actor productivo minero con id ${idActorProductivoMinero} no existe.`,
         );
       }
     }
@@ -147,47 +176,46 @@ export class PersonaCiService {
     const tipos = await this.personaTipoRepository.findBy({
       id: In(tiposPersona),
     });
-
     if (tipos.length !== tiposPersona.length) {
       throw new NotFoundException('Uno o más tipos de persona no existen.');
     }
 
     const queryRunner = this.dataSource.createQueryRunner();
-
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
+      // Actualizar datos básicos (incluyendo auditoría)
       await queryRunner.manager.update(PersonaCi, id, {
         ...personaDto,
         idTipoDocumento,
         numeroDocumento,
+        idActorProductivoMinero, // actualizar
+        usuarioUltimaModificacion: user.usuario,
+        fechaUltimaModificacion: new Date(),
       });
 
-      // Eliminar relaciones actuales
+      // Eliminar relaciones antiguas y crear nuevas
       await queryRunner.manager.delete(PersonaPersonaTipo, {
         idPersona: id,
       });
-
-      // Crear nuevamente las relaciones
-      const relaciones = tiposPersona.map((tipoId: number) =>
+      const relaciones = tiposPersona.map((tipoId) =>
         queryRunner.manager.create(PersonaPersonaTipo, {
           idPersona: id,
           idPersonaTipo: tipoId,
         }),
       );
-
       await queryRunner.manager.save(relaciones);
 
       await queryRunner.commitTransaction();
 
+      // Retornar persona actualizada
       return await this.personaCiRepository.findOne({
         where: { id },
         relations: {
           tipoDocumento: true,
-          personaTipos: {
-            personaTipo: true,
-          },
+          personaTipos: { personaTipo: true },
+          actorProductivoMinero: true,
         },
       });
     } catch (error) {
@@ -239,13 +267,13 @@ export class PersonaCiService {
 
     const query = this.personaCiRepository
       .createQueryBuilder('persona')
-
       .leftJoinAndSelect('persona.personaTipos', 'personaTipo')
-
       .leftJoinAndSelect('personaTipo.personaTipo', 'tipoPersona')
-
       .leftJoinAndSelect('persona.tipoDocumento', 'tipoDocumento')
-
+      .leftJoinAndSelect(
+        'persona.actorProductivoMinero',
+        'actorProductivoMinero',
+      )
       .orderBy('persona.id', 'ASC');
     //-----------------------------------------
     // Activo

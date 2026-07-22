@@ -9,6 +9,7 @@ import {
 } from '../dto/parametrica-response.dto';
 import { Mineral } from '../entities/mineral.entity';
 import { PersonaTipo } from '../entities/persona-tipo.entity';
+import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
 
 @Injectable()
 export class ParametricasService {
@@ -24,6 +25,9 @@ export class ParametricasService {
 
     @InjectRepository(PersonaTipo, 'ci')
     private readonly personaTipoRepository: Repository<PersonaTipo>,
+
+    @InjectRepository(TipoActorProductivoMinero, 'ci')
+    private readonly TipoActorMineroRepository: Repository<TipoActorProductivoMinero>,
   ) {}
 
   async findAllTipoDocumentos(): Promise<TipoDocumentoResponseDto[]> {
@@ -60,6 +64,12 @@ export class ParametricasService {
     return allpersonaTipo;
   }
 
-
+  async findAlltipoActorPrdcMinero(): Promise<TipoActorProductivoMinero[]> {
+    const allTipoMiinero = await this.TipoActorMineroRepository.find({
+      where: { activo: true },
+      order: { id: 'ASC' },
+    });
+    return allTipoMiinero;
+  }
   
 }

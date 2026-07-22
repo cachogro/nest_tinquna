@@ -21,6 +21,7 @@ import { Permiso } from '../entities/permiso.entity';
 import { PersonaService } from './persona.service';
 import { RolResponseDto } from '../dto/roles-response.dto';
 import { FiltrosListarUsuariosDto } from '../dto/filtros-listar-usuarios.dto';
+import { UsuariosPaginadosDto } from '../dto/usuario/usuario-paginacion.dto';
 
 interface FiltrosListarUsuarios {
   page: number;
@@ -379,46 +380,84 @@ export class UsuarioService {
     return usuarioLimpio;
   }
 
-  async listarPaginado(filtros: FiltrosListarUsuariosDto) {
-    const { page, limit, busqueda, idRol, activo } = filtros;
-    const skip = (page - 1) * limit;
+  //----------------------PAGINACION Y FILTROS----------------------
+  async listarPaginado(
+    filtros: FiltrosListarUsuariosDto,
+  ): Promise<UsuariosPaginadosDto> {
+    const { page = 1, limit = 10, busqueda, idRol, activo } = filtros;
 
-    const queryBuilder = this.usuarioRepository
+    const query = this.usuarioRepository
       .createQueryBuilder('usuario')
+
+      .distinct(true)
+
       .leftJoinAndSelect('usuario.persona', 'persona')
+
       .leftJoinAndSelect('usuario.roles', 'rol');
 
+    //---------------------------------------------------------
+    // Activo
+    //---------------------------------------------------------
+
     if (activo !== undefined) {
-      queryBuilder.andWhere('usuario.activo = :activo', { activo });
+      query.andWhere('usuario.activo = :activo', { activo });
     }
+
+    //---------------------------------------------------------
+    // Rol
+    //---------------------------------------------------------
 
     if (idRol) {
-      queryBuilder.andWhere('rol.id = :idRol', { idRol });
+      query.andWhere('rol.id = :idRol', { idRol });
     }
 
+    //---------------------------------------------------------
+    // Búsqueda
+    //---------------------------------------------------------
+
     if (busqueda) {
-      queryBuilder.andWhere(
-        `(usuario.usuario ILIKE :busqueda OR persona.nombres ILIKE :busqueda OR persona.apellidos ILIKE :busqueda)`,
-        { busqueda: `%${busqueda}%` },
+      query.andWhere(
+        `(
+          usuario.usuario ILIKE :busqueda
+          OR persona.nombres ILIKE :busqueda
+          OR persona.apellidoPaterno ILIKE :busqueda
+          OR persona.apellidoMaterno ILIKE :busqueda
+          OR persona.numeroDocumento ILIKE :busqueda
+      )`,
+        {
+          busqueda: `%${busqueda}%`,
+        },
       );
     }
 
-    queryBuilder.orderBy('usuario.id', 'DESC').skip(skip).take(limit);
+    //---------------------------------------------------------
+    // Ordenamiento
+    //---------------------------------------------------------
 
-    const [data, total] = await queryBuilder.getManyAndCount();
+    query.orderBy('usuario.id', 'DESC');
 
-    // Excluir la contraseña de la respuesta
-    const datosLimpios = data.map((user) => {
-      const { contrasena, ...resto } = user;
-      return resto;
-    });
+    //---------------------------------------------------------
+    // Paginación
+    //---------------------------------------------------------
+
+    query.skip((page - 1) * limit);
+
+    query.take(limit);
+
+    const [usuarios, total] = await query.getManyAndCount();
+
+    //---------------------------------------------------------
+    // Eliminar contraseña
+    //---------------------------------------------------------
+
+    const data = usuarios.map(({ contrasena, ...usuario }) => usuario);
 
     return {
-      data: datosLimpios,
+      data,
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit), // añadido para consistencia
+      totalPages: Math.ceil(total / limit),
     };
   }
 
