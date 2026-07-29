@@ -11,6 +11,7 @@ import {
   Post,
   Put,
   Query,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -28,6 +29,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
+import { Response } from 'express';
+
 import { ComercioInternoService } from '../services/comercio_interno.service';
 import { Auth, GetUser } from 'src/security/decorators';
 import { PersonaCiService } from '../services/persona_ci.service';
@@ -41,6 +44,8 @@ import { FiltrosPersonaDto } from '../dto/filtros-persona-ci.dto';
 import { PersonasPaginadasDto } from '../dto/persona-paginacion.dto';
 import { FiltrosRegistroMineralDto } from '../dto/recepcion_mineral/filtros-registro-mineral.dto';
 import { CreateRecepcionMineralDto } from '../dto/recepcion_mineral/create-recepcion-mineral.dto';
+import { RegistrosMineralPaginadosDto } from '../dto/recepcion_mineral/registro-mineral-paginado.dto';
+import { RecepcionMineralExcelService } from '../reports/recepcion-mineral-excel.service';
 
 @ApiTags('Registro de Operaciones')
 @Controller('comercio_interno')
@@ -48,6 +53,7 @@ export class ComercioInternoController {
   constructor(
     private readonly comercioInternoService: ComercioInternoService,
     private readonly personaCiService: PersonaCiService,
+    private readonly recepcionMineralExcelService: RecepcionMineralExcelService,
   ) {}
 
   //--------------------------- filtro personas-------------------
@@ -196,7 +202,7 @@ export class ComercioInternoController {
   }
 
   ////---------------------------registro mineral----------------------------------
-  @Post('registro_mineral')
+  @Post('recepcion_mineral')
   @Auth()
   @ApiOperation({
     summary: 'Registrar o actualizar una recepción de mineral',
@@ -212,10 +218,11 @@ export class ComercioInternoController {
           idCodificacion: 1,
           idPersona: 1,
           numeroSacos: 80,
-          pesoNeto: 2450.568,
+          balanzaL: 2450.0,
+          balanzaT: 2455.0,
           anticipo: 10000,
           totalValorBruto: 89500.75,
-          fechaOperacion: '2026-07-10',
+          fechaRecepcion: '2026-07-10',
           observaciones: 'Recepción inicial.',
 
           detalles: [
@@ -233,10 +240,11 @@ export class ComercioInternoController {
           idCodificacion: 2,
           idPersona: 1,
           numeroSacos: 82,
-          pesoNeto: 2480.75,
+          balanzaL: 2480.75,
+          balanzaT: 2455.0,
           anticipo: 12000,
           totalValorBruto: 91250.35,
-          fechaOperacion: '2026-07-10',
+          fechaRecepcion: '2026-07-10',
           observaciones: 'Se corrigieron los datos de recepción.',
 
           detalles: [
@@ -289,7 +297,7 @@ export class ComercioInternoController {
     );
   }
 
-  @Patch('registro_mineral/cambiar_estado/:id')
+  @Patch('recepcion_mineral/cambiar_estado/:id')
   @Auth()
   @ApiOperation({
     summary: 'Cambiar estado de una recepción',
@@ -332,9 +340,124 @@ export class ComercioInternoController {
 
   //------------------------------FILTROS-----------------------------
 
-  @Get('registro_mineral')
+  @Get('recepcion_mineral')
   @Auth()
+  @ApiOperation({
+    summary: 'Listado paginado de registros de recepción de mineral',
+    description:
+      'Obtiene un listado paginado de registros permitiendo filtrar por proveedor, código de operación, documento, estado y rango de fechas.',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+  })
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'codigoOperacion',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'numeroDocumento',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'idEstado',
+    required: false,
+    type: Number,
+  })
+  @ApiQuery({
+    name: 'fechaDesde',
+    required: false,
+    type: String,
+    example: '2026-07-01',
+  })
+  @ApiQuery({
+    name: 'fechaHasta',
+    required: false,
+    type: String,
+    example: '2026-07-31',
+  })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: [
+      'id',
+      'codigoOperacion',
+      'fechaRecepcion',
+      'numeroDocumento',
+      'estado',
+    ],
+  })
+  @ApiQuery({
+    name: 'orderDirection',
+    required: false,
+    enum: ['ASC', 'DESC'],
+  })
+  @ApiOkResponse({
+    description: 'Listado paginado obtenido correctamente.',
+    type: RegistrosMineralPaginadosDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async findAllRecepcionMineral(@Query() filtros: FiltrosRegistroMineralDto) {
-    return this.comercioInternoService.findAllRM(filtros);
+    return await this.comercioInternoService.findAllRM(filtros);
+  }
+
+  //--------------reporte exel---------------------
+
+  @Get('recepcion_mineral/excel')
+  @Auth()
+  async exportarExcel(
+    @Query() filtros: FiltrosRegistroMineralDto,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.recepcionMineralExcelService.generar(filtros);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+
+      'Content-Disposition': 'attachment; filename=recepcion-mineral.xlsx',
+
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  @Get('recepcion_mineral/busqueda/:id')
+  async findRegistroById(@Param('id') id: string): Promise<RecepcionMineral> {
+    return await this.comercioInternoService.buscarregistroById(id);
+  }
+
+  @Get('recepcion_mineral/pdf/:id')
+  async descargarPdf(@Param('id') id: string, @Res() res: Response) {
+    const pdf = await this.comercioInternoService.generarReciboPdf(id);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename=Recibo-${id}.pdf`,
+      'Content-Length': pdf.length,
+    });
+
+    res.end(pdf);
   }
 }

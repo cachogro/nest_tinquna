@@ -53,13 +53,29 @@ export class CreateRecepcionMineralDto {
   @IsNumber(
     {},
     {
+      message: 'El peso neto debe ser un número válido balanza L.',
+    },
+  )
+  @IsPositive({
+    message: 'El peso neto debe ser mayor a cero.',
+  })
+  balanzaL: number;
+
+  @ApiProperty({
+    description: 'Peso neto del mineral en kilogramos balanza t.',
+    example: 2450.35897,
+  })
+  @IsOptional()
+  @IsNumber(
+    {},
+    {
       message: 'El peso neto debe ser un número válido.',
     },
   )
   @IsPositive({
     message: 'El peso neto debe ser mayor a cero.',
   })
-  pesoNeto: number;
+  balanzaT: number;
 
   @ApiPropertyOptional({
     description: 'Monto del anticipo entregado al proveedor.',
@@ -74,19 +90,28 @@ export class CreateRecepcionMineralDto {
   )
   anticipo?: number;
 
-  // @ApiPropertyOptional({
-  //   description: 'Ley referencial del mineral.',
-  //   example: 58.75,
-  // })
-  // @IsOptional()
-  // @IsNumber(
-  //   {},
-  //   {
-  //     message: 'La ley debe ser un número válido.',
-  //   },
-  // )
-  // ley?: number;
+  @ApiPropertyOptional({
+    description: 'Humedad referencial del mineral.',
+    example: 58.75,
+  })
+  @IsOptional()
+  @IsNumber(
+    {},
+    {
+      message: 'La Humedad debe ser un número válido.',
+    },
+  )
+  humedad?: number;
 
+  @ApiProperty({
+    description: 'Identificador del proveedor.',
+    example: '15',
+  })
+  @IsString()
+  @IsNotEmpty({
+    message: 'El proveedor es obligatorio.',
+  })
+  idPersonalInterno: string;
   // @ApiPropertyOptional({
   //   description: 'Valor bruto referencial de la compra.',
   //   example: 98500.75,
@@ -111,7 +136,7 @@ export class CreateRecepcionMineralDto {
   @Matches(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[-+]\d{2}:\d{2}$/, {
     message: 'Formato de fecha inválido, debe ser ISO 8601 con zona horaria',
   })
-  fechaOperacion: string;
+  fechaRecepcion: string;
 
   @ApiPropertyOptional({
     description: 'Observaciones adicionales.',
@@ -124,15 +149,16 @@ export class CreateRecepcionMineralDto {
   })
   observaciones?: string;
 
-  @IsArray({
-    message: 'Debe enviar el detalle de minerales.',
-  })
-  @ArrayMinSize(1, {
-    message: 'Debe registrar al menos un mineral.',
-  })
-  @ValidateNested({
-    each: true,
-  })
-  @Type(() => CreateRecepcionMineralDetalleDto)
-  detalles: CreateRecepcionMineralDetalleDto[];
+  // @IsArray({
+  //   message: 'Debe enviar el detalle de minerales.',
+  // })
+  // @ArrayMinSize(1, {
+  //   message: 'Debe registrar al menos un mineral.',
+  // })
+  // @ValidateNested({
+  //   each: true,
+  // })
+  // @IsOptional()
+  // @Type(() => CreateRecepcionMineralDetalleDto)
+  // detalles: CreateRecepcionMineralDetalleDto[];
 }

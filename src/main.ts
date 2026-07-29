@@ -1,4 +1,4 @@
-process.env.TZ = 'America/La_Paz'; 
+process.env.TZ = 'America/La_Paz';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -46,7 +46,6 @@ async function bootstrap() {
 
   // Habilitar todas las solicitudes de CORS en Socket.IO
   app.useWebSocketAdapter(new CustomIoAdapter(app));
-
   app.enableCors();
 
   // maquina local
@@ -54,7 +53,7 @@ async function bootstrap() {
   await app.listen(process.env.PORT || 3000);
 
   //habilitar para el escucha red local
-  //await app.listen(process.env.PORT, '0.0.0.0');
+  // await app.listen(process.env.PORT || 3000, '0.0.0.0');
 
   logger.log(`Aplicación lista corriendo en el puerto: ${process.env.PORT}`);
 }

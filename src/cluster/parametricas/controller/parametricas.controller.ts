@@ -53,6 +53,11 @@ import { ActorProdMineroService } from '../services/actor-productivo-minero.serv
 import { ActorProductivoMinero } from '../entities/actor-productivo-minero.entity';
 import { UpdateActorProductivoMineroDto } from '../dto/ingenios/update-actor-productivo-minero.dto';
 import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
+import { Laboratorio } from '../entities/laboratorio.entity';
+import { CreateLaboratorioDto } from '../dto/laboratorio/create-laboratorio.dto';
+import { UpdateLaboratorioDto } from '../dto/laboratorio/update-laboratorio.dto';
+import { LaboratorioService } from '../services/laboratorio.service';
+import { CambiarEstadoLaboratorioDto } from '../dto/laboratorio/cambiar-estado-laboratorio.dto';
 
 @ApiTags('Paramétrica - Codificación')
 @Controller('parametricas')
@@ -63,6 +68,7 @@ export class ParametricasController {
 
     private readonly cotizacionMineralService: CotizacionMineralService,
     private readonly actorProdMineroService: ActorProdMineroService,
+    private readonly laboratorioService: LaboratorioService,
   ) {}
 
   @Post('codificacion')
@@ -587,10 +593,8 @@ export class ParametricasController {
     return await this.parametricaService.findAlltipoActorPrdcMinero();
   }
 
-
-
   @Get('actor-productivo-minero/allActorMineros')
-  //@Auth()
+  @Auth()
   @ApiOperation({
     summary: 'Obtener todos los minerales',
     description:
@@ -609,5 +613,143 @@ export class ParametricasController {
   })
   async findAllActorPrdcMinero(): Promise<ActorProductivoMinero[]> {
     return await this.actorProdMineroService.findAllActorPrdcMinero();
+  }
+
+  //---------------------------------------------------------------------------
+  //                        Laboratorios
+  //---------------------------------------------------------------------------
+
+  @Post('laboratorio')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar un laboratorio',
+    description:
+      'Si no se envía el campo id se registra un nuevo laboratorio. Si se envía el id, se actualiza el laboratorio correspondiente.',
+  })
+  @ApiBody({
+    description: 'Datos del laboratorio.',
+    examples: {
+      crear: {
+        summary: 'Registrar laboratorio',
+        value: {
+          nombre: 'Laboratorio Químico Potosí',
+          direccion: 'Av. Universitaria N° 123',
+          telefono: '62451234',
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar laboratorio',
+        value: {
+          id: 1,
+          nombre: 'Laboratorio Químico Potosí',
+          direccion: 'Zona Central',
+          telefono: '62459999',
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Laboratorio registrado o actualizado correctamente.',
+    type: Laboratorio,
+  })
+  @ApiBadRequestResponse({
+    description: 'Los datos enviados no son válidos.',
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe un laboratorio registrado con ese nombre.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createLaboratorio(
+    @Body()
+    body: CreateLaboratorioDto | UpdateLaboratorioDto,
+    @GetUser() user: Usuario,
+  ): Promise<Laboratorio> {
+    if ('id' in body && body.id) {
+      return await this.laboratorioService.update(
+        body as UpdateLaboratorioDto,
+        user,
+      );
+    }
+
+    return await this.laboratorioService.create(
+      body as CreateLaboratorioDto,
+      user,
+    );
+  }
+
+  @Patch('laboratorio/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de un laboratorio',
+    description:
+      'Permite activar o desactivar un laboratorio mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del laboratorio.',
+    example: '1',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado del laboratorio.',
+  })
+  @ApiOkResponse({
+    description: 'Estado del laboratorio actualizado correctamente.',
+    type: Laboratorio,
+  })
+  @ApiBadRequestResponse({
+    description: 'El valor del estado es inválido.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el laboratorio solicitado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateLaboratorio(
+    @Param('id') id: string,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<Laboratorio> {
+    return await this.laboratorioService.cambiarEstado(id, activo, user);
+  }
+
+  @Get('laboratorio')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar laboratorios',
+    description:
+      'Obtiene la lista de todos los laboratorios activos registrados en el sistema.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de laboratorios obtenido correctamente.',
+    type: Laboratorio,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllLaboratorio(): Promise<Laboratorio[]> {
+    return await this.laboratorioService.findAllLaboratorio();
   }
 }

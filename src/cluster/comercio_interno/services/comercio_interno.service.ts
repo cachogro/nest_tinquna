@@ -6,7 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, QueryRunner, Repository } from 'typeorm';
+import {
+  DataSource,
+  In,
+  QueryRunner,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
 import { PersonaCi } from '../entities/persona-ci.entity';
 import { PersonaTipo } from '../../parametricas/entities/persona-tipo.entity';
@@ -21,6 +27,8 @@ import { FiltrosRegistroMineralDto } from '../dto/recepcion_mineral/filtros-regi
 import { CreateRecepcionMineralDetalleDto } from '../dto/recepcion_mineral/create-recepcion-mineral-detalle.dto';
 import { RecepcionMineralDetalle } from '../entities/recepcion_mineral/recepcion-mineral-detalle.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
+import { RegistrosMineralPaginadosDto } from '../dto/recepcion_mineral/registro-mineral-paginado.dto';
+import { ReciboRecepcionMineralService } from './recibo-recepcion-mineral.service';
 
 @Injectable()
 export class ComercioInternoService {
@@ -42,6 +50,8 @@ export class ComercioInternoService {
 
     @InjectRepository(EstadoRegistro, 'ci')
     private readonly estadoRepository: Repository<EstadoRegistro>,
+
+     private readonly reciboPdfService: ReciboRecepcionMineralService,
 
     @InjectDataSource('ci')
     private readonly dataSource: DataSource,
@@ -263,12 +273,15 @@ export class ComercioInternoService {
       idCodificacion,
       idPersona,
       numeroSacos,
-      pesoNeto,
+      balanzaL,
+      balanzaT,
       anticipo,
       //totalValorBruto,
-      fechaOperacion,
+      idPersonalInterno,
+      humedad,
+      fechaRecepcion,
       observaciones,
-      detalles,
+      // detalles,
     } = createDto;
 
     // Validar codificación
@@ -278,7 +291,7 @@ export class ComercioInternoService {
     await this.validarProveedor(idPersona);
 
     // Validar detalle
-    await this.validarDetalleRecepcion(idCodificacion, detalles);
+    //await this.validarDetalleRecepcion(idCodificacion, detalles);
 
     // Obtener correlativo
     const correlativo = await this.obtenerSiguienteCorrelativo();
@@ -301,10 +314,13 @@ export class ComercioInternoService {
         idCodificacion,
         idPersona,
         numeroSacos,
-        pesoNeto,
+        balanzaL,
+        balanzaT,
         anticipo,
+        idPersonalInterno,
+        humedad,
         //totalValorBruto,
-        fechaOperacion,
+        fechaRecepcion,
         observaciones,
         idEstado: 1,
         usuarioRegistro: user.usuario,
@@ -312,12 +328,12 @@ export class ComercioInternoService {
 
       const registro = await queryRunner.manager.save(recepcion);
 
-      await this.guardarDetalleRecepcion(
-        queryRunner,
-        registro.id,
-        detalles,
-        user,
-      );
+      // await this.guardarDetalleRecepcion(
+      //   queryRunner,
+      //   registro.id,
+      //   detalles,
+      //   user,
+      // );
 
       await queryRunner.commitTransaction();
 
@@ -339,12 +355,15 @@ export class ComercioInternoService {
       idCodificacion,
       idPersona,
       numeroSacos,
-      pesoNeto,
+      balanzaL,
+      balanzaT,
       anticipo,
+      idPersonalInterno,
+      humedad,
       // totalValorBruto,
-      fechaOperacion,
+      fechaRecepcion,
       observaciones,
-      detalles,
+      //detalles,
     } = updateDto;
 
     // Buscar recepción
@@ -360,7 +379,7 @@ export class ComercioInternoService {
     await this.validarProveedor(idPersona);
 
     // Validar detalle
-    await this.validarDetalleRecepcion(idCodificacion, detalles);
+    // await this.validarDetalleRecepcion(idCodificacion, detalles);
 
     // Regenerar código manteniendo correlativo
     const codigoOperacion = this.generarCodigoOperacion(
@@ -377,24 +396,28 @@ export class ComercioInternoService {
       await queryRunner.manager.update(RecepcionMineral, id, {
         idCodificacion,
         codigoOperacion,
+
         idPersona,
         numeroSacos,
-        pesoNeto,
+        balanzaL,
+        balanzaT,
         anticipo,
+        idPersonalInterno,
+        humedad,
         // totalValorBruto,
-        fechaOperacion,
+        fechaRecepcion,
         observaciones,
         usuarioUltimaModificacion: user.usuario,
       });
 
-      await this.inactivarDetalleRecepcion(queryRunner, id.toString(), user);
+      // await this.inactivarDetalleRecepcion(queryRunner, id.toString(), user);
 
-      await this.guardarDetalleRecepcion(
-        queryRunner,
-        id.toString(),
-        detalles,
-        user,
-      );
+      // await this.guardarDetalleRecepcion(
+      //   queryRunner,
+      //   id.toString(),
+      //   detalles,
+      //   user,
+      // );
 
       await queryRunner.commitTransaction();
 
@@ -407,7 +430,11 @@ export class ComercioInternoService {
     }
   }
 
-  async cambiarEstado(id: string, idEstado: number, user: Usuario): Promise<RecepcionMineral> {
+  async cambiarEstado(
+    id: string,
+    idEstado: number,
+    user: Usuario,
+  ): Promise<RecepcionMineral> {
     const recepcion = await this.obtenerRecepcion(id);
     this.validarRecepcionEditable(recepcion);
     const estado = await this.estadoRepository.findOne({
@@ -420,79 +447,162 @@ export class ComercioInternoService {
       throw new NotFoundException('El estado seleccionado no existe.');
     }
     recepcion.idEstado = idEstado;
-    recepcion.usuarioUltimaModificacion= user.usuario
+    recepcion.usuarioUltimaModificacion = user.usuario;
     await this.recepcionRepository.save(recepcion);
     return await this.obtenerRecepcionCompleta(id);
   }
 
   ///-------------------------------------FILTROS--------------------------
 
-  async findAllRM(filtros: FiltrosRegistroMineralDto) {
-    const {
-      page = 1,
-      limit = 10,
-      busqueda,
-      numeroDocumento,
-      idEstado,
-      fechaDesde,
-      fechaHasta,
-    } = filtros;
+  // async findAllRM(
+  //   filtros: FiltrosRegistroMineralDto,
+  // ): Promise<RegistrosMineralPaginadosDto> {
+  //   const {
+  //     page = 1,
+  //     limit = 10,
+  //     busqueda,
+  //     codigoOperacion,
+  //     numeroDocumento,
+  //     idEstado,
+  //     fechaDesde,
+  //     fechaHasta,
+  //     orderBy = 'fechaRecepcion',
+  //     orderDirection = 'DESC',
+  //   } = filtros;
 
-    // Construir query con relaciones
-    const query = this.recepcionRepository
-      .createQueryBuilder('recepcion')
-      .leftJoinAndSelect('recepcion.persona', 'persona')
-      .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
-      .leftJoinAndSelect('recepcion.estado', 'estado')
-      .leftJoinAndSelect(
-        'recepcion.detalles',
-        'detalle',
-        'detalle.activo = :activo',
-        { activo: true },
-      )
-      .leftJoinAndSelect('detalle.mineral', 'mineral')
-      .orderBy('recepcion.fechaOperacion', 'DESC');
+  //   const query = this.recepcionRepository
+  //     .createQueryBuilder('recepcion')
 
-    // -- Filtros --
+  //     .leftJoinAndSelect('recepcion.persona', 'persona')
 
-    // Búsqueda por nombre/apellido/documento de la persona
-    if (busqueda) {
-      query.andWhere(
-        `(
-          persona.nombres ILIKE :busqueda OR
-          persona.apellidoPaterno ILIKE :busqueda OR
-          persona.apellidoMaterno ILIKE :busqueda OR
-          persona.numeroDocumento ILIKE :busqueda
-        )`,
-        { busqueda: `%${busqueda}%` },
-      );
-    }
+  //     .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
 
-    // Documento exacto (o parcial) de la persona
-    if (numeroDocumento) {
-      query.andWhere('persona.numeroDocumento ILIKE :numeroDocumento', {
-        numeroDocumento: `%${numeroDocumento}%`,
-      });
-    }
+  //     .leftJoinAndSelect('recepcion.estado', 'estado')
 
-    // Estado (por ID)
-    if (idEstado !== undefined && idEstado !== null) {
-      query.andWhere('recepcion.idEstado = :idEstado', { idEstado });
-    }
+  //     .leftJoinAndSelect(
+  //       'recepcion.detalles',
+  //       'detalle',
+  //       'detalle.activo = true',
+  //     )
 
-    // Rango de fechas (fechaOperacion)
-    if (fechaDesde) {
-      query.andWhere('recepcion.fechaOperacion >= :fechaDesde', { fechaDesde });
-    }
-    if (fechaHasta) {
-      query.andWhere('recepcion.fechaOperacion <= :fechaHasta', { fechaHasta });
-    }
+  //     .leftJoinAndSelect('detalle.mineral', 'mineral');
 
-    // Paginación
+  //   //---------------------------------------------------------
+  //   // Búsqueda
+  //   //---------------------------------------------------------
+
+  //   if (busqueda) {
+  //     query.andWhere(
+  //       `(
+  //       persona.nombres ILIKE :busqueda
+  //       OR persona.apellidoPaterno ILIKE :busqueda
+  //       OR persona.apellidoMaterno ILIKE :busqueda
+  //       OR persona.numeroDocumento ILIKE :busqueda
+  //     )`,
+  //       {
+  //         busqueda: `%${busqueda}%`,
+  //       },
+  //     );
+  //   }
+
+  //   //---------------------------------------------------------
+  //   // Código de Operación
+  //   //---------------------------------------------------------
+
+  //   if (codigoOperacion) {
+  //     query.andWhere('recepcion.codigoOperacion ILIKE :codigoOperacion', {
+  //       codigoOperacion: `%${codigoOperacion}%`,
+  //     });
+  //   }
+
+  //   //---------------------------------------------------------
+  //   // Número de Documento
+  //   //---------------------------------------------------------
+
+  //   if (numeroDocumento) {
+  //     query.andWhere('persona.numeroDocumento ILIKE :numeroDocumento', {
+  //       numeroDocumento: `%${numeroDocumento}%`,
+  //     });
+  //   }
+
+  //   //---------------------------------------------------------
+  //   // Estado
+  //   //---------------------------------------------------------
+
+  //   if (idEstado) {
+  //     query.andWhere('recepcion.idEstado = :idEstado', {
+  //       idEstado,
+  //     });
+  //   }
+
+  //   //---------------------------------------------------------
+  //   // Fecha Desde
+  //   //---------------------------------------------------------
+
+  //   if (fechaDesde) {
+  //     query.andWhere('recepcion.fechaRecepcion::timestamptz >= :fechaDesde', {
+  //       fechaDesde,
+  //     });
+  //   }
+
+  //   //---------------------------------------------------------
+  //   // Fecha Hasta
+  //   //---------------------------------------------------------
+
+  //   if (fechaHasta) {
+  //     const fechaFin = new Date(fechaHasta);
+
+  //     fechaFin.setHours(23, 59, 59, 999);
+
+  //     query.andWhere('recepcion.fechaRecepcion::timestamptz <= :fechaHasta', {
+  //       fechaHasta: fechaFin,
+  //     });
+  //   }
+
+  //   //---------------------------------------------------------
+  //   // Ordenamiento
+  //   //---------------------------------------------------------
+
+  //   const columnasOrden = {
+  //     id: 'recepcion.id',
+  //     codigoOperacion: 'recepcion.codigoOperacion',
+  //     fechaRecepcion: 'recepcion.fechaRecepcion',
+  //     numeroDocumento: 'persona.numeroDocumento',
+  //     estado: 'estado.nombre',
+  //   };
+
+  //   query.orderBy(columnasOrden[orderBy], orderDirection);
+
+  //   //---------------------------------------------------------
+  //   // Paginación
+  //   //---------------------------------------------------------
+
+  //   query.skip((page - 1) * limit);
+
+  //   query.take(limit);
+
+  //   const [data, total] = await query.getManyAndCount();
+
+  //   return {
+  //     data,
+  //     total,
+  //     page,
+  //     limit,
+  //     totalPages: Math.ceil(total / limit),
+  //   };
+  // }
+
+  async findAllRM(
+    filtros: FiltrosRegistroMineralDto,
+  ): Promise<RegistrosMineralPaginadosDto> {
+    const { page = 1, limit = 10 } = filtros;
+
+    const query = this.buildRecepcionMineralQuery(filtros);
+
     query.skip((page - 1) * limit);
+
     query.take(limit);
 
-    // Ejecutar
     const [data, total] = await query.getManyAndCount();
 
     return {
@@ -503,4 +613,166 @@ export class ComercioInternoService {
       totalPages: Math.ceil(total / limit),
     };
   }
+
+  async findAllRMReporte(
+    filtros: FiltrosRegistroMineralDto,
+  ): Promise<RecepcionMineral[]> {
+    const query = this.buildRecepcionMineralQuery(filtros);
+
+    return await query.getMany();
+  }
+
+  private buildRecepcionMineralQuery(
+    filtros: FiltrosRegistroMineralDto,
+  ): SelectQueryBuilder<RecepcionMineral> {
+    const {
+      busqueda,
+      codigoOperacion,
+      numeroDocumento,
+      idEstado,
+      fechaDesde,
+      fechaHasta,
+      orderBy = 'fechaRecepcion',
+      orderDirection = 'DESC',
+    } = filtros;
+
+    const query = this.recepcionRepository
+      .createQueryBuilder('recepcion')
+
+      .leftJoinAndSelect('recepcion.persona', 'persona')
+
+      .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
+
+      .leftJoinAndSelect('recepcion.estado', 'estado')
+
+      .leftJoinAndSelect(
+        'recepcion.detalles',
+        'detalle',
+        'detalle.activo = :activoDetalle',
+        {
+          activoDetalle: true,
+        },
+      )
+
+      .leftJoinAndSelect('detalle.mineral', 'mineral');
+
+    //---------------------------------------------------------
+    // Búsqueda
+    //---------------------------------------------------------
+
+    if (busqueda) {
+      query.andWhere(
+        `(
+        persona.nombres ILIKE :busqueda
+        OR persona.apellidoPaterno ILIKE :busqueda
+        OR persona.apellidoMaterno ILIKE :busqueda
+        OR persona.numeroDocumento ILIKE :busqueda
+      )`,
+        {
+          busqueda: `%${busqueda}%`,
+        },
+      );
+    }
+
+    //---------------------------------------------------------
+    // Código Operación
+    //---------------------------------------------------------
+
+    if (codigoOperacion) {
+      query.andWhere('recepcion.codigoOperacion ILIKE :codigoOperacion', {
+        codigoOperacion: `%${codigoOperacion}%`,
+      });
+    }
+
+    //---------------------------------------------------------
+    // Documento
+    //---------------------------------------------------------
+
+    if (numeroDocumento) {
+      query.andWhere('persona.numeroDocumento ILIKE :numeroDocumento', {
+        numeroDocumento: `%${numeroDocumento}%`,
+      });
+    }
+
+    //---------------------------------------------------------
+    // Estado
+    //---------------------------------------------------------
+
+    if (idEstado) {
+      query.andWhere('recepcion.idEstado = :idEstado', {
+        idEstado,
+      });
+    }
+
+    //---------------------------------------------------------
+    // Fecha Desde
+    //---------------------------------------------------------
+
+    if (fechaDesde) {
+      query.andWhere('recepcion.fechaRecepcion::timestamptz >= :fechaDesde', {
+        fechaDesde,
+      });
+    }
+
+    //---------------------------------------------------------
+    // Fecha Hasta
+    //---------------------------------------------------------
+
+    if (fechaHasta) {
+      const fechaFin = new Date(fechaHasta);
+
+      fechaFin.setHours(23, 59, 59, 999);
+
+      query.andWhere('recepcion.fechaRecepcion::timestamptz <= :fechaHasta', {
+        fechaHasta: fechaFin,
+      });
+    }
+
+    //---------------------------------------------------------
+    // Ordenamiento
+    //---------------------------------------------------------
+
+    const columnasOrden = {
+      id: 'recepcion.id',
+      codigoOperacion: 'recepcion.codigoOperacion',
+      fechaRecepcion: 'recepcion.fechaRecepcion',
+      numeroDocumento: 'persona.numeroDocumento',
+      estado: 'estado.nombre',
+    };
+
+    query.orderBy(columnasOrden[orderBy], orderDirection);
+
+    return query;
+  }
+
+
+  async buscarregistroById(
+    id: string,
+  ): Promise<RecepcionMineral> {
+    return await this.recepcionRepository
+      .createQueryBuilder('recepcion')
+      .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
+      .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('recepcion.estado', 'estado')
+     // .leftJoinAndSelect('recepcion.estado', 'estado')
+      .where('recepcion.id = :id', { id })
+      .getOne();
+  }
+
+
+
+  async generarReciboPdf(
+  id: string,
+): Promise<Buffer> {
+
+  const recepcion = await this.buscarregistroById(id);
+
+  if (!recepcion) {
+    throw new NotFoundException(
+      'La recepción no existe.',
+    );
+  }
+
+  return this.reciboPdfService.generarPdf(recepcion);
+}
 }

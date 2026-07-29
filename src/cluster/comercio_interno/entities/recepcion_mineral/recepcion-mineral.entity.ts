@@ -89,13 +89,22 @@ export class RecepcionMineral extends Auditoria {
   numeroSacos: number;
 
   @Column({
-    name: 'peso_neto',
+    name: 'balanza_l',
     type: 'numeric',
     precision: 12,
     scale: 5,
     nullable: false,
   })
-  pesoNeto: number;
+  balanzaL: number;
+
+  @Column({
+    name: 'balanza_t',
+    type: 'numeric',
+    precision: 12,
+    scale: 5,
+    nullable: false,
+  })
+  balanzaT: number;
 
   @Column({
     name: 'anticipo',
@@ -106,14 +115,21 @@ export class RecepcionMineral extends Auditoria {
   })
   anticipo?: number;
 
-  // @Column({
-  //   name: 'ley',
-  //   type: 'numeric',
-  //   precision: 5,
-  //   scale: 2,
-  //   nullable: true,
-  // })
-  // ley?: number;
+  @Column({
+    name: 'humedad',
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  humedad?: number;
+
+  @Column({
+    name: 'id_personal_interno',
+    type: 'bigint',
+    nullable: false,
+  })
+  idPersonalInterno: string;
 
   // @Column({
   //   name: 'total_valor_bruto',
@@ -125,12 +141,12 @@ export class RecepcionMineral extends Auditoria {
   // totalValorBruto?: number;
 
   @Column({
-    name: 'fecha_operacion',
-    type: 'varchar', // o 'text'
-    length: 50, // opcional, solo si usas varchar
+    name: 'fecha_de_entrega',
+    type: 'varchar',
+    length: 50,
     nullable: false,
   })
-  fechaOperacion: string; // Ahora es string, no Date
+  fechaRecepcion: string;
 
   @Column({
     name: 'observaciones',
