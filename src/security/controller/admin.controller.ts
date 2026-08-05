@@ -178,18 +178,6 @@ export class AdministradorController {
     required: false,
     type: Boolean,
   })
-  @ApiQuery({
-    name: 'orderBy',
-    required: false,
-    enum: ['id', 'usuario', 'nombres'],
-    description: 'Columna de ordenamiento (default: id).',
-  })
-  @ApiQuery({
-    name: 'orderDirection',
-    required: false,
-    enum: ['ASC', 'DESC'],
-    description: 'Dirección de ordenamiento (default: DESC).',
-  })
   @ApiOkResponse({
     description: 'Listado obtenido correctamente.',
     type: UsuariosPaginadosDto,
