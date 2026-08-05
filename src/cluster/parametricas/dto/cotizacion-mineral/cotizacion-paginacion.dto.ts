@@ -1,22 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { PaginadoResponseDto } from 'src/common/dto/paginado-response.dto';
 import { CotizacionMineral } from '../../entities/cotizacion-mineral.entity';
 
-
-export class CotizacionesPaginadasDto {
+export class CotizacionesPaginadasDto extends PaginadoResponseDto<CotizacionMineral> {
   @ApiProperty({
     type: () => [CotizacionMineral],
   })
-  data: CotizacionMineral[];
-
-  @ApiProperty()
-  total: number;
-
-  @ApiProperty()
-  page: number;
-
-  @ApiProperty()
-  limit: number;
-
-  @ApiProperty()
-  totalPages: number;
+  declare data: CotizacionMineral[];
 }

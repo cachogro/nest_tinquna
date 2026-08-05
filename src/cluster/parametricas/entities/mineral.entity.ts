@@ -55,5 +55,4 @@ export class Mineral extends Auditoria {
     },
   )
   cotizacionMineral?: CotizacionMineral;
-  
 }

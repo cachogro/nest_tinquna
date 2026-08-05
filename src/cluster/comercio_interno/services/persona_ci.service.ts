@@ -13,8 +13,10 @@ import { PersonaCi } from '../entities/persona-ci.entity';
 import { UpdatePersonaCiDto } from '../dto/update-persona-ci.dto';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltrosPersonaDto } from '../dto/filtros-persona-ci.dto';
-import { PersonasPaginadas } from '../models/interfaces/paginacion-persona';
+import { PersonasPaginadasDto } from '../dto/persona-paginacion.dto';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
+import { aplicarOrden } from 'src/common/utils/query-orden.util';
+import { paginarConJoinMultiple } from 'src/common/utils/paginar-relacion-multiple.util';
 
 @Injectable()
 export class PersonaCiService {
@@ -255,7 +257,15 @@ export class PersonaCiService {
     return allpersonaCi;
   }
 
-  async findAll(filtros: FiltrosPersonaDto): Promise<PersonasPaginadas> {
+  /**
+   * `personaTipos` es una relación *-a-muchos (OneToMany): hacer
+   * `leftJoinAndSelect` a `personaTipos` antes del `LIMIT/OFFSET` duplica la
+   * fila de cualquier persona con más de un tipo asignado, descuadrando la
+   * página y el orden. Se usa `paginarConJoinMultiple` (mismo fix aplicado a
+   * `UsuarioService.listarPaginado`), que solo usa el join a `personaTipo`
+   * para filtrar y luego hidrata las entidades completas por id.
+   */
+  async findAll(filtros: FiltrosPersonaDto): Promise<PersonasPaginadasDto> {
     const {
       page = 1,
       limit = 10,
@@ -263,18 +273,14 @@ export class PersonaCiService {
       numeroDocumento,
       idTipoPersona,
       activo,
+      orderBy = 'id',
+      orderDirection = 'DESC',
     } = filtros;
 
     const query = this.personaCiRepository
       .createQueryBuilder('persona')
-      .leftJoinAndSelect('persona.personaTipos', 'personaTipo')
-      .leftJoinAndSelect('personaTipo.personaTipo', 'tipoPersona')
-      .leftJoinAndSelect('persona.tipoDocumento', 'tipoDocumento')
-      .leftJoinAndSelect(
-        'persona.actorProductivoMinero',
-        'actorProductivoMinero',
-      )
-      .orderBy('persona.id', 'ASC');
+      .leftJoin('persona.personaTipos', 'personaTipo');
+
     //-----------------------------------------
     // Activo
     //-----------------------------------------
@@ -315,11 +321,34 @@ export class PersonaCiService {
       });
     }
     //-----------------------------------------
-    // Paginación
+    // Ordenamiento (solo columnas de persona, *-a-uno)
     //-----------------------------------------
-    query.skip((page - 1) * limit);
-    query.take(limit);
-    const [data, total] = await query.getManyAndCount();
+    aplicarOrden(
+      query,
+      {
+        id: 'persona.id',
+        nombres: 'persona.nombres',
+        numeroDocumento: 'persona.numeroDocumento',
+      },
+      orderBy,
+      orderDirection,
+    );
+    //-----------------------------------------
+    // Paginación segura (evita duplicados por el join a personaTipos)
+    //-----------------------------------------
+    const { data, total } = await paginarConJoinMultiple(
+      query,
+      'persona',
+      this.personaCiRepository,
+      page,
+      limit,
+      {
+        personaTipos: { personaTipo: true },
+        tipoDocumento: true,
+        actorProductivoMinero: true,
+      },
+    );
+
     return {
       data,
       total,
@@ -328,61 +357,4 @@ export class PersonaCiService {
       totalPages: Math.ceil(total / limit),
     };
   }
-
-  // async findAll(filtros: FiltrosPersonaDto): Promise<PersonasPaginadas> {
-  //   const { page = 1, limit = 10, busqueda, numeroDocumento, idTipoPersona, activo } = filtros;
-  //   const idsQuery = this.personaCiRepository
-  //     .createQueryBuilder('persona')
-  //     .select('persona.id', 'id')
-  //     .orderBy('persona.id', 'ASC');
-
-  //   if (activo !== undefined) {
-  //     idsQuery.andWhere('persona.activo = :activo', { activo });
-  //   }
-  //   if (numeroDocumento) {
-  //     idsQuery.andWhere('persona.numeroDocumento ILIKE :numeroDocumento', {
-  //       numeroDocumento: `%${numeroDocumento}%`,
-  //     });
-  //   }
-  //   if (busqueda) {
-  //     idsQuery.andWhere(
-  //       `(persona.nombres ILIKE :busqueda OR persona.apellidoPaterno ILIKE :busqueda OR persona.apellidoMaterno ILIKE :busqueda)`,
-  //       { busqueda: `%${busqueda}%` },
-  //     );
-  //   }
-  //   if (idTipoPersona) {
-  //     idsQuery.andWhere((qb) => {
-  //       const sub = qb
-  //         .subQuery()
-  //         .select('1')
-  //         .from(PersonaPersonaTipo, 'pt')
-  //         .where('pt.idPersona = persona.id')
-  //         .andWhere('pt.idPersonaTipo = :idTipoPersona')
-  //         .getQuery();
-  //       return `EXISTS (${sub})`;
-  //     }, { idTipoPersona });
-  //   }
-
-  //   const total = await idsQuery.getCount();
-  //   const rows = await idsQuery.skip((page - 1) * limit).take(limit).getRawMany<{ id: string }>();
-  //   const ids = rows.map((r) => r.id);
-
-  //   if (ids.length === 0) {
-  //     return { data: [], total, page, limit, totalPages: Math.ceil(total / limit) };
-  //   }
-
-  //   const data = await this.personaCiRepository.find({
-  //     where: { id: In(ids) },
-  //     relations: {
-  //       personaTipos: {
-  //         personaTipo: true,
-  //       },
-  //       tipoDocumento: true,
-  //     },
-  //   });
-
-  //   const ordenado = ids.map((id) => data.find((p) => p.id === id)!);
-
-  //   return { data: ordenado, total, page, limit, totalPages: Math.ceil(total / limit) };
-  // }
 }

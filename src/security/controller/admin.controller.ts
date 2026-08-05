@@ -52,11 +52,11 @@ export class AdministradorController {
   ) {}
 
   @Post('registrar_usuario')
-  @Auth() // Requiere autenticación
+  @Auth(ValidRoles.administrador)
   @ApiOperation({
     summary: 'Registrar un nuevo usuario',
     description:
-      'Crea un usuario con sus datos personales. Solo accesible para usuarios autenticados con permisos de administración.',
+      'Crea un usuario con sus datos personales, contraseña inicial y rol asignado. Solo accesible para administradores.',
   })
   @ApiCreatedResponse({
     description: 'Usuario creado exitosamente.',
@@ -80,11 +80,13 @@ export class AdministradorController {
   }
 
   @Put('actualizar_usuario/:id')
-  @Auth()
+  @Auth(ValidRoles.administrador)
   @ApiOperation({
     summary: 'Actualizar un usuario existente',
     description:
-      'Permite actualizar los datos de un usuario (incluyendo su persona asociada). Solo accesible para usuarios autenticados con permisos de administración o el propio usuario (según reglas de negocio).',
+      'Actualiza parcialmente los datos de un usuario (usuario, contraseña, rol y/o persona asociada); ' +
+      'solo se modifican los campos enviados en el body, por lo que basta con enviar únicamente ' +
+      '"contrasena" para resetear solo la clave sin tocar el resto. Solo accesible para administradores.',
   })
   @ApiParam({
     name: 'id',
@@ -175,6 +177,18 @@ export class AdministradorController {
     name: 'activo',
     required: false,
     type: Boolean,
+  })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: ['id', 'usuario', 'nombres'],
+    description: 'Columna de ordenamiento (default: id).',
+  })
+  @ApiQuery({
+    name: 'orderDirection',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    description: 'Dirección de ordenamiento (default: DESC).',
   })
   @ApiOkResponse({
     description: 'Listado obtenido correctamente.',

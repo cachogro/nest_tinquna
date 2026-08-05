@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { CotizacionMineral } from '../entities/cotizacion-mineral.entity';
 import { Mineral } from '../entities/mineral.entity';
@@ -12,6 +12,10 @@ import { UpdateCotizacionMineralDto } from '../dto/cotizacion-mineral/update-cot
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltrosCotizacionDto } from '../dto/cotizacion-mineral/filtros-cotizacion.dto';
 import { CotizacionesPaginadasDto } from '../dto/cotizacion-mineral/cotizacion-paginacion.dto';
+import { aplicarOrden } from 'src/common/utils/query-orden.util';
+
+// Bolivia no tiene horario de verano: el offset respecto a UTC es siempre -04:00.
+const OFFSET_BOLIVIA = '-04:00';
 
 @Injectable()
 export class CotizacionMineralService {
@@ -21,6 +25,9 @@ export class CotizacionMineralService {
 
     @InjectRepository(Mineral, 'ci')
     private readonly mineralRepository: Repository<Mineral>,
+
+    @InjectDataSource('ci')
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(
@@ -29,7 +36,7 @@ export class CotizacionMineralService {
   ): Promise<CotizacionMineral> {
     const mineral = await this.mineralRepository.findOne({
       where: {
-        id: createDto.idMineral.toLocaleString(),
+        id: String(createDto.idMineral),
         activo: true,
       },
     });
@@ -40,55 +47,86 @@ export class CotizacionMineralService {
       );
     }
 
-    // --- OBTENER LAS FECHAS FORMATEADAS EN STRING ---
-    const hoyStr = this.formatearFechaLocal(new Date());
-    const fechaFinalStr = this.formatearFechaLocal(
+    // Vigencia inicial: instante exacto de creación.
+    // Vigencia final: fin del día (23:59:59.999) de la fecha elegida, en hora de Bolivia.
+    const ahora = new Date();
+    const fechaVigenciaFinal = this.finDeDiaBolivia(
       createDto.fechaVigenciaFinal,
     );
 
-    // 1. Validar duplicidad usando comparación de strings en la consulta SQL
-    const vigente = await this.cotizacionRepository
-      .createQueryBuilder('cotizacion')
-      .where('cotizacion.id_mineral = :idMineral', {
-        idMineral: createDto.idMineral,
-      })
-      .andWhere('cotizacion.activo = true')
-      // Mandamos hoyStr como texto. Postgres lo comparará limpiamente con sus columnas de fecha
-      .andWhere(
-        ':hoy BETWEEN cotizacion.fecha_vigencia_inicial AND cotizacion.fecha_vigencia_final',
-        {
-          hoy: hoyStr,
-        },
-      )
-      .getOne();
-
-    if (vigente) {
-      throw new BadRequestException(
-        'El mineral ya tiene una cotización vigente.',
-      );
-    }
-
-    console.log('create ->', 'fechaFinal:', fechaFinalStr, 'hoy:', hoyStr);
-
-    // 2. Validar que la nueva fecha de vigencia no sea menor a hoy
-    if (fechaFinalStr < hoyStr) {
+    if (fechaVigenciaFinal < ahora) {
       throw new BadRequestException(
         'La fecha de vigencia final no puede ser menor a la fecha actual.',
       );
     }
 
-    // 3. Crear el registro persistiendo las fechas mapeadas correctamente
-    const cotizacion = this.cotizacionRepository.create({
-      idMineral: createDto.idMineral,
-      cotizacionMineralDolares: createDto.cotizacionMineralDolares,
-      alicuotaExterna: createDto.alicuotaExterna ?? 0,
-      alicuotaInterna: createDto.alicuotaInterna ?? 0,
-      fechaVigenciaInicial: hoyStr as any, // TypeORM se encarga de transformarlo al tipo de columna
-      fechaVigenciaFinal: createDto.fechaVigenciaFinal as any,
-      usuarioRegistro: user.usuario,
-    });
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    return await this.cotizacionRepository.save(cotizacion);
+    try {
+      // Lock por mineral: serializa creaciones concurrentes para el mismo mineral,
+      // incluso cuando aún no existe ninguna cotización previa que bloquear con FOR UPDATE.
+      await queryRunner.manager.query('SELECT pg_advisory_xact_lock($1)', [
+        createDto.idMineral,
+      ]);
+
+      const cotizacionesMineral = await queryRunner.manager
+        .createQueryBuilder(CotizacionMineral, 'cotizacion')
+        .setLock('pessimistic_write')
+        .where('cotizacion.id_mineral = :idMineral', {
+          idMineral: createDto.idMineral,
+        })
+        .orderBy('cotizacion.id', 'DESC')
+        .getMany();
+
+      const vigente = cotizacionesMineral.find(
+        (c) =>
+          c.activo &&
+          c.fechaVigenciaInicial <= ahora &&
+          c.fechaVigenciaFinal >= ahora,
+      );
+
+      if (vigente) {
+        throw new BadRequestException(
+          'El mineral ya tiene una cotización vigente.',
+        );
+      }
+
+      // Si no se especifican nuevas alícuotas, se heredan de la última
+      // cotización registrada para el mineral (sin importar su estado).
+      const ultimaCotizacion = cotizacionesMineral[0];
+
+      const alicuotaExterna =
+        createDto.alicuotaExterna ?? ultimaCotizacion?.alicuotaExterna;
+      const alicuotaInterna =
+        createDto.alicuotaInterna ?? ultimaCotizacion?.alicuotaInterna;
+
+      if (alicuotaExterna === undefined || alicuotaInterna === undefined) {
+        throw new BadRequestException(
+          'Debe indicar la alícuota externa e interna: el mineral no tiene una cotización previa de la cual heredarlas.',
+        );
+      }
+
+      const cotizacion = queryRunner.manager.create(CotizacionMineral, {
+        idMineral: createDto.idMineral,
+        cotizacionMineralDolares: createDto.cotizacionMineralDolares,
+        alicuotaExterna,
+        alicuotaInterna,
+        fechaVigenciaInicial: ahora,
+        fechaVigenciaFinal,
+        usuarioRegistro: user.usuario,
+      });
+
+      const guardada = await queryRunner.manager.save(cotizacion);
+      await queryRunner.commitTransaction();
+      return guardada;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async findAll(): Promise<CotizacionMineral[]> {
@@ -112,13 +150,14 @@ export class CotizacionMineralService {
       idMineral,
       vigente,
       activo,
+      orderBy = 'id',
+      orderDirection = 'DESC',
     } = filtros;
 
     const query = this.cotizacionRepository
       .createQueryBuilder('cotizacion')
 
-      .leftJoinAndSelect('cotizacion.mineral', 'mineral')
-      .orderBy('cotizacion.id', 'DESC');
+      .leftJoinAndSelect('cotizacion.mineral', 'mineral');
     //----------------------------------------------------
     // Activo
     //----------------------------------------------------
@@ -152,23 +191,35 @@ export class CotizacionMineralService {
     }
 
     //----------------------------------------------------
-    // Vigente
+    // Vigente: se compara contra el instante exacto (NOW()) de la BD,
+    // no contra la hora del servidor de aplicación, para evitar
+    // desfases de reloj entre ambos.
     //----------------------------------------------------
     if (vigente !== undefined) {
-      const hoy = new Date();
-
       if (vigente) {
         query.andWhere(
-          ':hoy BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
-          { hoy },
+          'NOW() BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
         );
       } else {
         query.andWhere(
-          ':hoy NOT BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
-          { hoy },
+          'NOW() NOT BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
         );
       }
     }
+    //----------------------------------------------------
+    // Ordenamiento
+    //----------------------------------------------------
+    aplicarOrden(
+      query,
+      {
+        id: 'cotizacion.id',
+        mineral: 'mineral.descripcion',
+        fechaVigenciaInicial: 'cotizacion.fechaVigenciaInicial',
+        fechaVigenciaFinal: 'cotizacion.fechaVigenciaFinal',
+      },
+      orderBy,
+      orderDirection,
+    );
     //----------------------------------------------------
     // Paginación
     //----------------------------------------------------
@@ -183,6 +234,30 @@ export class CotizacionMineralService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  /**
+   * Cotización vigente de un mineral: activa y cuyo rango de vigencia
+   * contiene el instante exacto de la petición (NOW() de la BD).
+   */
+  async findVigenteByMineral(idMineral: number): Promise<CotizacionMineral> {
+    const cotizacion = await this.cotizacionRepository
+      .createQueryBuilder('cotizacion')
+      .leftJoinAndSelect('cotizacion.mineral', 'mineral')
+      .where('cotizacion.idMineral = :idMineral', { idMineral })
+      .andWhere('cotizacion.activo = true')
+      .andWhere(
+        'NOW() BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
+      )
+      .getOne();
+
+    if (!cotizacion) {
+      throw new NotFoundException(
+        'El mineral no tiene una cotización vigente en este momento.',
+      );
+    }
+
+    return cotizacion;
   }
 
   async findOne(id: number): Promise<CotizacionMineral> {
@@ -208,53 +283,33 @@ export class CotizacionMineralService {
     if (!id) {
       throw new BadRequestException('Se requiere el ID para actualizar.');
     }
-
     const cotizacion = await this.cotizacionRepository.findOne({
       where: { id, activo: true },
     });
-
     if (!cotizacion) {
       throw new NotFoundException('No se encontró la cotización solicitada.');
     }
 
-    // --- USO DE LA FUNCIÓN UTILITARIA ---
-    const hoyStr = this.formatearFechaLocal(new Date());
-    const fechaFinalActualStr = this.formatearFechaLocal(
-      cotizacion.fechaVigenciaFinal,
-    );
-
-    console.log(
-      'Update -> fechaFinalActual =',
-      fechaFinalActualStr,
-      '| hoy =',
-      hoyStr,
-    );
-
-    if (fechaFinalActualStr < hoyStr) {
+    const ahora = new Date();
+    if (new Date(cotizacion.fechaVigenciaFinal) < ahora) {
       throw new BadRequestException(
         'No es posible modificar una cotización que ya no se encuentra vigente.',
       );
     }
 
     if (updateDto.fechaVigenciaFinal) {
-      const nuevaFechaStr = this.formatearFechaLocal(
+      const nuevaFechaVigenciaFinal = this.finDeDiaBolivia(
         updateDto.fechaVigenciaFinal,
       );
-
-      console.log('Update -> nuevaFecha =', nuevaFechaStr, '| hoy =', hoyStr);
-
-      if (nuevaFechaStr < hoyStr) {
+      if (nuevaFechaVigenciaFinal < ahora) {
         throw new BadRequestException(
           'La fecha de vigencia final no puede ser menor a la fecha actual.',
         );
       }
-
-      cotizacion.fechaVigenciaFinal = updateDto.fechaVigenciaFinal as any;
+      cotizacion.fechaVigenciaFinal = nuevaFechaVigenciaFinal;
     }
-    // ------------------------------------
 
     cotizacion.usuarioUltimaModificacion = user.usuario;
-
     if (updateDto.cotizacionMineralDolares !== undefined) {
       cotizacion.cotizacionMineralDolares = updateDto.cotizacionMineralDolares;
     }
@@ -264,20 +319,19 @@ export class CotizacionMineralService {
     if (updateDto.alicuotaInterna !== undefined) {
       cotizacion.alicuotaInterna = updateDto.alicuotaInterna;
     }
-
     return await this.cotizacionRepository.save(cotizacion);
   }
 
-  formatearFechaLocal(fecha: Date | string | unknown): string {
-    if (!fecha) return new Date().toLocaleDateString('sv-SE');
+  /**
+   * Convierte una fecha calendario ("YYYY-MM-DD" o Date) en el instante
+   * correspondiente al fin de ese día (23:59:59.999) en hora de Bolivia (UTC-4 fijo).
+   */
+  private finDeDiaBolivia(fecha: string | Date): Date {
+    const fechaStr =
+      fecha instanceof Date
+        ? fecha.toISOString().split('T')[0]
+        : String(fecha).split('T')[0];
 
-    if (fecha instanceof Date) {
-      // Si es un objeto Date con horas, extraemos solo la fecha en UTC si viene de la BD
-      // o usamos toLocaleDateString si es una fecha generada localmente.
-      return fecha.toISOString().split('T')[0];
-    }
-
-    // Si es un string, nos aseguramos de limpiar si trae horas (ej: "2026-07-15T04:00:00")
-    return String(fecha).split('T')[0];
+    return new Date(`${fechaStr}T23:59:59.999${OFFSET_BOLIVIA}`);
   }
 }

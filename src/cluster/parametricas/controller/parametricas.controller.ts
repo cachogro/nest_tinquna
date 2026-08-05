@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiBody,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -58,9 +59,20 @@ import { CreateLaboratorioDto } from '../dto/laboratorio/create-laboratorio.dto'
 import { UpdateLaboratorioDto } from '../dto/laboratorio/update-laboratorio.dto';
 import { LaboratorioService } from '../services/laboratorio.service';
 import { CambiarEstadoLaboratorioDto } from '../dto/laboratorio/cambiar-estado-laboratorio.dto';
+import { EstadoValorizacion } from '../entities/estado-valorizacion.entity';
+import { EstadoRegistro } from '../entities/estado-registro.entity';
+import { EntidadAporte } from '../entities/entidad-aporte.entity';
+import { TipoEntidadAporte } from '../entities/tipo-entidad-aporte.entity';
+import { CreateEntidadAporteDto } from '../dto/entidad-aporte/create-entidad-aporte.dto';
+import { UpdateEntidadAporteDto } from '../dto/entidad-aporte/update-entidad-aporte.dto';
+import { EntidadAporteService } from '../services/entidad-aporte.service';
+import { CreateMineralDto } from '../dto/mineral/create-mineral.dto';
+import { UpdateMineralDto } from '../dto/mineral/update-mineral.dto';
+import { MineralService } from '../services/mineral.service';
 
-@ApiTags('Paramétrica - Codificación')
+@ApiTags('Paramétricas')
 @Controller('parametricas')
+@ApiBearerAuth()
 export class ParametricasController {
   constructor(
     private readonly codificacionService: CodificacionService,
@@ -69,6 +81,8 @@ export class ParametricasController {
     private readonly cotizacionMineralService: CotizacionMineralService,
     private readonly actorProdMineroService: ActorProdMineroService,
     private readonly laboratorioService: LaboratorioService,
+    private readonly entidadAporteService: EntidadAporteService,
+    private readonly mineralService: MineralService,
   ) {}
 
   @Post('codificacion')
@@ -234,7 +248,7 @@ export class ParametricasController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de lugares de emisión obtenida exitosamente.',
+    description: 'Lista de minerales obtenida exitosamente.',
     type: [Mineral],
   })
   @ApiUnauthorizedResponse({
@@ -250,13 +264,13 @@ export class ParametricasController {
   @Get('allPersonaTipo')
   @Auth()
   @ApiOperation({
-    summary: 'Obtener todos los minerales',
+    summary: 'Obtener todos los tipos de persona',
     description:
-      'Retorna una lista completa de los minerales registrados en el sistema.',
+      'Retorna una lista completa de los tipos de persona registrados en el sistema.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de lugares de emisión obtenida exitosamente.',
+    description: 'Lista de tipos de persona obtenida exitosamente.',
     type: [PersonaTipo],
   })
   @ApiUnauthorizedResponse({
@@ -275,16 +289,21 @@ export class ParametricasController {
   @Auth()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Registrar una nueva cotización de mineral',
+    summary: 'Registrar o actualizar una cotización de mineral',
     description:
-      'Permite registrar una nueva cotización para un mineral. Solo puede existir una cotización vigente por mineral.',
+      'Si el body no incluye "id", registra una nueva cotización para el mineral indicado (solo puede existir una cotización vigente por mineral). ' +
+      'Si el body incluye "id", actualiza la cotización correspondiente (no se puede modificar una cotización que ya venció). ' +
+      '"fechaVigenciaInicial" nunca se envía: el backend la fija automáticamente con el instante exacto del servidor al crear. ' +
+      '"fechaVigenciaFinal" se envía solo como fecha ("YYYY-MM-DD"); el backend la normaliza internamente al fin de ese día (23:59:59.999, hora de Bolivia UTC-4). ' +
+      'Si "alicuotaExterna"/"alicuotaInterna" se omiten al crear, se heredan de la última cotización registrada para ese mineral.',
   })
   @ApiBody({
     type: CreateCotizacionMineralDto,
-    description: 'Datos necesarios para registrar una cotización.',
+    description:
+      'Datos para crear (sin "id") o actualizar (con "id") una cotización.',
     examples: {
-      ejemplo: {
-        summary: 'Nueva cotización',
+      crear: {
+        summary: 'Crear cotización con alícuotas explícitas',
         value: {
           idMineral: 1,
           cotizacionMineralDolares: 3125.45896,
@@ -293,18 +312,42 @@ export class ParametricasController {
           fechaVigenciaFinal: '2026-07-31',
         },
       },
+      crearHeredandoAlicuotas: {
+        summary: 'Crear cotización heredando alícuotas de la última registrada',
+        description:
+          'Al omitir alicuotaExterna/alicuotaInterna, se copian de la última cotización del mineral. Falla si el mineral nunca tuvo una cotización previa.',
+        value: {
+          idMineral: 1,
+          cotizacionMineralDolares: 3125.45896,
+          fechaVigenciaFinal: '2026-07-31',
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar cotización existente',
+        description:
+          'Se envía "id" y solo los campos a modificar. "idMineral" no es editable.',
+        value: {
+          id: 42,
+          cotizacionMineralDolares: 3200,
+          alicuotaExterna: 5,
+          alicuotaInterna: 3.5,
+          fechaVigenciaFinal: '2026-08-15',
+        },
+      },
     },
   })
   @ApiCreatedResponse({
-    description: 'Cotización registrada correctamente.',
+    description:
+      'Cotización registrada o actualizada correctamente. "fechaVigenciaInicial" y "fechaVigenciaFinal" se devuelven como timestamp con zona horaria (ej: "2026-08-03T15:42:10.123-04:00").',
     type: CotizacionMineral,
   })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos, existe una cotización vigente o la fecha de vigencia es incorrecta.',
+      'Datos inválidos: ya existe una cotización vigente para el mineral, la fecha de vigencia final es anterior a hoy, la cotización a actualizar ya no está vigente, o faltan alícuotas y el mineral no tiene cotización previa de la cual heredarlas.',
   })
   @ApiNotFoundResponse({
-    description: 'El mineral seleccionado no existe o se encuentra inactivo.',
+    description:
+      'El mineral seleccionado no existe o se encuentra inactivo (al crear), o la cotización indicada por "id" no existe (al actualizar).',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -321,10 +364,7 @@ export class ParametricasController {
     @GetUser() user: Usuario,
   ): Promise<CotizacionMineral> {
     if ('id' in body && body.id) {
-      return await this.cotizacionMineralService.update(
-        body as UpdateCotizacionMineralDto,
-        user,
-      );
+      return await this.cotizacionMineralService.update(body, user);
     } else {
       return await this.cotizacionMineralService.create(
         body as CreateCotizacionMineralDto,
@@ -396,6 +436,18 @@ export class ParametricasController {
     type: Boolean,
     example: true,
   })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: ['id', 'mineral', 'fechaVigenciaInicial', 'fechaVigenciaFinal'],
+    description: 'Columna de ordenamiento (default: id).',
+  })
+  @ApiQuery({
+    name: 'orderDirection',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    description: 'Dirección de ordenamiento (default: DESC).',
+  })
   @ApiOkResponse({
     description: 'Listado paginado obtenido correctamente.',
     type: CotizacionesPaginadasDto,
@@ -408,6 +460,37 @@ export class ParametricasController {
   })
   async findAllCotizaciones(@Query() filtros: FiltrosCotizacionDto) {
     return await this.cotizacionMineralService.findAllCotizacion(filtros);
+  }
+
+  @Get('cotizacion/vigente/:idMineral')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener la cotización vigente de un mineral',
+    description:
+      'Devuelve la cotización actualmente vigente (activa, dentro de su rango de fechas comparado contra el instante exacto de la petición) para el mineral indicado. Se usa para validar antes de operar con un mineral (ej. valorización) que su cotización no haya vencido.',
+  })
+  @ApiParam({
+    name: 'idMineral',
+    description: 'Identificador del mineral.',
+    example: 1,
+  })
+  @ApiOkResponse({
+    description: 'Cotización vigente obtenida correctamente.',
+    type: CotizacionMineral,
+  })
+  @ApiNotFoundResponse({
+    description: 'El mineral no tiene una cotización vigente en este momento.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findCotizacionVigenteByMineral(
+    @Param('idMineral', ParseIntPipe) idMineral: number,
+  ): Promise<CotizacionMineral> {
+    return await this.cotizacionMineralService.findVigenteByMineral(idMineral);
   }
 
   //--------------------------------Actor productivo minero ------------------------------------
@@ -492,16 +575,49 @@ export class ParametricasController {
 
   @Patch('actor-productivo-minero/cambiar_estado/:id')
   @Auth()
-  @ApiResponse({
-    status: 201,
-    description: 'Servicio para cambiar de estado de una persona',
+  @ApiOperation({
+    summary: 'Cambiar estado de un actor productivo minero',
+    description:
+      'Permite activar o desactivar un actor productivo minero mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del actor productivo minero.',
+    example: '1',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado del actor productivo minero.',
+  })
+  @ApiOkResponse({
+    description:
+      'Estado del actor productivo minero actualizado correctamente.',
+  })
+  @ApiBadRequestResponse({
+    description: 'El valor del estado es inválido.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el actor productivo minero solicitado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
   })
   async changeStateUser(
     @Param('id') id: string,
     @Body('activo', ParseBoolPipe) activo: boolean,
     @GetUser() user: Usuario,
   ) {
-    // console.log('entraaaaaaaaaaa  id', id);
     return this.actorProdMineroService.cambiarEstadoIngenio(id, activo, user);
   }
   //----------filtros y busqueda:
@@ -574,14 +690,15 @@ export class ParametricasController {
   @Get('actor-productivo-minero/allTipoActor')
   @Auth()
   @ApiOperation({
-    summary: 'Obtener todos los minerales',
+    summary: 'Obtener todos los tipos de actor productivo minero',
     description:
-      'Retorna una lista completa de los minerales registrados en el sistema.',
+      'Retorna una lista completa de los tipos de actor productivo minero registrados en el sistema.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de lugares de emisión obtenida exitosamente.',
-    type: [PersonaTipo],
+    description:
+      'Lista de tipos de actor productivo minero obtenida exitosamente.',
+    type: [TipoActorProductivoMinero],
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -596,13 +713,13 @@ export class ParametricasController {
   @Get('actor-productivo-minero/allActorMineros')
   @Auth()
   @ApiOperation({
-    summary: 'Obtener todos los minerales',
+    summary: 'Obtener todos los actores productivos mineros',
     description:
-      'Retorna una lista completa de los minerales registrados en el sistema.',
+      'Retorna una lista completa de los actores productivos mineros registrados en el sistema.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de lugares de emisión obtenida exitosamente.',
+    description: 'Lista de actores productivos mineros obtenida exitosamente.',
     type: [ActorProductivoMinero],
   })
   @ApiUnauthorizedResponse({
@@ -671,16 +788,10 @@ export class ParametricasController {
     @GetUser() user: Usuario,
   ): Promise<Laboratorio> {
     if ('id' in body && body.id) {
-      return await this.laboratorioService.update(
-        body as UpdateLaboratorioDto,
-        user,
-      );
+      return await this.laboratorioService.update(body, user);
     }
 
-    return await this.laboratorioService.create(
-      body as CreateLaboratorioDto,
-      user,
-    );
+    return await this.laboratorioService.create(body, user);
   }
 
   @Patch('laboratorio/cambiar_estado/:id')
@@ -751,5 +862,397 @@ export class ParametricasController {
   })
   async findAllLaboratorio(): Promise<Laboratorio[]> {
     return await this.laboratorioService.findAllLaboratorio();
+  }
+
+  //---------------------------------------------------------------------------
+  //                        Entidades de aporte
+  //---------------------------------------------------------------------------
+
+  @Post('entidad-aporte')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar una entidad de aporte',
+    description:
+      'Si no se envía el campo id se registra una nueva entidad de aporte. Si se envía el id, se actualiza la entidad correspondiente.',
+  })
+  @ApiBody({
+    description: 'Datos de la entidad de aporte.',
+    examples: {
+      crear: {
+        summary: 'Registrar entidad de aporte',
+        value: {
+          descripcion: 'FERRECO',
+          detalleAporte: [{ alicuota: 0.35, tipoBaseAporte: 'VBV' }],
+          idTipoEntidadAporte: 1,
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar entidad de aporte',
+        value: {
+          id: 6,
+          descripcion: 'FERRECO',
+          detalleAporte: [{ alicuota: 0.4, tipoBaseAporte: 'VNV' }],
+          idTipoEntidadAporte: 1,
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Entidad de aporte registrada o actualizada correctamente.',
+    type: EntidadAporte,
+  })
+  @ApiBadRequestResponse({
+    description: 'Los datos enviados no son válidos.',
+  })
+  @ApiConflictResponse({
+    description:
+      'Ya existe una entidad de aporte registrada con esa descripción.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createEntidadAporte(
+    @Body()
+    body: CreateEntidadAporteDto | UpdateEntidadAporteDto,
+    @GetUser() user: Usuario,
+  ): Promise<EntidadAporte> {
+    if ('id' in body && body.id) {
+      return await this.entidadAporteService.update(body, user);
+    }
+
+    return await this.entidadAporteService.create(body, user);
+  }
+
+  @Patch('entidad-aporte/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de una entidad de aporte',
+    description:
+      'Permite activar o desactivar una entidad de aporte mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la entidad de aporte.',
+    example: '6',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado de la entidad de aporte.',
+  })
+  @ApiOkResponse({
+    description: 'Estado de la entidad de aporte actualizado correctamente.',
+    type: EntidadAporte,
+  })
+  @ApiBadRequestResponse({
+    description: 'El valor del estado es inválido.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la entidad de aporte solicitada.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateEntidadAporte(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<EntidadAporte> {
+    return await this.entidadAporteService.cambiarEstado(id, activo, user);
+  }
+
+  @Get('entidad-aporte')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar entidades de aporte',
+    description:
+      'Obtiene la lista de entidades de aporte registradas en el sistema, excluyendo la entidad con id 60.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de entidades de aporte obtenido correctamente.',
+    type: EntidadAporte,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllEntidadAporte(): Promise<EntidadAporte[]> {
+    return await this.entidadAporteService.findAllEntidadAporte();
+  }
+
+  @Get('entidad-aporte2')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar entidades de aporte (incluye la entidad con id 60)',
+    description:
+      'Obtiene la lista completa de todas las entidades de aporte registradas en el sistema, sin excluir ninguna.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de entidades de aporte obtenido correctamente.',
+    type: EntidadAporte,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllEntidadAporte2(): Promise<EntidadAporte[]> {
+    return await this.entidadAporteService.findAllEntidadAporte2();
+  }
+
+  @Get('entidad-aporte/allTipoEntidadAporte')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los tipos de entidad de aporte',
+    description:
+      'Retorna una lista completa de los tipos de entidad de aporte registrados en el sistema.',
+  })
+  @ApiOkResponse({
+    description:
+      'Listado de tipos de entidad de aporte obtenido correctamente.',
+    type: TipoEntidadAporte,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllTipoEntidadAporte(): Promise<TipoEntidadAporte[]> {
+    return await this.entidadAporteService.findAllTipoEntidadAporte();
+  }
+
+  //---------------------------------------------------------------------------
+  //                        Minerales
+  //---------------------------------------------------------------------------
+
+  @Post('mineral')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar un mineral',
+    description:
+      'Si no se envía el campo id se registra un nuevo mineral. Si se envía el id, se actualiza el mineral correspondiente.',
+  })
+  @ApiBody({
+    description: 'Datos del mineral.',
+    examples: {
+      crear: {
+        summary: 'Registrar mineral',
+        value: {
+          descripcion: 'PLATA',
+          simbolo: 'Ag',
+          unidadCotizacion: 'Oz.Tr.',
+          detalleMineral: 'Mineral de plata',
+          factorConversion: 31.1035,
+          tipo: 'METALICO',
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar mineral',
+        value: {
+          id: 1,
+          descripcion: 'PLATA',
+          simbolo: 'Ag',
+          unidadCotizacion: 'Oz.Tr.',
+          detalleMineral: 'Mineral de plata',
+          factorConversion: 31.1035,
+          tipo: 'METALICO',
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Mineral registrado o actualizado correctamente.',
+    type: Mineral,
+  })
+  @ApiBadRequestResponse({
+    description: 'Los datos enviados no son válidos.',
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe un mineral registrado con esa descripción.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createMineral(
+    @Body()
+    body: CreateMineralDto | UpdateMineralDto,
+    @GetUser() user: Usuario,
+  ): Promise<Mineral> {
+    if ('id' in body && body.id) {
+      return await this.mineralService.update(body, user);
+    }
+
+    return await this.mineralService.create(body, user);
+  }
+
+  @Patch('mineral/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de un mineral',
+    description:
+      'Permite activar o desactivar un mineral mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del mineral.',
+    example: '1',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado del mineral.',
+  })
+  @ApiOkResponse({
+    description: 'Estado del mineral actualizado correctamente.',
+    type: Mineral,
+  })
+  @ApiBadRequestResponse({
+    description: 'El valor del estado es inválido.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el mineral solicitado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateMineral(
+    @Param('id') id: string,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<Mineral> {
+    return await this.mineralService.cambiarEstado(id, activo, user);
+  }
+
+  @Get('mineral/allMinerales')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar minerales',
+    description:
+      'Obtiene la lista de todos los minerales registrados en el sistema.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de minerales obtenido correctamente.',
+    type: Mineral,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllMineral(): Promise<Mineral[]> {
+    return await this.mineralService.findAllMineral();
+  }
+
+  @Get('mineral/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener un mineral por id',
+    description: 'Obtiene los datos de un mineral a partir de su id.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del mineral.',
+    example: '1',
+  })
+  @ApiOkResponse({
+    description: 'Mineral obtenido correctamente.',
+    type: Mineral,
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el mineral solicitado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findOneMineral(@Param('id') id: string): Promise<Mineral> {
+    return await this.mineralService.findOneMineral(id);
+  }
+
+  //---------------------------------------------------------------------------
+  //                        estados de los formularios
+  //---------------------------------------------------------------------------
+
+  @Get('valorizacion_mineral/allEstados')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los estados de valorización',
+    description:
+      'Retorna una lista completa de los estados de valorización registrados en el sistema.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de estados de valorización obtenida exitosamente.',
+    type: [EstadoValorizacion],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAlltipoEstadoValorizacion(): Promise<EstadoValorizacion[]> {
+    return await this.parametricaService.findAlltipoEstadoValorizacion();
+  }
+
+  @Get('recepcion_mineral/allEstados')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los estados de recepción de mineral',
+    description:
+      'Retorna una lista completa de los estados de recepción de mineral registrados en el sistema.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de estados de recepción obtenida exitosamente.',
+    type: [EstadoRegistro],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAlltipoEstadoRecepcionMineral(): Promise<EstadoRegistro[]> {
+    return await this.parametricaService.findAlltipoEstadoRecepcionMineral();
   }
 }

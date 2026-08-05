@@ -10,6 +10,8 @@ import {
 import { Mineral } from '../entities/mineral.entity';
 import { PersonaTipo } from '../entities/persona-tipo.entity';
 import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
+import { EstadoRegistro } from '../entities/estado-registro.entity';
+import { EstadoValorizacion } from '../entities/estado-valorizacion.entity';
 
 @Injectable()
 export class ParametricasService {
@@ -22,6 +24,12 @@ export class ParametricasService {
 
     @InjectRepository(Mineral, 'ci')
     private readonly mineralRepository: Repository<Mineral>,
+
+    @InjectRepository(EstadoRegistro, 'ci')
+    private readonly estadoRegistroRepository: Repository<EstadoRegistro>,
+
+    @InjectRepository(EstadoValorizacion, 'ci')
+    private readonly estadoValorizacionRepository: Repository<EstadoValorizacion>,
 
     @InjectRepository(PersonaTipo, 'ci')
     private readonly personaTipoRepository: Repository<PersonaTipo>,
@@ -48,9 +56,8 @@ export class ParametricasService {
 
   async findAllMinerales(): Promise<Mineral[]> {
     const allminerales = await this.mineralRepository.find({
-      order: {
-        id: 'ASC',
-      },
+      where: { activo: true },
+      order: { id: 'ASC' },
     });
     return allminerales;
   }
@@ -71,5 +78,20 @@ export class ParametricasService {
     });
     return allTipoMiinero;
   }
-  
+
+  async findAlltipoEstadoValorizacion(): Promise<EstadoValorizacion[]> {
+    const allEstadoValorizacion = await this.estadoValorizacionRepository.find({
+      where: { activo: true },
+      order: { id: 'ASC' },
+    });
+    return allEstadoValorizacion;
+  }
+
+  async findAlltipoEstadoRecepcionMineral(): Promise<EstadoRegistro[]> {
+    const allEstadoRecepcionMineral = await this.estadoRegistroRepository.find({
+      where: { activo: true },
+      order: { id: 'ASC' },
+    });
+    return allEstadoRecepcionMineral;
+  }
 }

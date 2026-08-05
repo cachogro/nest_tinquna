@@ -1,46 +1,25 @@
 import { Transform, Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsInt,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional } from 'class-validator';
+import { PaginacionQueryDto } from 'src/common/dto/paginacion-query.dto';
+import { parseBooleanQueryParam } from 'src/common/utils/boolean-query.transform';
 
-export class FiltrosCotizacionDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  limit = 10;
-
-  @IsOptional()
-  @IsString()
-  busqueda?: string;
-
+export class FiltrosCotizacionDto extends PaginacionQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   idMineral?: number;
 
   @IsOptional()
-  @Transform(({ value }) =>
-    value !== undefined ? value === 'true' : undefined,
-  )
+  @Transform(parseBooleanQueryParam)
   @IsBoolean()
   vigente?: boolean;
 
   @IsOptional()
-  @Transform(({ value }) =>
-    value !== undefined ? value === 'true' : undefined,
-  )
+  @Transform(parseBooleanQueryParam)
   @IsBoolean()
   activo?: boolean;
-  
+
+  @IsOptional()
+  @IsIn(['id', 'mineral', 'fechaVigenciaInicial', 'fechaVigenciaFinal'])
+  orderBy = 'id';
 }

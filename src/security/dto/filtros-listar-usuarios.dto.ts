@@ -1,39 +1,23 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional } from 'class-validator';
+import { PaginacionQueryDto } from 'src/common/dto/paginacion-query.dto';
+import { parseBooleanQueryParam } from 'src/common/utils/boolean-query.transform';
 
-export class FiltrosListarUsuariosDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  limit: number = 10;
-
-  @IsOptional()
-  @IsString()
-  busqueda?: string;
-
+export class FiltrosListarUsuariosDto extends PaginacionQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   idRol?: number;
 
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === undefined || value === null) return undefined;
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'string') {
-      const lower = value.toLowerCase();
-      if (lower === 'true') return true;
-      if (lower === 'false') return false;
-    }
-    return undefined;
-  })
+  @Transform(parseBooleanQueryParam)
   @IsBoolean()
   activo?: boolean;
+
+  // 'nombres' ordena por persona.nombres (persona es @OneToOne, no duplica
+  // filas). No se permite ordenar por columnas de `roles` (ManyToMany) para
+  // no reintroducir la ambigüedad que resuelve paginarConJoinMultiple.
+  @IsOptional()
+  @IsIn(['id', 'usuario', 'nombres'])
+  orderBy = 'id';
 }

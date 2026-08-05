@@ -12,24 +12,40 @@ import { PersonaTipo } from '../parametricas/entities/persona-tipo.entity';
 import { PersonaCiService } from './services/persona_ci.service';
 import { PersonaCi } from './entities/persona-ci.entity';
 import { ConfigModule } from '@nestjs/config';
-import { RecepcionMineralDetalle } from './entities/recepcion_mineral/recepcion-mineral-detalle.entity';
+//import { RecepcionMineralDetalle } from './entities/recepcion_mineral/recepcion-mineral-detalle.entity';
 import { RecepcionMineralExcelService } from './reports/recepcion-mineral-excel.service';
 import { CommonModule } from 'src/common/common.module';
-import { ReciboRecepcionMineralService } from './services/recibo-recepcion-mineral.service';
+import { ReciboRecepcionMineralPdfService } from './services/recibo-pdf-recepcion-mineral.service';
+import { ValorizacionCalculoAporte } from './entities/valorizacion/valorizacion-calculo-aporte.entity';
+import { ValorizacionCalculo } from './entities/valorizacion/valorizacion-calculo.entity';
+import { ValorizacionDetalleMineral } from './entities/valorizacion/valorizacion-detalle-mineral.entity';
+import { ValorizacionMineral } from './entities/valorizacion/valorizacion-mineral.entity';
+import { ValorizacionMineralService } from './services/valorizacion-mineral.service';
+import { ValorizacionMineralPdfService } from './services/valorizacion-mineral-pdf.service';
 
 @Module({
-  providers: [ComercioInternoService, PersonaCiService, RecepcionMineralExcelService, ReciboRecepcionMineralService],
+  providers: [
+    ComercioInternoService,
+    PersonaCiService,
+    RecepcionMineralExcelService,
+    ReciboRecepcionMineralPdfService,
+    ValorizacionMineralService,
+    ValorizacionMineralPdfService,
+  ],
   controllers: [ComercioInternoController],
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature(
       [
         // entitis
-        PersonaCi, 
-        RecepcionMineral, 
-        PersonaPersonaTipo, 
-        RecepcionMineralDetalle,
-        
+        PersonaCi,
+        RecepcionMineral,
+        PersonaPersonaTipo,
+       // RecepcionMineralDetalle,
+        ValorizacionCalculoAporte,
+        ValorizacionCalculo,
+        ValorizacionDetalleMineral,
+        ValorizacionMineral,
       ],
       'ci',
     ),

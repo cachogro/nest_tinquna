@@ -21,6 +21,12 @@ import { TipoActorProductivoMinero } from './entities/tipo-actor-productivo-mine
 import { ActorProdMineroService } from './services/actor-productivo-minero.service';
 import { Laboratorio } from './entities/laboratorio.entity';
 import { LaboratorioService } from './services/laboratorio.service';
+import { EntidadAporte } from './entities/entidad-aporte.entity';
+import { TipoEntidadAporte } from './entities/tipo-entidad-aporte.entity';
+import { EntidadAporteService } from './services/entidad-aporte.service';
+import { EstadoValorizacion } from './entities/estado-valorizacion.entity';
+import { TipoCalculoValorizacion } from './entities/tipo-calculo-valorizacion.entity';
+import { MineralService } from './services/mineral.service';
 
 @Module({
   controllers: [ParametricasController],
@@ -30,6 +36,8 @@ import { LaboratorioService } from './services/laboratorio.service';
     CotizacionMineralService,
     ActorProdMineroService,
     LaboratorioService,
+    EntidadAporteService,
+    MineralService,
   ],
   imports: [
     ConfigModule,
@@ -46,7 +54,10 @@ import { LaboratorioService } from './services/laboratorio.service';
         ActorProductivoMinero,
         TipoActorProductivoMinero,
         Laboratorio,
-        
+        EntidadAporte,
+        TipoEntidadAporte,
+        EstadoValorizacion,
+        TipoCalculoValorizacion,
       ],
       'ci',
     ),

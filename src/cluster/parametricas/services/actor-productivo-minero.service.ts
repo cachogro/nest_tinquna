@@ -14,6 +14,7 @@ import { ActoresProductivosMinerosPaginadosDto } from '../dto/ingenios/actor-pro
 import { ActorProductivoMinero } from '../entities/actor-productivo-minero.entity';
 import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
 import { UpdateActorProductivoMineroDto } from '../dto/ingenios/update-actor-productivo-minero.dto';
+import { aplicarOrden } from 'src/common/utils/query-orden.util';
 
 @Injectable()
 export class ActorProdMineroService {
@@ -233,15 +234,18 @@ export class ActorProdMineroService {
     // Ordenamiento
     //---------------------------------------------------------
 
-    const columnasOrden = {
-      id: 'actor.id',
-      nombre: 'actor.nombre',
-      direccion: 'actor.direccion',
-      telefono: 'actor.telefono',
-      tipoActorProductivoMinero: 'tipoActor.nombre',
-    };
-
-    query.orderBy(columnasOrden[orderBy], orderDirection);
+    aplicarOrden(
+      query,
+      {
+        id: 'actor.id',
+        nombre: 'actor.nombre',
+        direccion: 'actor.direccion',
+        telefono: 'actor.telefono',
+        tipoActorProductivoMinero: 'tipoActor.nombre',
+      },
+      orderBy,
+      orderDirection,
+    );
 
     //---------------------------------------------------------
     // Paginación
@@ -262,15 +266,11 @@ export class ActorProdMineroService {
     };
   }
 
-   async findAllActorPrdcMinero(): Promise<ActorProductivoMinero[]> {
+  async findAllActorPrdcMinero(): Promise<ActorProductivoMinero[]> {
     const allActorMiinero = await this.actorProdMineroRepository.find({
       where: { activo: true },
       order: { id: 'ASC' },
     });
     return allActorMiinero;
   }
-
-
-
-
 }

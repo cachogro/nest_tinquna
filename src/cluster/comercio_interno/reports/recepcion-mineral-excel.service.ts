@@ -26,7 +26,7 @@ export class RecepcionMineralExcelService {
     // Título
     //-------------------------------------------------
 
-    this.excelService.addTitle(worksheet, 'REPORTE DE RECEPCIÓN DE MINERAL', 8);
+    this.excelService.addTitle(worksheet, 'REPORTE DE RECEPCIÓN DE MINERAL', 9);
 
     //-------------------------------------------------
     // Información
@@ -45,14 +45,15 @@ export class RecepcionMineralExcelService {
     this.excelService.addHeader(
       worksheet,
       [
+        'ID',
         'Código',
-        'Fecha',
-        'Documento',
         'Proveedor',
-        'Codificación',
+        'N° Sacos',
+        'Peso Bruto (Kg)',
+        'Anticipo',
+        'Fecha y Hora',
+        'Observación',
         'Estado',
-        'Sacos',
-        'Humedad',
       ],
       filaInicio,
     );
@@ -62,33 +63,76 @@ export class RecepcionMineralExcelService {
     //-------------------------------------------------
 
     registros.forEach((registro) => {
-      this.excelService.addRow(worksheet, [
-        registro.codigoOperacion,
+      this.excelService.addRow(
+        worksheet,
+        [
+          registro.id,
 
-        registro.fechaRecepcion,
+          registro.codigoOperacion,
 
-        registro.persona?.numeroDocumento,
+          `${registro.persona?.nombres ?? ''} ${
+            registro.persona?.apellidoPaterno ?? ''
+          } ${registro.persona?.apellidoMaterno ?? ''}`,
 
-        `${registro.persona?.nombres ?? ''} ${
-          registro.persona?.apellidoPaterno ?? ''
-        } ${registro.persona?.apellidoMaterno ?? ''}`,
+          registro.numeroSacos,
 
-        registro.codificacion?.codigo,
+          registro.balanzaL,
 
-        registro.estado?.nombre,
+          this.formatEntero(registro.anticipo),
 
-        registro.numeroSacos,
+          this.formatFechaHora(registro.fechaRecepcion),
 
-        registro.humedad,
-      ]);
+          registro.observaciones,
+
+          registro.estado?.nombre,
+        ],
+        [
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'right',
+          'right',
+          undefined,
+          undefined,
+          undefined,
+        ],
+      );
     });
 
     //-------------------------------------------------
     // Ajustar columnas
     //-------------------------------------------------
 
-    this.excelService.autoFitColumns(worksheet);
+    this.excelService.autoFitColumns(worksheet, 12, {
+      1: 6,
+      2: 10,
+    });
 
     return this.excelService.generate(workbook);
+  }
+
+  private formatFechaHora(fecha?: string): string {
+    if (!fecha) {
+      return '';
+    }
+
+    const match = fecha.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+
+    if (!match) {
+      return fecha;
+    }
+
+    const [, anio, mes, dia, horas, minutos] = match;
+
+    return `${horas}:${minutos} - ${dia}-${mes}-${anio}`;
+  }
+
+  private formatEntero(valor?: number | string): number | null {
+    if (valor === null || valor === undefined) {
+      return null;
+    }
+
+    return Math.round(Number(valor));
   }
 }

@@ -54,13 +54,13 @@ export class CotizacionMineral extends Auditoria {
 
   @Column({
     name: 'fecha_vigencia_inicial',
-    type: 'date',
+    type: 'timestamptz',
   })
   fechaVigenciaInicial: Date;
 
   @Column({
     name: 'fecha_vigencia_final',
-    type: 'date',
+    type: 'timestamptz',
   })
   fechaVigenciaFinal: Date;
 

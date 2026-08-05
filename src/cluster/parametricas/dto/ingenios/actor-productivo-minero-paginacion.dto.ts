@@ -1,21 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { PaginadoResponseDto } from 'src/common/dto/paginado-response.dto';
 import { ActorProductivoMinero } from '../../entities/actor-productivo-minero.entity';
 
-export class ActoresProductivosMinerosPaginadosDto {
+export class ActoresProductivosMinerosPaginadosDto extends PaginadoResponseDto<ActorProductivoMinero> {
   @ApiProperty({
     type: () => [ActorProductivoMinero],
   })
-  data: ActorProductivoMinero[];
-
-  @ApiProperty()
-  total: number;
-
-  @ApiProperty()
-  page: number;
-
-  @ApiProperty()
-  limit: number;
-
-  @ApiProperty()
-  totalPages: number;
+  declare data: ActorProductivoMinero[];
 }

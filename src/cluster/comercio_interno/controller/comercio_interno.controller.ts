@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiBody,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -46,14 +47,24 @@ import { FiltrosRegistroMineralDto } from '../dto/recepcion_mineral/filtros-regi
 import { CreateRecepcionMineralDto } from '../dto/recepcion_mineral/create-recepcion-mineral.dto';
 import { RegistrosMineralPaginadosDto } from '../dto/recepcion_mineral/registro-mineral-paginado.dto';
 import { RecepcionMineralExcelService } from '../reports/recepcion-mineral-excel.service';
+import { ValorizacionMineralService } from '../services/valorizacion-mineral.service';
+import { ValorizacionMineralPdfService } from '../services/valorizacion-mineral-pdf.service';
+import { CreateValorizacionMineralDto } from '../dto/valorizacion/create-valorizacion-mineral.dto';
+import { ValorizacionMineral } from '../entities/valorizacion/valorizacion-mineral.entity';
+import { UpdateValorizacionMineralDto } from '../dto/valorizacion/update-valorizacion-mineral.dto';
+import { FiltrosValorizacionMineralDto } from '../dto/valorizacion/filtros-valorizacion-mineral.dto';
+import { ValorizacionesMineralPaginadasDto } from '../dto/valorizacion/valorizacion-mineral-paginado.dto';
 
 @ApiTags('Registro de Operaciones')
 @Controller('comercio_interno')
+@ApiBearerAuth()
 export class ComercioInternoController {
   constructor(
     private readonly comercioInternoService: ComercioInternoService,
     private readonly personaCiService: PersonaCiService,
     private readonly recepcionMineralExcelService: RecepcionMineralExcelService,
+    private readonly valorizacionMineralService: ValorizacionMineralService,
+    private readonly valorizacionMineralPdfService: ValorizacionMineralPdfService,
   ) {}
 
   //--------------------------- filtro personas-------------------
@@ -106,6 +117,18 @@ export class ComercioInternoController {
     type: Boolean,
     example: true,
     description: 'Filtra por estado del registro.',
+  })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: ['id', 'nombres', 'numeroDocumento'],
+    description: 'Columna de ordenamiento (default: id).',
+  })
+  @ApiQuery({
+    name: 'orderDirection',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    description: 'Dirección de ordenamiento (default: DESC).',
   })
   @ApiOkResponse({
     description: 'Listado paginado obtenido correctamente.',
@@ -166,16 +189,45 @@ export class ComercioInternoController {
 
   @Patch('persona_ci/cambiar_estado_persona/:id')
   @Auth()
-  @ApiResponse({
-    status: 201,
-    description: 'Servicio para cambiar de estado de una persona',
+  @ApiOperation({
+    summary: 'Cambiar estado de una persona',
+    description:
+      'Permite activar o desactivar una persona mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la persona.',
+    example: '1',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado de la persona.',
+  })
+  @ApiOkResponse({
+    description: 'Estado de la persona actualizado correctamente.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la persona solicitada.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
   })
   async changeStateUser(
     @Param('id') id: string,
     @Body('activo', ParseBoolPipe) activo: boolean,
     @GetUser() user: Usuario,
   ) {
-    console.log('entraaaaaaaaaaa  id', id);
     return this.personaCiService.cambiarEstadoUser(id, activo, user);
   }
 
@@ -286,15 +338,9 @@ export class ComercioInternoController {
   ): Promise<RecepcionMineral> {
     console.log('data recibida', body);
     if ('id' in body && body.id) {
-      return await this.comercioInternoService.update(
-        body as UpdateRecepcionMineralDto,
-        user,
-      );
+      return await this.comercioInternoService.update(body, user);
     }
-    return await this.comercioInternoService.create(
-      body as CreateRecepcionMineralDto,
-      user,
-    );
+    return await this.comercioInternoService.create(body, user);
   }
 
   @Patch('recepcion_mineral/cambiar_estado/:id')
@@ -309,10 +355,18 @@ export class ComercioInternoController {
     description: 'Identificador de la recepción.',
     example: '25',
   })
-  @ApiParam({
-    name: 'idEstado',
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        idEstado: {
+          type: 'number',
+          example: 4,
+        },
+      },
+      required: ['idEstado'],
+    },
     description: 'Nuevo estado de la recepción.',
-    example: 4,
   })
   @ApiCreatedResponse({
     description: 'Estado actualizado correctamente.',
@@ -425,6 +479,52 @@ export class ComercioInternoController {
 
   @Get('recepcion_mineral/excel')
   @Auth()
+  @ApiOperation({
+    summary: 'Exportar recepciones de mineral a Excel',
+    description:
+      'Genera un archivo .xlsx con los registros de recepción de mineral que cumplan los mismos filtros que el listado paginado (sin paginar).',
+  })
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'codigoOperacion',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'numeroDocumento',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'idEstado',
+    required: false,
+    type: Number,
+  })
+  @ApiQuery({
+    name: 'fechaDesde',
+    required: false,
+    type: String,
+    example: '2026-07-01',
+  })
+  @ApiQuery({
+    name: 'fechaHasta',
+    required: false,
+    type: String,
+    example: '2026-07-31',
+  })
+  @ApiOkResponse({
+    description: 'Archivo .xlsx generado correctamente.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async exportarExcel(
     @Query() filtros: FiltrosRegistroMineralDto,
     @Res() res: Response,
@@ -444,17 +544,297 @@ export class ComercioInternoController {
   }
 
   @Get('recepcion_mineral/busqueda/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener una recepción de mineral por id',
+    description:
+      'Obtiene los datos de una recepción de mineral a partir de su id.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la recepción.',
+    example: '25',
+  })
+  @ApiOkResponse({
+    description: 'Recepción obtenida correctamente.',
+    type: RecepcionMineral,
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la recepción solicitada.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async findRegistroById(@Param('id') id: string): Promise<RecepcionMineral> {
     return await this.comercioInternoService.buscarregistroById(id);
   }
 
   @Get('recepcion_mineral/pdf/:id')
-  async descargarPdf(@Param('id') id: string, @Res() res: Response) {
-    const pdf = await this.comercioInternoService.generarReciboPdf(id);
+  @Auth()
+  @ApiOperation({
+    summary: 'Generar el PDF del recibo de una recepción de mineral',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la recepción.',
+    example: '25',
+  })
+  @ApiQuery({
+    name: 'formato',
+    required: false,
+    enum: ['ticket', 'carta'],
+    description: 'Formato del recibo (default: ticket).',
+  })
+  @ApiOkResponse({
+    description: 'PDF generado correctamente.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la recepción solicitada.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async descargarPdf(
+    @Param('id') id: string,
+    @Query('formato') formato: 'ticket' | 'carta' = 'ticket',
+    @Res() res: Response,
+  ) {
+    const pdf = await this.comercioInternoService.generarReciboPdf(id, formato);
 
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename=Recibo-${id}.pdf`,
+      'Content-Length': pdf.length,
+    });
+
+    res.end(pdf);
+  }
+
+  //--------------------------- valorización de mineral -------------------
+
+  @Post('valorizacion_mineral')
+  @Auth()
+  @ApiOperation({
+    summary: 'Crear el borrador de una valorización de mineral',
+    description:
+      'Crea el registro inicial (estado BORRADOR) de una valorización a partir de una recepción ' +
+      'de mineral en estado APROBADO (2) o REMUESTREO (6). En esta etapa solo se registra la relación ' +
+      'con la recepción; el resto de la información (laboratorio, pesos, económicos, detalles, aportes) ' +
+      'se completa después con PATCH /comercio_interno/valorizacion_mineral/:id, pudiendo llamarse ' +
+      'varias veces según se vaya teniendo la información.',
+  })
+  @ApiBody({
+    description: 'Id de la recepción de mineral a valorizar.',
+    type: CreateValorizacionMineralDto,
+  })
+  @ApiCreatedResponse({
+    description: 'Borrador de valorización creado correctamente.',
+    type: ValorizacionMineral,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'La recepción no está en un estado válido para valorizarse, o ya tiene una valorización registrada.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la recepción de mineral.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async crearValorizacionMineral(
+    @Body() body: CreateValorizacionMineralDto,
+    @GetUser() user: Usuario,
+  ): Promise<ValorizacionMineral> {
+    return await this.valorizacionMineralService.crear(body, user);
+  }
+
+  @Patch('valorizacion_mineral/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Actualizar parcialmente una valorización de mineral',
+    description:
+      'Actualiza únicamente los campos enviados (laboratorio, pesos, económicos, detalles, aportes, ' +
+      'o el estado de la valorización). Puede llamarse varias veces mientras la recepción asociada ' +
+      'permanezca en estado APROBADO (2) o REMUESTREO (6). Al enviar detalles o aportes, se da de baja ' +
+      'lógica lo anterior y se registra lo nuevo. Al pasar idEstadoValorizacion a VALORIZADO (3), se valida ' +
+      'que la información mínima esté completa y la recepción de mineral pasa a TRANZADO (5), quedando ' +
+      'la valorización bloqueada para futuras modificaciones.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la valorización.',
+    example: '12',
+  })
+  @ApiBody({
+    description: 'Subconjunto de campos a actualizar.',
+    type: UpdateValorizacionMineralDto,
+  })
+  @ApiOkResponse({
+    description: 'Valorización actualizada correctamente.',
+    type: ValorizacionMineral,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'La valorización ya no puede modificarse, faltan datos para pasar a VALORIZADO, o el detalle/aportes enviados son inválidos.',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'No se encontró la valorización, el laboratorio, el estado de valorización o alguna entidad de aporte.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async actualizarValorizacionMineral(
+    @Param('id') id: string,
+    @Body() body: UpdateValorizacionMineralDto,
+    @GetUser() user: Usuario,
+  ): Promise<ValorizacionMineral> {
+    return await this.valorizacionMineralService.actualizar(id, body, user);
+  }
+
+  @Get('valorizacion_mineral/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener una valorización de mineral por id',
+  })
+  @ApiOkResponse({
+    description: 'Valorización obtenida correctamente.',
+    type: ValorizacionMineral,
+  })
+  @ApiNotFoundResponse({
+    description: 'No existe la valorización.',
+  })
+  async buscarValorizacionMineral(
+    @Param('id') id: string,
+  ): Promise<ValorizacionMineral> {
+    return await this.valorizacionMineralService.buscarPorId(id);
+  }
+
+  //------------------------------FILTROS VALORIZACIÓN-----------------------------
+
+  @Get('valorizacion_mineral')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listado paginado de valorizaciones de mineral',
+    description:
+      'Obtiene un listado paginado de valorizaciones permitiendo filtrar por proveedor, código de operación, documento, estado de valorización y rango de fechas.',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+  })
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'codigoOperacion',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'numeroDocumento',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({
+    name: 'idEstadoValorizacion',
+    required: false,
+    type: Number,
+  })
+  @ApiQuery({
+    name: 'fechaDesde',
+    required: false,
+    type: String,
+    example: '2026-07-01',
+  })
+  @ApiQuery({
+    name: 'fechaHasta',
+    required: false,
+    type: String,
+    example: '2026-07-31',
+  })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: [
+      'id',
+      'codigoOperacion',
+      'fechaValorizacion',
+      'numeroDocumento',
+      'estado',
+    ],
+  })
+  @ApiQuery({
+    name: 'orderDirection',
+    required: false,
+    enum: ['ASC', 'DESC'],
+  })
+  @ApiOkResponse({
+    description: 'Listado paginado obtenido correctamente.',
+    type: ValorizacionesMineralPaginadasDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllValorizacionMineral(
+    @Query() filtros: FiltrosValorizacionMineralDto,
+  ) {
+    return await this.valorizacionMineralService.findAll(filtros);
+  }
+
+  @Get('valorizacion_mineral/pdf/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Generar el PDF de una valorización de mineral',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la valorización.',
+    example: '12',
+  })
+  @ApiOkResponse({
+    description: 'PDF generado correctamente.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No existe la valorización.',
+  })
+  async descargarValorizacionPdf(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const valorizacion = await this.valorizacionMineralService.buscarPorId(id);
+
+    const pdf =
+      await this.valorizacionMineralPdfService.generarPdf(valorizacion);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename=Valorizacion-${id}.pdf`,
       'Content-Length': pdf.length,
     });
 

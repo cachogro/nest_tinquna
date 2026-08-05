@@ -161,10 +161,11 @@ export class ExcelService {
   addRow(
     worksheet: ExcelJS.Worksheet,
     values: any[],
+    alignments?: ('left' | 'center' | 'right' | undefined)[],
   ): void {
     const row = worksheet.addRow(values);
 
-    row.eachCell((cell) => {
+    row.eachCell((cell, colNumber) => {
       cell.border = {
         top: {
           style: 'thin',
@@ -182,6 +183,7 @@ export class ExcelService {
 
       cell.alignment = {
         vertical: 'middle',
+        horizontal: alignments?.[colNumber - 1],
       };
     });
   }
@@ -192,13 +194,20 @@ export class ExcelService {
   autoFitColumns(
     worksheet: ExcelJS.Worksheet,
     minWidth = 12,
+    columnMinWidths?: Record<number, number>,
   ): void {
-    worksheet.columns.forEach((column) => {
-      let max = minWidth;
+    worksheet.columns.forEach((column, index) => {
+      const columnNumber = index + 1;
+
+      let max = columnMinWidths?.[columnNumber] ?? minWidth;
 
       column.eachCell({
         includeEmpty: true,
       }, (cell) => {
+        if (cell.isMerged) {
+          return;
+        }
+
         const value = cell.value
           ? cell.value.toString()
           : '';

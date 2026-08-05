@@ -25,10 +25,11 @@ import { UpdateRecepcionMineralDto } from '../dto/recepcion_mineral/update-recep
 import { EstadoRecepcion } from 'src/cluster/enum/estado-recepcion.enum';
 import { FiltrosRegistroMineralDto } from '../dto/recepcion_mineral/filtros-registro-mineral.dto';
 import { CreateRecepcionMineralDetalleDto } from '../dto/recepcion_mineral/create-recepcion-mineral-detalle.dto';
-import { RecepcionMineralDetalle } from '../entities/recepcion_mineral/recepcion-mineral-detalle.entity';
+//import { RecepcionMineralDetalle } from '../entities/recepcion_mineral/recepcion-mineral-detalle.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { RegistrosMineralPaginadosDto } from '../dto/recepcion_mineral/registro-mineral-paginado.dto';
-import { ReciboRecepcionMineralService } from './recibo-recepcion-mineral.service';
+import { ReciboRecepcionMineralPdfService } from './recibo-pdf-recepcion-mineral.service';
+import { aplicarOrden } from 'src/common/utils/query-orden.util';
 
 @Injectable()
 export class ComercioInternoService {
@@ -51,7 +52,7 @@ export class ComercioInternoService {
     @InjectRepository(EstadoRegistro, 'ci')
     private readonly estadoRepository: Repository<EstadoRegistro>,
 
-     private readonly reciboPdfService: ReciboRecepcionMineralService,
+    private readonly reciboPdfService: ReciboRecepcionMineralPdfService,
 
     @InjectDataSource('ci')
     private readonly dataSource: DataSource,
@@ -131,42 +132,42 @@ export class ComercioInternoService {
     }
   }
 
-  private async guardarDetalleRecepcion(
-    queryRunner: QueryRunner,
-    idRecepcion: string,
-    detalles: CreateRecepcionMineralDetalleDto[],
-    user: Usuario,
-  ): Promise<void> {
-    const registros = detalles.map((detalle) =>
-      queryRunner.manager.create(RecepcionMineralDetalle, {
-        idRecepcionMineral: idRecepcion,
-        idMineral: detalle.idMineral.toString(),
-        ley: detalle.ley,
-        leyUnidad: detalle.leyUnidad,
-        usuarioRegistro: user.usuario,
-      }),
-    );
+  // private async guardarDetalleRecepcion(
+  //   queryRunner: QueryRunner,
+  //   idRecepcion: string,
+  //   detalles: CreateRecepcionMineralDetalleDto[],
+  //   user: Usuario,
+  // ): Promise<void> {
+  //   const registros = detalles.map((detalle) =>
+  //     queryRunner.manager.create(RecepcionMineralDetalle, {
+  //       idRecepcionMineral: idRecepcion,
+  //       idMineral: detalle.idMineral.toString(),
+  //       ley: detalle.ley,
+  //       leyUnidad: detalle.leyUnidad,
+  //       usuarioRegistro: user.usuario,
+  //     }),
+  //   );
 
-    await queryRunner.manager.save(registros);
-  }
+  //   await queryRunner.manager.save(registros);
+  // }
 
-  private async inactivarDetalleRecepcion(
-    queryRunner: QueryRunner,
-    idRecepcion: string,
-    user: Usuario,
-  ): Promise<void> {
-    await queryRunner.manager.update(
-      RecepcionMineralDetalle,
-      {
-        idRecepcionMineral: idRecepcion,
-        activo: true,
-      },
-      {
-        activo: false,
-        usuarioUltimaModificacion: user.usuario,
-      },
-    );
-  }
+  // private async inactivarDetalleRecepcion(
+  //   queryRunner: QueryRunner,
+  //   idRecepcion: string,
+  //   user: Usuario,
+  // ): Promise<void> {
+  //   await queryRunner.manager.update(
+  //     RecepcionMineralDetalle,
+  //     {
+  //       idRecepcionMineral: idRecepcion,
+  //       activo: true,
+  //     },
+  //     {
+  //       activo: false,
+  //       usuarioUltimaModificacion: user.usuario,
+  //     },
+  //   );
+  // }
 
   private async obtenerRecepcionCompleta(
     id: string,
@@ -176,13 +177,13 @@ export class ComercioInternoService {
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
       .leftJoinAndSelect('recepcion.estado', 'estado')
-      .leftJoinAndSelect(
-        'recepcion.detalles',
-        'detalle',
-        'detalle.activo = :activo',
-        { activo: true },
-      )
-      .leftJoinAndSelect('detalle.mineral', 'mineral')
+      // .leftJoinAndSelect(
+      //   'recepcion.detalles',
+      //   'detalle',
+      //   'detalle.activo = :activo',
+      //   { activo: true },
+      // )
+      // .leftJoinAndSelect('detalle.mineral', 'mineral')
       .where('recepcion.id = :id', { id })
       .getOne();
   }
@@ -596,15 +597,10 @@ export class ComercioInternoService {
     filtros: FiltrosRegistroMineralDto,
   ): Promise<RegistrosMineralPaginadosDto> {
     const { page = 1, limit = 10 } = filtros;
-
     const query = this.buildRecepcionMineralQuery(filtros);
-
     query.skip((page - 1) * limit);
-
     query.take(limit);
-
     const [data, total] = await query.getManyAndCount();
-
     return {
       data,
       total,
@@ -635,26 +631,22 @@ export class ComercioInternoService {
       orderBy = 'fechaRecepcion',
       orderDirection = 'DESC',
     } = filtros;
-
     const query = this.recepcionRepository
       .createQueryBuilder('recepcion')
-
       .leftJoinAndSelect('recepcion.persona', 'persona')
-
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
+      .leftJoinAndSelect('recepcion.estado', 'estado');
 
-      .leftJoinAndSelect('recepcion.estado', 'estado')
+    // .leftJoinAndSelect(
+    //   'recepcion.detalles',
+    //   'detalle',
+    //   'detalle.activo = :activoDetalle',
+    //   {
+    //     activoDetalle: true,
+    //   },
+    // )
 
-      .leftJoinAndSelect(
-        'recepcion.detalles',
-        'detalle',
-        'detalle.activo = :activoDetalle',
-        {
-          activoDetalle: true,
-        },
-      )
-
-      .leftJoinAndSelect('detalle.mineral', 'mineral');
+    //.leftJoinAndSelect('detalle.mineral', 'mineral');
 
     //---------------------------------------------------------
     // Búsqueda
@@ -732,47 +724,45 @@ export class ComercioInternoService {
     // Ordenamiento
     //---------------------------------------------------------
 
-    const columnasOrden = {
-      id: 'recepcion.id',
-      codigoOperacion: 'recepcion.codigoOperacion',
-      fechaRecepcion: 'recepcion.fechaRecepcion',
-      numeroDocumento: 'persona.numeroDocumento',
-      estado: 'estado.nombre',
-    };
-
-    query.orderBy(columnasOrden[orderBy], orderDirection);
+    aplicarOrden(
+      query,
+      {
+        id: 'recepcion.id',
+        codigoOperacion: 'recepcion.codigoOperacion',
+        fechaRecepcion: 'recepcion.fechaRecepcion',
+        numeroDocumento: 'persona.numeroDocumento',
+        estado: 'estado.nombre',
+      },
+      orderBy,
+      orderDirection,
+    );
 
     return query;
   }
 
-
-  async buscarregistroById(
-    id: string,
-  ): Promise<RecepcionMineral> {
+  async buscarregistroById(id: string): Promise<RecepcionMineral> {
     return await this.recepcionRepository
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
       .leftJoinAndSelect('recepcion.estado', 'estado')
-     // .leftJoinAndSelect('recepcion.estado', 'estado')
+      // .leftJoinAndSelect('recepcion.estado', 'estado')
       .where('recepcion.id = :id', { id })
       .getOne();
   }
 
-
-
   async generarReciboPdf(
-  id: string,
-): Promise<Buffer> {
+    id: string,
+    formato: 'ticket' | 'carta' = 'ticket',
+  ): Promise<Buffer> {
+    const recepcion = await this.buscarregistroById(id);
 
-  const recepcion = await this.buscarregistroById(id);
+    if (!recepcion) {
+      throw new NotFoundException('La recepción no existe.');
+    }
 
-  if (!recepcion) {
-    throw new NotFoundException(
-      'La recepción no existe.',
-    );
+    return formato === 'carta'
+      ? this.reciboPdfService.generarPdfhojaCarta(recepcion)
+      : this.reciboPdfService.generarPdftikeadora(recepcion);
   }
-
-  return this.reciboPdfService.generarPdf(recepcion);
-}
 }

@@ -10,7 +10,8 @@ import {
 import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
 import { EstadoRegistro } from 'src/cluster/parametricas/entities/estado-registro.entity';
 import { PersonaCi } from '../persona-ci.entity';
-import { RecepcionMineralDetalle } from './recepcion-mineral-detalle.entity';
+//import { RecepcionMineralDetalle } from './recepcion-mineral-detalle.entity';
+import { ValorizacionMineral } from '../valorizacion/valorizacion-mineral.entity';
 
 @Entity({
   name: 'recepcion_mineral',
@@ -156,14 +157,23 @@ export class RecepcionMineral extends Auditoria {
   })
   observaciones?: string;
 
+  // @OneToMany(
+  //   () => RecepcionMineralDetalle,
+  //   (detalle) => detalle.recepcionMineral,
+  //   {
+  //     eager: false,
+  //   },
+  // )
+  // detalles?: RecepcionMineralDetalle[];
+
   @OneToMany(
-    () => RecepcionMineralDetalle,
-    (detalle) => detalle.recepcionMineral,
+    () => ValorizacionMineral,
+    (valorizacion) => valorizacion.recepcionMineral,
     {
       eager: false,
     },
   )
-  detalles?: RecepcionMineralDetalle[];
+  valorizaciones?: ValorizacionMineral[];
 
   // ============================
   // Estado
@@ -176,6 +186,9 @@ export class RecepcionMineral extends Auditoria {
   })
   idEstado: number;
 
+
+
+  
   @ManyToOne(() => EstadoRegistro, {
     nullable: false,
     onDelete: 'RESTRICT',

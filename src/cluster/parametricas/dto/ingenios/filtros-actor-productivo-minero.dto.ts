@@ -1,39 +1,16 @@
 import { Transform, Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional } from 'class-validator';
+import { PaginacionQueryDto } from 'src/common/dto/paginacion-query.dto';
+import { parseBooleanQueryParam } from 'src/common/utils/boolean-query.transform';
 
-export class FiltrosActorProductivoMineroDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  limit = 10;
-
-  @IsOptional()
-  @IsString()
-  busqueda?: string;
-
+export class FiltrosActorProductivoMineroDto extends PaginacionQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   idTipoActorProductivoMinero?: number;
 
   @IsOptional()
-  @Transform(({ value }) =>
-    value !== undefined ? value === 'true' : undefined,
-  )
+  @Transform(parseBooleanQueryParam)
   @IsBoolean()
   activo?: boolean;
 
@@ -41,7 +18,8 @@ export class FiltrosActorProductivoMineroDto {
   @IsIn(['id', 'nombre', 'direccion', 'telefono', 'tipoActorProductivoMinero'])
   orderBy = 'nombre';
 
-  @IsOptional()
-  @IsIn(['ASC', 'DESC'])
+  // Override del default heredado de PaginacionQueryDto ('DESC'): un catálogo
+  // de actores productivos se lee mejor alfabéticamente de forma ascendente.
+  // La validación @IsIn(['ASC','DESC']) sigue aplicando por herencia.
   orderDirection: 'ASC' | 'DESC' = 'ASC';
 }

@@ -1,23 +1,9 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString } from 'class-validator';
+import { PaginacionQueryDto } from 'src/common/dto/paginacion-query.dto';
+import { parseBooleanQueryParam } from 'src/common/utils/boolean-query.transform';
 
-export class FiltrosPersonaDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  limit = 10;
-
-  @IsOptional()
-  @IsString()
-  busqueda?: string;
-
+export class FiltrosPersonaDto extends PaginacionQueryDto {
   @IsOptional()
   @IsString()
   numeroDocumento?: string;
@@ -28,6 +14,13 @@ export class FiltrosPersonaDto {
   idTipoPersona?: number;
 
   @IsOptional()
-  @IsString() // ✅ Recibimos como string
-  activo?: string;
+  @Transform(parseBooleanQueryParam)
+  @IsBoolean()
+  activo?: boolean;
+
+  // No se permite ordenar por columnas de `personaTipos` (OneToMany): ver
+  // paginarConJoinMultiple, que evita que ese join duplique filas.
+  @IsOptional()
+  @IsIn(['id', 'nombres', 'numeroDocumento'])
+  orderBy = 'id';
 }

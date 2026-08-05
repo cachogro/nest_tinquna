@@ -9,7 +9,7 @@ import {
 import * as bcrypt from 'bcrypt';
 
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Usuario } from '../entities/usuario.entity';
 import { Rol } from '../entities/rol.entity';
 import { UsuarioRol } from '../entities/usuario-rol.entity';
@@ -22,6 +22,8 @@ import { PersonaService } from './persona.service';
 import { RolResponseDto } from '../dto/roles-response.dto';
 import { FiltrosListarUsuariosDto } from '../dto/filtros-listar-usuarios.dto';
 import { UsuariosPaginadosDto } from '../dto/usuario/usuario-paginacion.dto';
+import { aplicarOrden } from 'src/common/utils/query-orden.util';
+import { paginarConJoinMultiple } from 'src/common/utils/paginar-relacion-multiple.util';
 
 interface FiltrosListarUsuarios {
   page: number;
@@ -50,6 +52,23 @@ export class UsuarioService {
     private dataSource: DataSource,
   ) {}
 
+  // ============================
+  // Alta y edición de usuarios
+  // ============================
+
+  /**
+   * Crea un usuario junto con su persona asociada y le asigna un único rol inicial.
+   *
+   * Valida en orden: usuario único, persona no duplicada (documento y correo, solo
+   * contra personas activas), y existencia del rol. La contraseña se hashea con
+   * bcrypt (salt 10) antes de persistirse; nunca se guarda en texto plano ni se
+   * retorna en la respuesta. Persona, Usuario y UsuarioRol se crean dentro de una
+   * misma transacción para evitar usuarios huérfanos sin persona o sin rol.
+   *
+   * NOTA: la existencia del rol se valida por id únicamente, sin filtrar por
+   * `activo`; a diferencia de las validaciones de persona, hoy es posible asignar
+   * un rol inactivo.
+   */
   async create(createUsuarioDto: CreateUsuarioDto, user: Usuario) {
     const {
       usuario,
@@ -162,6 +181,29 @@ export class UsuarioService {
     }
   }
 
+  /**
+   * Actualiza parcialmente un usuario: solo se tocan las columnas cuyo campo
+   * llegó en el DTO (patrón "sparse update"), por lo que enviar únicamente
+   * `contrasena` reemplaza solamente el hash de la clave y deja usuario, rol y
+   * persona intactos; lo mismo aplica para `usuario`, `idRol` y `persona` de
+   * forma independiente entre sí.
+   *
+   * Los duplicados de nombre de usuario, documento y correo se validan
+   * excluyendo al propio usuario/persona que se está editando. Persona (si
+   * llega), Usuario y la relación UsuarioRol (si llega `idRol`) se actualizan
+   * dentro de una misma transacción.
+   *
+   * INCONSISTENCIAS DETECTADAS (no corregidas aquí, documentadas para seguimiento):
+   * - `cambioClave` (forzar cambio de contraseña en el próximo login) no se toca
+   *   al resetear la contraseña desde este método, a diferencia de
+   *   {@link cambiarPassword}, que sí la limpia. No hay una regla única de cuándo
+   *   debería quedar en true/false.
+   * - `UpdateUsuarioDto` no es un `PartialType(CreateUsuarioDto)`: le faltan los
+   *   `MinLength`/`MaxLength` que sí tiene el create para `usuario` y `contrasena`,
+   *   por lo que aquí pasa la validación un usuario o contraseña de 1 carácter.
+   * - Igual que en `create`, el nuevo rol se busca solo por id, sin filtrar
+   *   `activo: true`.
+   */
   async update(
     idUsuario: string,
     updateUsuarioDto: UpdateUsuarioDto,
@@ -323,6 +365,10 @@ export class UsuarioService {
     }
   }
 
+  // ============================
+  // Consultas
+  // ============================
+
   async findAll(): Promise<Usuario[]> {
     return await this.usuarioRepository.find({
       where: { activo: true },
@@ -347,6 +393,14 @@ export class UsuarioService {
     return usuario;
   }
 
+  /**
+   * Resetea la contraseña de un usuario y limpia el flag `cambioClave`
+   * (deja de forzarse el cambio de contraseña en el próximo login).
+   *
+   * NOTA: no está expuesto por ningún controlador actualmente (código muerto);
+   * la única vía activa hoy para cambiar una contraseña es `update()`, que a
+   * diferencia de este método no toca `cambioClave`.
+   */
   async cambiarPassword(
     id: string,
     contrasenaNueva: string,
@@ -381,26 +435,41 @@ export class UsuarioService {
   }
 
   //----------------------PAGINACION Y FILTROS----------------------
+  /**
+   * Listado paginado de usuarios, con orden configurable (`orderBy`/
+   * `orderDirection`, default: id DESC = último registrado primero).
+   *
+   * `roles` es una relación *-a-muchos: hacer `leftJoinAndSelect` a `roles`
+   * antes del `LIMIT/OFFSET` duplicaría la fila de cualquier usuario con más
+   * de un rol asignado, descuadrando la página y el orden. Por eso se usa
+   * `paginarConJoinMultiple`, que solo usa el join a `roles`/`persona` para
+   * filtrar y luego hidrata las entidades completas por id (persona y roles
+   * ya son `eager` en `Usuario`).
+   */
   async listarPaginado(
     filtros: FiltrosListarUsuariosDto,
   ): Promise<UsuariosPaginadosDto> {
-    const { page = 1, limit = 10, busqueda, idRol, activo } = filtros;
+    const {
+      page = 1,
+      limit = 10,
+      busqueda,
+      idRol,
+      activo,
+      orderBy = 'id',
+      orderDirection = 'DESC',
+    } = filtros;
 
-    const query = this.usuarioRepository
+    const baseQuery = this.usuarioRepository
       .createQueryBuilder('usuario')
-
-      .distinct(true)
-
-      .leftJoinAndSelect('usuario.persona', 'persona')
-
-      .leftJoinAndSelect('usuario.roles', 'rol');
+      .leftJoin('usuario.persona', 'persona')
+      .leftJoin('usuario.roles', 'rol');
 
     //---------------------------------------------------------
     // Activo
     //---------------------------------------------------------
 
     if (activo !== undefined) {
-      query.andWhere('usuario.activo = :activo', { activo });
+      baseQuery.andWhere('usuario.activo = :activo', { activo });
     }
 
     //---------------------------------------------------------
@@ -408,7 +477,7 @@ export class UsuarioService {
     //---------------------------------------------------------
 
     if (idRol) {
-      query.andWhere('rol.id = :idRol', { idRol });
+      baseQuery.andWhere('rol.id = :idRol', { idRol });
     }
 
     //---------------------------------------------------------
@@ -416,7 +485,7 @@ export class UsuarioService {
     //---------------------------------------------------------
 
     if (busqueda) {
-      query.andWhere(
+      baseQuery.andWhere(
         `(
           usuario.usuario ILIKE :busqueda
           OR persona.nombres ILIKE :busqueda
@@ -431,20 +500,31 @@ export class UsuarioService {
     }
 
     //---------------------------------------------------------
-    // Ordenamiento
+    // Ordenamiento (solo columnas de usuario/persona, ambas *-a-uno)
     //---------------------------------------------------------
 
-    query.orderBy('usuario.id', 'DESC');
+    aplicarOrden(
+      baseQuery,
+      {
+        id: 'usuario.id',
+        usuario: 'usuario.usuario',
+        nombres: 'persona.nombres',
+      },
+      orderBy,
+      orderDirection,
+    );
 
     //---------------------------------------------------------
-    // Paginación
+    // Paginación segura (evita duplicados por el join a roles)
     //---------------------------------------------------------
 
-    query.skip((page - 1) * limit);
-
-    query.take(limit);
-
-    const [usuarios, total] = await query.getManyAndCount();
+    const { data: usuarios, total } = await paginarConJoinMultiple(
+      baseQuery,
+      'usuario',
+      this.usuarioRepository,
+      page,
+      limit,
+    );
 
     //---------------------------------------------------------
     // Eliminar contraseña
@@ -461,6 +541,16 @@ export class UsuarioService {
     };
   }
 
+  /**
+   * Lista los roles activos disponibles para asignar; oculta el rol
+   * ADMINISTRADOR (id '1') a quien no sea administrador, para evitar que un
+   * usuario no-admin se autoasigne (o asigne a otro) el rol de mayor privilegio.
+   *
+   * NOTA: la detección de "es administrador" aquí compara `rol.id === '1'` o
+   * `rol.nombre === 'ADMINISTRADOR'`, en vez de comparar `rol.codigo` contra
+   * `ValidRoles.administrador` como hace `UserRoleGuard`. Son dos formas
+   * distintas de identificar al mismo rol conviviendo en el código.
+   */
   async findAllRolesByAdmin(user: Usuario): Promise<RolResponseDto[]> {
     const roles = await this.rolRepository.find({
       where: { activo: true },
