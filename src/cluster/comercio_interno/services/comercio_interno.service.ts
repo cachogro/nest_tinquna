@@ -30,6 +30,7 @@ import { Usuario } from 'src/security/entities/usuario.entity';
 import { RegistrosMineralPaginadosDto } from '../dto/recepcion_mineral/registro-mineral-paginado.dto';
 import { ReciboRecepcionMineralPdfService } from './recibo-pdf-recepcion-mineral.service';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
+import { resolverRangoFechas } from 'src/common/utils/rango-fechas.util';
 
 @Injectable()
 export class ComercioInternoService {
@@ -75,7 +76,7 @@ export class ComercioInternoService {
     return Number(resultado[0].correlativo);
   }
   private generarCodigoOperacion(codigo: string, correlativo: number): string {
-    const longitud = Number(this.configService.get('CORRELATIVO_LONGITUD', 6));
+    const longitud = Number(this.configService.get('CORRELATIVO_LONGITUD', 4));
 
     return `${codigo}-${correlativo.toString().padStart(longitud, '0')}`;
   }
@@ -624,10 +625,8 @@ export class ComercioInternoService {
     const {
       busqueda,
       codigoOperacion,
-      numeroDocumento,
+      idCodificacion,
       idEstado,
-      fechaDesde,
-      fechaHasta,
       orderBy = 'fechaRecepcion',
       orderDirection = 'DESC',
     } = filtros;
@@ -677,12 +676,12 @@ export class ComercioInternoService {
     }
 
     //---------------------------------------------------------
-    // Documento
+    // Codificación (ej. ICC)
     //---------------------------------------------------------
 
-    if (numeroDocumento) {
-      query.andWhere('persona.numeroDocumento ILIKE :numeroDocumento', {
-        numeroDocumento: `%${numeroDocumento}%`,
+    if (idCodificacion) {
+      query.andWhere('recepcion.idCodificacion = :idCodificacion', {
+        idCodificacion,
       });
     }
 
@@ -697,26 +696,21 @@ export class ComercioInternoService {
     }
 
     //---------------------------------------------------------
-    // Fecha Desde
+    // Rango de fechas: explícito (fechaDesde/fechaHasta) o
+    // fraccionado por mes/semana ISO (anio + mes | anio + semana).
     //---------------------------------------------------------
 
-    if (fechaDesde) {
-      query.andWhere('recepcion.fechaRecepcion::timestamptz >= :fechaDesde', {
-        fechaDesde,
+    const { desde, hasta } = resolverRangoFechas(filtros);
+
+    if (desde) {
+      query.andWhere('recepcion.fechaRecepcion ::timestamptz >= :fechaDesde', {
+        fechaDesde: desde,
       });
     }
 
-    //---------------------------------------------------------
-    // Fecha Hasta
-    //---------------------------------------------------------
-
-    if (fechaHasta) {
-      const fechaFin = new Date(fechaHasta);
-
-      fechaFin.setHours(23, 59, 59, 999);
-
-      query.andWhere('recepcion.fechaRecepcion::timestamptz <= :fechaHasta', {
-        fechaHasta: fechaFin,
+    if (hasta) {
+      query.andWhere('recepcion.fechaRecepcion ::timestamptz <= :fechaHasta', {
+        fechaHasta: hasta,
       });
     }
 

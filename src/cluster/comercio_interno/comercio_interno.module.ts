@@ -1,6 +1,8 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { ComercioInternoService } from './services/comercio_interno.service';
 import { ComercioInternoController } from './controller/comercio_interno.controller';
+import { ReportesRecepcionMineralController } from './controller/reportes-recepcion-mineral.controller';
+import { RecepcionMineralReportesService } from './reports/recepcion-mineral-reportes.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SecurityModule } from 'src/security/security.module';
 
@@ -14,6 +16,7 @@ import { PersonaCi } from './entities/persona-ci.entity';
 import { ConfigModule } from '@nestjs/config';
 //import { RecepcionMineralDetalle } from './entities/recepcion_mineral/recepcion-mineral-detalle.entity';
 import { RecepcionMineralExcelService } from './reports/recepcion-mineral-excel.service';
+import { RecepcionMineralReportePdfService } from './reports/recepcion-mineral-pdf.service';
 import { CommonModule } from 'src/common/common.module';
 import { ReciboRecepcionMineralPdfService } from './services/recibo-pdf-recepcion-mineral.service';
 import { ValorizacionCalculoAporte } from './entities/valorizacion/valorizacion-calculo-aporte.entity';
@@ -28,11 +31,13 @@ import { ValorizacionMineralPdfService } from './services/valorizacion-mineral-p
     ComercioInternoService,
     PersonaCiService,
     RecepcionMineralExcelService,
+    RecepcionMineralReportePdfService,
+    RecepcionMineralReportesService,
     ReciboRecepcionMineralPdfService,
     ValorizacionMineralService,
     ValorizacionMineralPdfService,
   ],
-  controllers: [ComercioInternoController],
+  controllers: [ComercioInternoController, ReportesRecepcionMineralController],
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature(

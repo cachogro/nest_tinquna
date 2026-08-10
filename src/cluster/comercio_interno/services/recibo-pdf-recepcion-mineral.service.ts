@@ -239,18 +239,21 @@ export class ReciboRecepcionMineralPdfService {
 
     doc.y += 10;
 
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(8)
-      .text('Observaciones:', x, doc.y, { width: ancho });
+    const observaciones = recepcion.observaciones?.trim();
+    const mostrarObservaciones =
+      !!observaciones && observaciones.toUpperCase() !== 'SIN OBSERVACIONES';
 
-    doc
-      .font('Helvetica')
-      .fontSize(8)
-      .text(recepcion.observaciones ?? '--', x, doc.y, {
+    if (mostrarObservaciones) {
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .text('Observaciones:', x, doc.y, { width: ancho });
+
+      doc.font('Helvetica').fontSize(8).text(observaciones, x, doc.y, {
         width: ancho,
         align: 'justify',
       });
+    }
 
     doc.y += 12;
 
@@ -307,22 +310,22 @@ export class ReciboRecepcionMineralPdfService {
         col1: 'bold:C.I.:',
         col2: recepcion.persona?.numeroDocumento ?? '--',
       },
-      {
-        col1: 'bold:Celular:',
-        col2: recepcion.persona?.celular ?? '--',
-      },
+      // {
+      //   col1: 'bold:Celular:',
+      //   col2: recepcion.persona?.celular ?? '--',
+      // },
       {
         col1: 'bold:N° Sacos:',
         col2: `${recepcion.numeroSacos}`,
       },
       {
-        col1: 'bold:Balanza L (Kg):',
-        col2: `${recepcion.balanzaL}`,
+        col1: 'bold:Balanza (Kg):',
+        col2: `${Math.round(recepcion.balanzaL)}`,
       },
-      {
-        col1: 'bold:Balanza T (Kg):',
-        col2: `${recepcion.balanzaT}`,
-      },
+      // {
+      //   col1: 'bold:Balanza T (Kg):',
+      //   col2: `${recepcion.balanzaT}`,
+      // },
       {
         col1: 'bold:Anticipo (Bs.):',
         col2:
@@ -335,14 +338,14 @@ export class ReciboRecepcionMineralPdfService {
     if (recepcion.humedad !== null && recepcion.humedad !== undefined) {
       filas.push({
         col1: 'bold:Humedad (%):',
-        col2: `${recepcion.humedad}`,
+        col2: `${Math.round(recepcion.humedad)}`,
       });
     }
 
-    filas.push({
-      col1: 'bold:Estado:',
-      col2: recepcion.estado?.nombre ?? '--',
-    });
+    // filas.push({
+    //   col1: 'bold:Estado:',
+    //   col2: recepcion.estado?.nombre ?? '--',
+    // });
 
     return filas;
   }

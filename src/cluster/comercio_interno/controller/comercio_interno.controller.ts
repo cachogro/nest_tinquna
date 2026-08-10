@@ -47,11 +47,13 @@ import { FiltrosRegistroMineralDto } from '../dto/recepcion_mineral/filtros-regi
 import { CreateRecepcionMineralDto } from '../dto/recepcion_mineral/create-recepcion-mineral.dto';
 import { RegistrosMineralPaginadosDto } from '../dto/recepcion_mineral/registro-mineral-paginado.dto';
 import { RecepcionMineralExcelService } from '../reports/recepcion-mineral-excel.service';
+import { RecepcionMineralReportePdfService } from '../reports/recepcion-mineral-pdf.service';
 import { ValorizacionMineralService } from '../services/valorizacion-mineral.service';
 import { ValorizacionMineralPdfService } from '../services/valorizacion-mineral-pdf.service';
 import { CreateValorizacionMineralDto } from '../dto/valorizacion/create-valorizacion-mineral.dto';
 import { ValorizacionMineral } from '../entities/valorizacion/valorizacion-mineral.entity';
 import { UpdateValorizacionMineralDto } from '../dto/valorizacion/update-valorizacion-mineral.dto';
+import { CambiarEstadoValorizacionMineralDto } from '../dto/valorizacion/cambiar-estado-valorizacion-mineral.dto';
 import { FiltrosValorizacionMineralDto } from '../dto/valorizacion/filtros-valorizacion-mineral.dto';
 import { ValorizacionesMineralPaginadasDto } from '../dto/valorizacion/valorizacion-mineral-paginado.dto';
 
@@ -63,6 +65,7 @@ export class ComercioInternoController {
     private readonly comercioInternoService: ComercioInternoService,
     private readonly personaCiService: PersonaCiService,
     private readonly recepcionMineralExcelService: RecepcionMineralExcelService,
+    private readonly recepcionMineralReportePdfService: RecepcionMineralReportePdfService,
     private readonly valorizacionMineralService: ValorizacionMineralService,
     private readonly valorizacionMineralPdfService: ValorizacionMineralPdfService,
   ) {}
@@ -422,11 +425,13 @@ export class ComercioInternoController {
     name: 'codigoOperacion',
     required: false,
     type: String,
+    description: 'Código de operación de la recepción (búsqueda parcial).',
   })
   @ApiQuery({
-    name: 'numeroDocumento',
+    name: 'idCodificacion',
     required: false,
-    type: String,
+    type: Number,
+    description: 'Id de la codificación de mineral (ej. ICC).',
   })
   @ApiQuery({
     name: 'idEstado',
@@ -438,12 +443,37 @@ export class ComercioInternoController {
     required: false,
     type: String,
     example: '2026-07-01',
+    description: 'Rango explícito. No combinar con mes/semana.',
   })
   @ApiQuery({
     name: 'fechaHasta',
     required: false,
     type: String,
     example: '2026-07-31',
+    description: 'Rango explícito. No combinar con mes/semana.',
+  })
+  @ApiQuery({
+    name: 'anio',
+    required: false,
+    type: Number,
+    example: 2026,
+    description: 'Año a usar junto con "mes" o "semana".',
+  })
+  @ApiQuery({
+    name: 'mes',
+    required: false,
+    type: Number,
+    example: 8,
+    description:
+      'Mes (1-12). Junto con "anio", filtra ese mes completo sin necesidad de calcular fechaDesde/fechaHasta.',
+  })
+  @ApiQuery({
+    name: 'semana',
+    required: false,
+    type: Number,
+    example: 32,
+    description:
+      'Semana ISO (1-53). Junto con "anio", filtra esa semana (lunes a domingo).',
   })
   @ApiQuery({
     name: 'orderBy',
@@ -482,22 +512,28 @@ export class ComercioInternoController {
   @ApiOperation({
     summary: 'Exportar recepciones de mineral a Excel',
     description:
-      'Genera un archivo .xlsx con los registros de recepción de mineral que cumplan los mismos filtros que el listado paginado (sin paginar).',
+      'Genera un archivo .xlsx con los registros de recepción de mineral que cumplan los mismos filtros que el listado paginado (sin paginar). ' +
+      'Casos de uso: (1) por código de mineral (idCodificacion) + estado(s) + rango de fechas; ' +
+      '(2) por proveedor (busqueda) + estado(s) + rango de fechas, orden ascendente; ' +
+      '(3) todos los registros/estados fraccionado por mes (anio+mes) o semana ISO (anio+semana) para no saturar la consulta.',
   })
   @ApiQuery({
     name: 'busqueda',
     required: false,
     type: String,
+    description: 'Búsqueda por proveedor (nombres, apellidos o documento).',
   })
   @ApiQuery({
     name: 'codigoOperacion',
     required: false,
     type: String,
+    description: 'Código de operación de la recepción (búsqueda parcial).',
   })
   @ApiQuery({
-    name: 'numeroDocumento',
+    name: 'idCodificacion',
     required: false,
-    type: String,
+    type: Number,
+    description: 'Id de la codificación de mineral (ej. ICC).',
   })
   @ApiQuery({
     name: 'idEstado',
@@ -509,15 +545,60 @@ export class ComercioInternoController {
     required: false,
     type: String,
     example: '2026-07-01',
+    description: 'Rango explícito. No combinar con mes/semana.',
   })
   @ApiQuery({
     name: 'fechaHasta',
     required: false,
     type: String,
     example: '2026-07-31',
+    description: 'Rango explícito. No combinar con mes/semana.',
+  })
+  @ApiQuery({
+    name: 'anio',
+    required: false,
+    type: Number,
+    example: 2026,
+    description: 'Año a usar junto con "mes" o "semana".',
+  })
+  @ApiQuery({
+    name: 'mes',
+    required: false,
+    type: Number,
+    example: 8,
+    description:
+      'Mes (1-12). Junto con "anio", filtra ese mes completo sin necesidad de calcular fechaDesde/fechaHasta.',
+  })
+  @ApiQuery({
+    name: 'semana',
+    required: false,
+    type: Number,
+    example: 32,
+    description:
+      'Semana ISO (1-53). Junto con "anio", filtra esa semana (lunes a domingo).',
+  })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: [
+      'id',
+      'codigoOperacion',
+      'fechaRecepcion',
+      'numeroDocumento',
+      'estado',
+    ],
+  })
+  @ApiQuery({
+    name: 'orderDirection',
+    required: false,
+    enum: ['ASC', 'DESC'],
   })
   @ApiOkResponse({
     description: 'Archivo .xlsx generado correctamente.',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Combinación de filtros de fecha inválida (mes y semana a la vez, o mes/semana junto con fechaDesde/fechaHasta, o mes/semana sin año).',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -537,6 +618,123 @@ export class ComercioInternoController {
 
       'Content-Disposition': 'attachment; filename=recepcion-mineral.xlsx',
 
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  //--------------reporte pdf---------------------
+
+  @Get('recepcion_mineral/reporte_pdf')
+  @Auth()
+  @ApiOperation({
+    summary: 'Exportar recepciones de mineral a PDF',
+    description:
+      'Genera un PDF con las mismas columnas y filtros que el reporte Excel (recepcion_mineral/excel), en formato de tabla. ' +
+      'Casos de uso: (1) por código de mineral (idCodificacion) + estado(s) + rango de fechas; ' +
+      '(2) por proveedor (busqueda) + estado(s) + rango de fechas, orden ascendente; ' +
+      '(3) todos los registros/estados fraccionado por mes (anio+mes) o semana ISO (anio+semana) para no saturar la consulta.',
+  })
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    type: String,
+    description: 'Búsqueda por proveedor (nombres, apellidos o documento).',
+  })
+  @ApiQuery({
+    name: 'codigoOperacion',
+    required: false,
+    type: String,
+    description: 'Código de operación de la recepción (búsqueda parcial).',
+  })
+  @ApiQuery({
+    name: 'idCodificacion',
+    required: false,
+    type: Number,
+    description: 'Id de la codificación de mineral (ej. ICC).',
+  })
+  @ApiQuery({
+    name: 'idEstado',
+    required: false,
+    type: Number,
+  })
+  @ApiQuery({
+    name: 'fechaDesde',
+    required: false,
+    type: String,
+    example: '2026-07-01',
+    description: 'Rango explícito. No combinar con mes/semana.',
+  })
+  @ApiQuery({
+    name: 'fechaHasta',
+    required: false,
+    type: String,
+    example: '2026-07-31',
+    description: 'Rango explícito. No combinar con mes/semana.',
+  })
+  @ApiQuery({
+    name: 'anio',
+    required: false,
+    type: Number,
+    example: 2026,
+    description: 'Año a usar junto con "mes" o "semana".',
+  })
+  @ApiQuery({
+    name: 'mes',
+    required: false,
+    type: Number,
+    example: 8,
+    description:
+      'Mes (1-12). Junto con "anio", filtra ese mes completo sin necesidad de calcular fechaDesde/fechaHasta.',
+  })
+  @ApiQuery({
+    name: 'semana',
+    required: false,
+    type: Number,
+    example: 32,
+    description:
+      'Semana ISO (1-53). Junto con "anio", filtra esa semana (lunes a domingo).',
+  })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: [
+      'id',
+      'codigoOperacion',
+      'fechaRecepcion',
+      'numeroDocumento',
+      'estado',
+    ],
+  })
+  @ApiQuery({
+    name: 'orderDirection',
+    required: false,
+    enum: ['ASC', 'DESC'],
+  })
+  @ApiOkResponse({
+    description: 'Archivo .pdf generado correctamente.',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Combinación de filtros de fecha inválida (mes y semana a la vez, o mes/semana junto con fechaDesde/fechaHasta, o mes/semana sin año).',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async exportarReportePdf(
+    @Query() filtros: FiltrosRegistroMineralDto,
+    @Res() res: Response,
+  ) {
+    const buffer =
+      await this.recepcionMineralReportePdfService.generar(filtros);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename=recepcion-mineral.pdf',
       'Content-Length': buffer.length,
     });
 
@@ -617,6 +815,8 @@ export class ComercioInternoController {
   }
 
   //--------------------------- valorización de mineral -------------------
+  //
+  //-------------------------------------------------------------------------
 
   @Post('valorizacion_mineral')
   @Auth()
@@ -702,6 +902,52 @@ export class ComercioInternoController {
     @GetUser() user: Usuario,
   ): Promise<ValorizacionMineral> {
     return await this.valorizacionMineralService.actualizar(id, body, user);
+  }
+
+  @Patch('valorizacion_mineral/:id/estado')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar el estado de una valorización de mineral',
+    description:
+      'Endpoint dedicado exclusivamente al cambio de estado de la valorización. El front indica ' +
+      'a qué estado está pasando: PRE-VALORIZADO (2) o VALORIZADO (3). Valida que la valorización ' +
+      'exista, esté activa, no haya sido tranzada previamente, tenga registrado el saldo a pagar y ' +
+      'al menos un detalle de mineral. Al pasar a VALORIZADO (3), la recepción de mineral asociada ' +
+      'pasa a TRANZADO (5), quedando la valorización bloqueada para futuras modificaciones.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la valorización.',
+    example: '12',
+  })
+  @ApiBody({
+    description: 'Nuevo estado de la valorización.',
+    type: CambiarEstadoValorizacionMineralDto,
+  })
+  @ApiOkResponse({
+    description: 'Estado de la valorización actualizado correctamente.',
+    type: ValorizacionMineral,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'La valorización no está activa, ya fue tranzada, no tiene saldo a pagar registrado, o no tiene detalle de mineral.',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'No existe la valorización o el estado de valorización seleccionado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async cambiarEstadoValorizacionMineral(
+    @Param('id') id: string,
+    @Body() body: CambiarEstadoValorizacionMineralDto,
+    @GetUser() user: Usuario,
+  ): Promise<ValorizacionMineral> {
+    return await this.valorizacionMineralService.cambiarEstado(id, body, user);
   }
 
   @Get('valorizacion_mineral/:id')
@@ -825,12 +1071,15 @@ export class ComercioInternoController {
   })
   async descargarValorizacionPdf(
     @Param('id') id: string,
+    @GetUser() user: Usuario,
     @Res() res: Response,
   ) {
     const valorizacion = await this.valorizacionMineralService.buscarPorId(id);
 
-    const pdf =
-      await this.valorizacionMineralPdfService.generarPdf(valorizacion);
+    const pdf = await this.valorizacionMineralPdfService.generarPdf(
+      valorizacion,
+      user,
+    );
 
     res.set({
       'Content-Type': 'application/pdf',

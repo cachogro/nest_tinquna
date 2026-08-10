@@ -59,7 +59,7 @@ export class ExcelService {
       bold: true,
       size: 18,
       color: {
-        argb: 'FFFFFF',
+        argb: 'FFFFFFFF',
       },
     };
 
@@ -72,7 +72,7 @@ export class ExcelService {
       type: 'pattern',
       pattern: 'solid',
       fgColor: {
-        argb: '1F4E78',
+        argb: 'FF1F4E78',
       },
     };
 
@@ -121,7 +121,7 @@ export class ExcelService {
       cell.font = {
         bold: true,
         color: {
-          argb: 'FFFFFF',
+          argb: 'FFFFFFFF',
         },
       };
 
@@ -134,7 +134,7 @@ export class ExcelService {
         type: 'pattern',
         pattern: 'solid',
         fgColor: {
-          argb: '4472C4',
+          argb: 'FF4472C4',
         },
       };
 

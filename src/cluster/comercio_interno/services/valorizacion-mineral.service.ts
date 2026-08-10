@@ -24,6 +24,7 @@ import { CreateValorizacionCalculoAporteDto } from '../dto/valorizacion/create-v
 import { ValorizacionDetalleMineral } from '../entities/valorizacion/valorizacion-detalle-mineral.entity';
 import { ValorizacionCalculoAporte } from '../entities/valorizacion/valorizacion-calculo-aporte.entity';
 import { UpdateValorizacionMineralDto } from '../dto/valorizacion/update-valorizacion-mineral.dto';
+import { CambiarEstadoValorizacionMineralDto } from '../dto/valorizacion/cambiar-estado-valorizacion-mineral.dto';
 import { CreateValorizacionMineralDto } from '../dto/valorizacion/create-valorizacion-mineral.dto';
 import { FiltrosValorizacionMineralDto } from '../dto/valorizacion/filtros-valorizacion-mineral.dto';
 import { ValorizacionesMineralPaginadasDto } from '../dto/valorizacion/valorizacion-mineral-paginado.dto';
@@ -383,6 +384,10 @@ export class ValorizacionMineralService {
         'persona.actorProductivoMinero',
         'actorProductivoMinero',
       )
+      .leftJoinAndSelect(
+        'actorProductivoMinero.tipoActorProductivoMinero',
+        'tipoActorProductivoMinero',
+      )
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.estado', 'estadoRecepcion')
       .leftJoinAndSelect('valorizacion.laboratorio', 'laboratorio')
@@ -597,7 +602,7 @@ export class ValorizacionMineralService {
     try {
       await queryRunner.manager.update(ValorizacionMineral, id, {
         idLaboratorio: dto.idLaboratorio,
-        idEstadoValorizacion: dto.idEstadoValorizacion,
+       // idEstadoValorizacion: dto.idEstadoValorizacion,
 
         pesoBrutoHumedoKilogramos: dto.pesoBrutoHumedoKilogramos,
         pesoNetoHumedoKilogramos: dto.pesoNetoHumedoKilogramos,
@@ -656,6 +661,81 @@ export class ValorizacionMineralService {
         'commit transaction',
         await this.obtenerValorizacionCompleta(id),
       );
+      return await this.obtenerValorizacionCompleta(id);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  // ============================
+  // Cambio de estado (PRE-VALORIZADO / VALORIZADO)
+  // ============================
+
+  /**
+   * Endpoint dedicado exclusivamente al cambio de estado de la valorización.
+   * El front indica a qué estado está pasando (PRE-VALORIZADO o VALORIZADO).
+   *
+   * Al pasar a VALORIZADO (3), la recepción de mineral asociada pasa a
+   * TRANZADO (5) y la valorización queda bloqueada para futuras modificaciones.
+   */
+  async cambiarEstado(
+    id: string,
+    dto: CambiarEstadoValorizacionMineralDto,
+    user: Usuario,
+  ): Promise<ValorizacionMineral> {
+    const valorizacion = await this.obtenerValorizacionParaEditar(id);
+
+    if (!valorizacion.activo) {
+      throw new BadRequestException('La valorización no está activa.');
+    }
+
+    this.validarValorizacionEditable(valorizacion);
+
+    await this.validarEstadoValorizacion(dto.idEstadoValorizacion);
+
+    if (
+      valorizacion.saldoPagarBolivianos === null ||
+      valorizacion.saldoPagarBolivianos === undefined ||
+      Number(valorizacion.saldoPagarBolivianos) <= 0
+    ) {
+      throw new BadRequestException(
+        'La valorización aún no tiene registrado el saldo a pagar.',
+      );
+    }
+
+    if (!(valorizacion.detalles ?? []).length) {
+      throw new BadRequestException(
+        'La valorización debe tener al menos un detalle de mineral registrado.',
+      );
+    }
+
+    const queryRunner = this.dataSource.createQueryRunner();
+
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      await queryRunner.manager.update(ValorizacionMineral, id, {
+        idEstadoValorizacion: dto.idEstadoValorizacion,
+        usuarioUltimaModificacion: user.usuario,
+      });
+
+      if (dto.idEstadoValorizacion === ESTADO_VALORIZACION_VALORIZADO) {
+        await queryRunner.manager.update(
+          RecepcionMineral,
+          valorizacion.idRecepcionMineral,
+          {
+            idEstado: ESTADO_RECEPCION_TRANZADO,
+            usuarioUltimaModificacion: user.usuario,
+          },
+        );
+      }
+
+      await queryRunner.commitTransaction();
+
       return await this.obtenerValorizacionCompleta(id);
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -789,7 +869,7 @@ export class ValorizacionMineralService {
 
     if (fechaDesde) {
       query.andWhere(
-        'valorizacion.fechaValorizacion::timestamptz >= :fechaDesde',
+        'valorizacion.fechaValorizacion ::timestamptz >= :fechaDesde',
         {
           fechaDesde,
         },
@@ -806,7 +886,7 @@ export class ValorizacionMineralService {
       fechaFin.setHours(23, 59, 59, 999);
 
       query.andWhere(
-        'valorizacion.fechaValorizacion::timestamptz <= :fechaHasta',
+        'valorizacion.fechaValorizacion ::timestamptz <= :fechaHasta',
         {
           fechaHasta: fechaFin,
         },
