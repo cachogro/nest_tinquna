@@ -322,10 +322,12 @@ export class ReciboRecepcionMineralPdfService {
         col1: 'bold:Balanza (Kg):',
         col2: `${Math.round(recepcion.balanzaL)}`,
       },
-      // {
-      //   col1: 'bold:Balanza T (Kg):',
-      //   col2: `${recepcion.balanzaT}`,
-      // },
+      {
+        col1: 'bold:Humedad (%):',
+        col2: `${
+          recepcion.humedad ? String(recepcion.humedad).split('.')[0] : '0'
+        } `,
+      },
       {
         col1: 'bold:Anticipo (Bs.):',
         col2:
@@ -335,17 +337,19 @@ export class ReciboRecepcionMineralPdfService {
       },
     ];
 
-    if (recepcion.humedad !== null && recepcion.humedad !== undefined) {
-      filas.push({
-        col1: 'bold:Humedad (%):',
-        col2: `${Math.round(recepcion.humedad)}`,
-      });
-    }
+    // if (recepcion.humedad !== null && recepcion.humedad !== undefined) {
+    //   filas.push({
+    //     col1: 'bold:Humedad (%):',
+    //     col2: `${Math.round(recepcion.humedad)}`,
+    //   });
+    // }
 
-    // filas.push({
-    //   col1: 'bold:Estado:',
-    //   col2: recepcion.estado?.nombre ?? '--',
-    // });
+    filas.push({
+      col1: 'bold:Muestrero:',
+      col2: `${recepcion.personalInterno?.nombres ?? ''} ${
+        recepcion.personalInterno?.apellidoPaterno ?? ''
+      } ${recepcion.personalInterno?.apellidoMaterno ?? ''}`,
+    });
 
     return filas;
   }

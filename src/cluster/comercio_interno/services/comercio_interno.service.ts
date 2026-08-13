@@ -177,6 +177,7 @@ export class ComercioInternoService {
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.estado', 'estado')
       // .leftJoinAndSelect(
       //   'recepcion.detalles',
@@ -633,6 +634,7 @@ export class ComercioInternoService {
     const query = this.recepcionRepository
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.estado', 'estado');
 
@@ -739,6 +741,7 @@ export class ComercioInternoService {
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.estado', 'estado')
       // .leftJoinAndSelect('recepcion.estado', 'estado')
       .where('recepcion.id = :id', { id })
@@ -750,6 +753,7 @@ export class ComercioInternoService {
     formato: 'ticket' | 'carta' = 'ticket',
   ): Promise<Buffer> {
     const recepcion = await this.buscarregistroById(id);
+    console.log('recepcion', recepcion);
 
     if (!recepcion) {
       throw new NotFoundException('La recepción no existe.');

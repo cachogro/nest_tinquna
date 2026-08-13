@@ -132,6 +132,15 @@ export class RecepcionMineral extends Auditoria {
   })
   idPersonalInterno: string;
 
+  @ManyToOne(() => PersonaCi, {
+    nullable: false,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_personal_interno',
+  })
+  personalInterno: PersonaCi;
+
   // @Column({
   //   name: 'total_valor_bruto',
   //   type: 'numeric',

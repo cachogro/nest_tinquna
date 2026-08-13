@@ -195,6 +195,7 @@ export class ExcelService {
     worksheet: ExcelJS.Worksheet,
     minWidth = 12,
     columnMinWidths?: Record<number, number>,
+    startRow = 1,
   ): void {
     worksheet.columns.forEach((column, index) => {
       const columnNumber = index + 1;
@@ -204,7 +205,7 @@ export class ExcelService {
       column.eachCell({
         includeEmpty: true,
       }, (cell) => {
-        if (cell.isMerged) {
+        if (cell.isMerged || Number(cell.row) < startRow) {
           return;
         }
 

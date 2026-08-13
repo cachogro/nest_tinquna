@@ -265,7 +265,7 @@ export class RecepcionMineralReportePdfService {
     const dataOtros: Array<any> = [];
     dataOtros.push({
       col1: 'bold:Nro.',
-      col2: 'bold:Código',
+      col2: 'bold:Código / Lote',
       col3: 'bold:Proveedor',
       col4: 'bold:N° Sacos',
       col5: 'bold:Peso Bruto (Kg)',
@@ -424,8 +424,8 @@ export class RecepcionMineralReportePdfService {
     }
 
     return Number(valor).toLocaleString('es-BO', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
     });
   }
 

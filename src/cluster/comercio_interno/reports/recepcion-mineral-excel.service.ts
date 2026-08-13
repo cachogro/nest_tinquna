@@ -46,7 +46,7 @@ export class RecepcionMineralExcelService {
       worksheet,
       [
         'ID',
-        'Código',
+        'Código / Lote',
         'Proveedor',
         'N° Sacos',
         'Peso Bruto (Kg)',
@@ -76,7 +76,7 @@ export class RecepcionMineralExcelService {
 
           registro.numeroSacos,
 
-          registro.balanzaL,
+          this.formatEntero(registro.balanzaL),
 
           this.formatEntero(registro.anticipo),
 
@@ -104,10 +104,15 @@ export class RecepcionMineralExcelService {
     // Ajustar columnas
     //-------------------------------------------------
 
-    this.excelService.autoFitColumns(worksheet, 12, {
-      1: 6,
-      2: 10,
-    });
+    this.excelService.autoFitColumns(
+      worksheet,
+      12,
+      {
+        1: 6,
+        2: 10,
+      },
+      filaInicio,
+    );
 
     return this.excelService.generate(workbook);
   }
