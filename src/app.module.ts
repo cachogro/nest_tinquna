@@ -1,15 +1,28 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { SecurityModule } from './security/security.module';
 import { CommonModule } from './common/common.module';
 import { ClusterModule } from './cluster/cluster.module';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
-    ConfigModule.forRoot(),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateEnv,
+    }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: 100,
+      },
+    ]),
     TypeOrmModule.forRoot({
       name: 'ci',
       type: 'postgres',
@@ -27,6 +40,12 @@ import { ClusterModule } from './cluster/cluster.module';
     ConfigModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

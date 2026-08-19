@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Codificacion } from '../entities/codificacion.entity';
 import { Mineral } from '../entities/mineral.entity';
-import { CreateCodificacionDto } from '../dto/create-codificacion.dto';
-import { UpdateCodificacionDto } from '../dto/update-codificacion.dto';
+import { CreateCodificacionDto } from '../dto/codificacion/create-codificacion.dto';
+import { UpdateCodificacionDto } from '../dto/codificacion/update-codificacion.dto';
 import { Usuario } from 'src/security/entities/usuario.entity';
 
 @Injectable()

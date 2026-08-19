@@ -28,11 +28,11 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { CreateCodificacionDto } from '../dto/create-codificacion.dto';
+import { CreateCodificacionDto } from '../dto/codificacion/create-codificacion.dto';
 import { Codificacion } from '../entities/codificacion.entity';
 import { CodificacionService } from '../services/codificacion.service';
 import { Auth, GetUser } from 'src/security/decorators';
-import { UpdateCodificacionDto } from '../dto/update-codificacion.dto';
+import { UpdateCodificacionDto } from '../dto/codificacion/update-codificacion.dto';
 import {
   EmisionDocumentoResponseDto,
   TipoDocumentoResponseDto,
@@ -48,11 +48,11 @@ import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltrosCotizacionDto } from '../dto/cotizacion-mineral/filtros-cotizacion.dto';
 import { CotizacionesPaginadasDto } from '../dto/cotizacion-mineral/cotizacion-paginacion.dto';
 
-import { FiltrosActorProductivoMineroDto } from '../dto/ingenios/filtros-actor-productivo-minero.dto';
-import { ActoresProductivosMinerosPaginadosDto } from '../dto/ingenios/actor-productivo-minero-paginacion.dto';
+import { FiltrosActorProductivoMineroDto } from '../dto/actor-productivo-minero/filtros-actor-productivo-minero.dto';
+import { ActoresProductivosMinerosPaginadosDto } from '../dto/actor-productivo-minero/actor-productivo-minero-paginacion.dto';
 import { ActorProdMineroService } from '../services/actor-productivo-minero.service';
 import { ActorProductivoMinero } from '../entities/actor-productivo-minero.entity';
-import { UpdateActorProductivoMineroDto } from '../dto/ingenios/update-actor-productivo-minero.dto';
+import { UpdateActorProductivoMineroDto } from '../dto/actor-productivo-minero/update-actor-productivo-minero.dto';
 import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
 import { Laboratorio } from '../entities/laboratorio.entity';
 import { CreateLaboratorioDto } from '../dto/laboratorio/create-laboratorio.dto';
@@ -69,6 +69,15 @@ import { EntidadAporteService } from '../services/entidad-aporte.service';
 import { CreateMineralDto } from '../dto/mineral/create-mineral.dto';
 import { UpdateMineralDto } from '../dto/mineral/update-mineral.dto';
 import { MineralService } from '../services/mineral.service';
+import { EscalaPrecioMineral } from '../entities/escala-precio-mineral.entity';
+import { CreateEscalaPrecioMineralDto } from '../dto/escala-precio-mineral/create-escala-precio-mineral.dto';
+import { UpdateEscalaPrecioMineralDto } from '../dto/escala-precio-mineral/update-escala-precio-mineral.dto';
+import { EscalaPrecioMineralService } from '../services/escala-precio-mineral.service';
+import { TipoCalculoValorizacion } from '../entities/tipo-calculo-valorizacion.entity';
+import { CreateTipoCalculoValorizacionDto } from '../dto/tipo-calculo-valorizacion/create-tipo-calculo-valorizacion.dto';
+import { UpdateTipoCalculoValorizacionDto } from '../dto/tipo-calculo-valorizacion/update-tipo-calculo-valorizacion.dto';
+import { TipoCalculoValorizacionService } from '../services/tipo-calculo-valorizacion.service';
+import { TipoCalculoValorizacionAgrupadoDto } from '../dto/tipo-calculo-valorizacion/tipo-calculo-valorizacion-agrupado.dto';
 
 @ApiTags('Paramétricas')
 @Controller('parametricas')
@@ -83,6 +92,8 @@ export class ParametricasController {
     private readonly laboratorioService: LaboratorioService,
     private readonly entidadAporteService: EntidadAporteService,
     private readonly mineralService: MineralService,
+    private readonly escalaPrecioMineralService: EscalaPrecioMineralService,
+    private readonly tipoCalculoValorizacionService: TipoCalculoValorizacionService,
   ) {}
 
   @Post('codificacion')
@@ -491,6 +502,171 @@ export class ParametricasController {
     @Param('idMineral', ParseIntPipe) idMineral: number,
   ): Promise<CotizacionMineral> {
     return await this.cotizacionMineralService.findVigenteByMineral(idMineral);
+  }
+
+  //------------------ escala de precio por ley (Zn, Ag, Pb...) ----------------------
+
+  @Post('escala-precio')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Cargar en bloque la tabla de precios por ley de un mineral',
+    description:
+      'Registra todos los tramos de ley de un mineral en una sola inserción. ' +
+      '"idMineral", "fechaVigenciaInicial" y "fechaVigenciaFinal" son ' +
+      'compartidos por toda la carga; cada fila solo aporta "ley", ' +
+      '"precioPunto" y "precioTm" (el front calcula y envía precioTm). Si la ' +
+      'nueva vigencia se solapa con tramos activos existentes del mismo ' +
+      'mineral, esos tramos quedan reemplazados: se desactivan por completo ' +
+      '(activo=false), sin importar si les quedaban días de vigencia propia. ' +
+      'No depende de "cotizacion".',
+  })
+  @ApiBody({
+    type: CreateEscalaPrecioMineralDto,
+    examples: {
+      crear: {
+        summary: 'Cargar tabla de Zinc (parcial)',
+        value: {
+          idMineral: 1,
+          fechaVigenciaInicial: '2026-08-01T00:00:00.000-04:00',
+          fechaVigenciaFinal: '2026-08-30T23:59:59.999-04:00',
+          filas: [
+            { ley: 6, precioPunto: 16.8, precioTm: 100.8 },
+            { ley: 7, precioPunto: 19.3, precioTm: 135.1 },
+            { ley: 13, precioPunto: 23.1, precioTm: 300.3 },
+          ],
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Tramos registrados correctamente.',
+    type: [EscalaPrecioMineral],
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Datos inválidos: no se envió ningún tramo, hay leyes repetidas en la ' +
+      'misma carga, o las fechas de vigencia son incoherentes.',
+  })
+  @ApiNotFoundResponse({
+    description: 'El mineral seleccionado no existe o se encuentra inactivo.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createEscalaPrecio(
+    @Body() body: CreateEscalaPrecioMineralDto,
+    @GetUser() user: Usuario,
+  ): Promise<EscalaPrecioMineral[]> {
+    return await this.escalaPrecioMineralService.create(body, user);
+  }
+
+  @Patch('escala-precio')
+  @Auth()
+  @ApiOperation({
+    summary: 'Actualizar en bloque uno o varios tramos de la escala de precio',
+    description:
+      'Cada fila se identifica por "id" (el que devolvió la carga inicial). ' +
+      'Se puede enviar una sola fila para corregir un solo tramo, o varias a ' +
+      'la vez. No se puede modificar un tramo que ya venció.',
+  })
+  @ApiBody({
+    type: UpdateEscalaPrecioMineralDto,
+    examples: {
+      actualizarUno: {
+        summary: 'Corregir un solo tramo',
+        value: {
+          filas: [{ id: 9, precioPunto: 21.1, precioTm: 99.88 }],
+        },
+      },
+      actualizarVarios: {
+        summary: 'Corregir varios tramos a la vez',
+        value: {
+          filas: [
+            { id: 9, precioPunto: 21.1, precioTm: 99.88 },
+            { id: 10, precioPunto: 21.8, precioTm: 109.0 },
+          ],
+        },
+      },
+    },
+  })
+  @ApiOkResponse({
+    description: 'Tramos actualizados correctamente.',
+    type: [EscalaPrecioMineral],
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Datos inválidos: algún tramo ya no está vigente o las fechas de ' +
+      'vigencia resultantes son incoherentes.',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'Alguno de los "id" enviados no corresponde a un tramo existente.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async updateEscalaPrecio(
+    @Body() body: UpdateEscalaPrecioMineralDto,
+    @GetUser() user: Usuario,
+  ): Promise<EscalaPrecioMineral[]> {
+    return await this.escalaPrecioMineralService.update(body, user);
+  }
+
+  @Get('escala-precio/vigente/:idMineral')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener la tabla de precios por ley vigente de un mineral',
+    description:
+      'Devuelve todos los tramos de ley cuya vigencia cubre un instante ' +
+      'dado, para el mineral indicado, ordenados por ley. Si no se envía ' +
+      '"fecha", usa el instante actual (equivale a la tabla vigente hoy). ' +
+      'Si se envía "fecha", devuelve la tabla que estaba vigente ese día ' +
+      '(útil para consultar la cotización histórica de un rango/mes pasado).',
+  })
+  @ApiParam({
+    name: 'idMineral',
+    description: 'Identificador del mineral.',
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'fecha',
+    required: false,
+    description:
+      'Fecha (ISO 8601) para consultar la tabla vigente en ese momento. Si se omite, usa el instante actual.',
+    example: '2026-08-10',
+  })
+  @ApiOkResponse({
+    description: 'Tabla vigente obtenida correctamente.',
+    type: [EscalaPrecioMineral],
+  })
+  @ApiBadRequestResponse({
+    description: 'La fecha indicada no tiene un formato válido.',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'El mineral no tiene (o no tenía, en la fecha indicada) una tabla de precios vigente.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findEscalaPrecioVigenteByMineral(
+    @Param('idMineral', ParseIntPipe) idMineral: number,
+    @Query('fecha') fecha?: string,
+  ): Promise<EscalaPrecioMineral[]> {
+    return await this.escalaPrecioMineralService.findVigenteByMineral(
+      idMineral,
+      fecha,
+    );
   }
 
   //--------------------------------Actor productivo minero ------------------------------------
@@ -1254,5 +1430,148 @@ export class ParametricasController {
   })
   async findAlltipoEstadoRecepcionMineral(): Promise<EstadoRegistro[]> {
     return await this.parametricaService.findAlltipoEstadoRecepcionMineral();
+  }
+
+  //---------------------------------------------------------------------------
+  //                        tipo de cálculo de valorización
+  //---------------------------------------------------------------------------
+
+  @Post('tipo-calculo-valorizacion')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar un tipo de cálculo de valorización',
+    description:
+      'Registra un tipo de cálculo (maquila, ajuste de maquila, penalidad por elemento, etc) usado al ' +
+      'itemizar los descuentos de una valorización. "idTipoCalculo" agrupa el cálculo: 1 = gastos de ' +
+      'tratamiento, 2 = penalidades. "extras" guarda la configuración de referencia (base/unidad/escalador ' +
+      'para gastos de tratamiento, o cada/cargo/leyLibre para penalidades).',
+  })
+  @ApiBody({ type: CreateTipoCalculoValorizacionDto })
+  @ApiCreatedResponse({
+    description: 'Tipo de cálculo registrado correctamente.',
+    type: TipoCalculoValorizacion,
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe un tipo de cálculo con la misma descripción.',
+  })
+  @ApiBadRequestResponse({
+    description: 'Datos inválidos.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createTipoCalculoValorizacion(
+    @Body() body: CreateTipoCalculoValorizacionDto,
+    @GetUser() user: Usuario,
+  ): Promise<TipoCalculoValorizacion> {
+    return await this.tipoCalculoValorizacionService.create(body, user);
+  }
+
+  @Patch('tipo-calculo-valorizacion')
+  @Auth()
+  @ApiOperation({
+    summary: 'Actualizar un tipo de cálculo de valorización',
+  })
+  @ApiBody({ type: UpdateTipoCalculoValorizacionDto })
+  @ApiOkResponse({
+    description: 'Tipo de cálculo actualizado correctamente.',
+    type: TipoCalculoValorizacion,
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe otro tipo de cálculo con la misma descripción.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No existe el tipo de cálculo indicado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async updateTipoCalculoValorizacion(
+    @Body() body: UpdateTipoCalculoValorizacionDto,
+    @GetUser() user: Usuario,
+  ): Promise<TipoCalculoValorizacion> {
+    return await this.tipoCalculoValorizacionService.update(body, user);
+  }
+
+  @Patch('tipo-calculo-valorizacion/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de un tipo de cálculo de valorización',
+    description:
+      'Permite activar o desactivar un tipo de cálculo mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del tipo de cálculo.',
+    example: '8',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado del tipo de cálculo.',
+  })
+  @ApiOkResponse({
+    description: 'Estado del tipo de cálculo actualizado correctamente.',
+    type: TipoCalculoValorizacion,
+  })
+  @ApiBadRequestResponse({
+    description: 'El valor del estado es inválido.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el tipo de cálculo solicitado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateTipoCalculoValorizacion(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<TipoCalculoValorizacion> {
+    return await this.tipoCalculoValorizacionService.cambiarEstado(
+      id,
+      activo,
+      user,
+    );
+  }
+
+  @Get('tipo-calculo-valorizacion')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar los tipos de cálculo de valorización, agrupados',
+    description:
+      'Devuelve el catálogo completo agrupado en dos listas: "gastos" (id_tipo_calculo = 1: maquila, ajuste ' +
+      'de maquila, gastos de refinación) y "penalidades" (id_tipo_calculo = 2: As, Sb, Bi, Sn, Fe, SiO2, etc). ' +
+      'No pagina: es un catálogo acotado que no crece de forma indefinida.',
+  })
+  @ApiOkResponse({
+    description: 'Listado obtenido correctamente.',
+    type: TipoCalculoValorizacionAgrupadoDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllTipoCalculoValorizacion(): Promise<TipoCalculoValorizacionAgrupadoDto> {
+    return await this.tipoCalculoValorizacionService.findAllAgrupado();
   }
 }

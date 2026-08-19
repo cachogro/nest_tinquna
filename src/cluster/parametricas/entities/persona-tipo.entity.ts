@@ -1,6 +1,6 @@
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { PersonaPersonaTipo } from '../../comercio_interno/entities/persona-persona-tipo.entity';
+import { PersonaPersonaTipo } from '../../comercio-interno/entities/persona-persona-tipo.entity';
 
 
 @Entity({ name: 'persona_tipo', schema: 'parametrica' })

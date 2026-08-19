@@ -12,13 +12,15 @@ import { PersonaService } from './service/persona.service';
 import { Permiso } from './entities/permiso.entity';
 import { RolPermiso } from './entities/rol-permiso.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { BitacoraAcceso } from './entities/bitacora-acceso.entity';
 import { AdministradorController } from './controller/admin.controller';
 import { UsuarioService } from './service/usuario.service';
 import { AuthController } from './controller/auth.controller';
 
 import { AuthService } from './service/auth.service';
+import { BitacoraAccesoService } from './service/bitacora-acceso.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { RefreshTokenStrategy } from './strategies/refreshToken.strategy';
+import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
 
 @Module({
   controllers: [AdministradorController, AuthController],
@@ -26,6 +28,7 @@ import { RefreshTokenStrategy } from './strategies/refreshToken.strategy';
     PersonaService,
     UsuarioService,
     AuthService,
+    BitacoraAccesoService,
     JwtStrategy,
     RefreshTokenStrategy,
   ],
@@ -46,7 +49,16 @@ import { RefreshTokenStrategy } from './strategies/refreshToken.strategy';
       },
     }),
     TypeOrmModule.forFeature(
-      [Persona, Usuario, Rol, UsuarioRol, Permiso, RolPermiso, RefreshToken],
+      [
+        Persona,
+        Usuario,
+        Rol,
+        UsuarioRol,
+        Permiso,
+        RolPermiso,
+        RefreshToken,
+        BitacoraAcceso,
+      ],
       'ci',
     ),
     //forwardRef(() => ),

@@ -33,6 +33,7 @@ export class Usuario extends Auditoria {
     type: 'varchar',
     length: 60,
     nullable: false,
+    select: false,
   })
   contrasena?: string;
 
@@ -48,8 +49,18 @@ export class Usuario extends Auditoria {
     name: 'bloqueado_hasta',
     type: 'timestamp',
     nullable: true,
+    select: false,
   })
   bloqueadoHasta?: Date;
+
+  @Column({
+    name: 'intentos_fallidos',
+    type: 'int',
+    nullable: false,
+    default: 0,
+    select: false,
+  })
+  intentosFallidos?: number;
 
   @Column({
     name: 'ultimo_acceso',

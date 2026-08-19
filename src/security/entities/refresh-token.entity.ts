@@ -1,4 +1,11 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { Usuario } from './usuario.entity';
 
 @Entity({ name: 'refresh_token', schema: 'seguridad' })
@@ -7,11 +14,20 @@ export class RefreshToken {
   id: string;
 
   @Column({
+    name: 'id_usuario',
+    type: 'bigint',
+    nullable: false,
+  })
+  @Index('idx_refresh_token_usuario')
+  idUsuario: string;
+
+  @Column({
     name: 'token_hash',
     type: 'varchar',
     length: 255,
     nullable: false,
   })
+  @Index('idx_refresh_token_hash')
   tokenHash: string;
 
   @Column({

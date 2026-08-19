@@ -31,16 +31,19 @@ import {
   ApiInternalServerErrorResponse,
 } from '@nestjs/swagger';
 import { UsuarioService } from '../service/usuario.service';
+import { BitacoraAccesoService } from '../service/bitacora-acceso.service';
 import { Usuario } from '../entities/usuario.entity';
 import { CreateUsuarioDto } from '../dto/usuario/create-usuario.dto';
 import { UpdateUsuarioDto } from '../dto/usuario/update-usuario.dto';
 import { Auth, GetUser } from '../decorators';
-import { ValidRoles } from '../models/interfaces/valid-roles';
+import { ValidRoles } from '../enums/valid-roles';
 import { Rol } from '../entities/rol.entity';
 import { RolResponseDto } from '../dto/roles-response.dto';
 import { FiltrosListarUsuariosDto } from '../dto/filtros-listar-usuarios.dto';
 import { UsuarioResponseDto } from '../dto/usuario/usuario-response.dto';
 import { UsuariosPaginadosDto } from '../dto/usuario/usuario-paginacion.dto';
+import { FiltrosBitacoraAccesoDto } from '../dto/bitacora-acceso/filtros-bitacora-acceso.dto';
+import { BitacoraAccesoPaginadaDto } from '../dto/bitacora-acceso/bitacora-acceso-paginado.dto';
 
 @ApiTags('Administrador')
 @Controller('administrador')
@@ -48,6 +51,7 @@ import { UsuariosPaginadosDto } from '../dto/usuario/usuario-paginacion.dto';
 export class AdministradorController {
   constructor(
     private $usuario: UsuarioService,
+    private $bitacora: BitacoraAccesoService,
     // private $trayUsers: TrayUsersService,
   ) {}
 
@@ -283,5 +287,38 @@ export class AdministradorController {
     @GetUser() user: Usuario,
   ) {
     return this.$usuario.cambiarEstadoUser(id, activo, user);
+  }
+
+  @Get('bitacora_acceso')
+  @Auth(ValidRoles.administrador)
+  @ApiOperation({
+    summary: 'Historial de accesos',
+    description:
+      'Bitácora paginada de eventos de autenticación (login exitoso/fallido, cuentas bloqueadas, logout), con IP y user-agent. Solo accesible para administradores.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  @ApiQuery({
+    name: 'busqueda',
+    required: false,
+    type: String,
+    description: 'Busca por el nombre de usuario ingresado en el intento.',
+  })
+  @ApiQuery({ name: 'idUsuario', required: false, type: Number })
+  @ApiQuery({ name: 'tipoEvento', required: false, type: String })
+  @ApiQuery({ name: 'exitoso', required: false, type: Boolean })
+  @ApiQuery({ name: 'fechaDesde', required: false, type: String })
+  @ApiQuery({ name: 'fechaHasta', required: false, type: String })
+  @ApiOkResponse({
+    description: 'Listado obtenido correctamente.',
+    type: BitacoraAccesoPaginadaDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiForbiddenResponse({
+    description:
+      'El usuario autenticado no tiene permisos (requiere administrador).',
+  })
+  listarBitacoraAcceso(@Query() filtros: FiltrosBitacoraAccesoDto) {
+    return this.$bitacora.listarPaginado(filtros);
   }
 }

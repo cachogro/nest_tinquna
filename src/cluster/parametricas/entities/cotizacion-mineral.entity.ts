@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
-import { ColumnNumericTransformer } from 'src/common/utils/handle.transform_data';
+import { ColumnNumericTransformer } from 'src/common/utils/numeric-column.transform';
 import { Mineral } from './mineral.entity';
 
 @Entity({ name: 'cotizacion_mineral', schema: 'parametrica' })

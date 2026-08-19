@@ -2,6 +2,7 @@ process.env.TZ = 'America/La_Paz';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 // Configuraciones de cors para socketIo.io
@@ -24,11 +25,13 @@ export class CustomIoAdapter extends IoAdapter {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
   const logger = new Logger('Bootstrap');
+  app.use(helmet());
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
+      transform: true,
       transformOptions: {
         enableImplicitConversion: true,
       },

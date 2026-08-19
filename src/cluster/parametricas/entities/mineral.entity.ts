@@ -1,6 +1,6 @@
 import { Column, Entity, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
-import { ColumnNumericTransformer } from 'src/common/utils/handle.transform_data';
+import { ColumnNumericTransformer } from 'src/common/utils/numeric-column.transform';
 import { CotizacionMineral } from './cotizacion-mineral.entity';
 
 @Entity({ name: 'mineral', schema: 'parametrica' })

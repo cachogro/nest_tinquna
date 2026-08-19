@@ -9,7 +9,7 @@ import {
 
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { TipoActorProductivoMinero } from './tipo-actor-productivo-minero.entity';
-import { PersonaCi } from 'src/cluster/comercio_interno/entities/persona-ci.entity';
+import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 
 @Entity({
   name: 'actor_productivo_minero',

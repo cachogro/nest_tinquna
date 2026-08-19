@@ -10,7 +10,7 @@ import { ParametricasService } from './services/parametricas.service';
 import { TipoDocumento } from './entities/tipo_documento.entity';
 import { LugarEmisionDocumento } from './entities/lugar_emision_documento.entity';
 import { PersonaTipo } from './entities/persona-tipo.entity';
-import { RecepcionMineral } from '../comercio_interno/entities/recepcion_mineral/recepcion-mineral.entity';
+import { RecepcionMineral } from '../comercio-interno/entities/recepcion-mineral/recepcion-mineral.entity';
 import { EstadoRegistro } from './entities/estado-registro.entity';
 import { ConfigModule } from '@nestjs/config';
 import { CotizacionMineralService } from './services/cotizacion-mineral.service';
@@ -27,6 +27,9 @@ import { EntidadAporteService } from './services/entidad-aporte.service';
 import { EstadoValorizacion } from './entities/estado-valorizacion.entity';
 import { TipoCalculoValorizacion } from './entities/tipo-calculo-valorizacion.entity';
 import { MineralService } from './services/mineral.service';
+import { EscalaPrecioMineral } from './entities/escala-precio-mineral.entity';
+import { EscalaPrecioMineralService } from './services/escala-precio-mineral.service';
+import { TipoCalculoValorizacionService } from './services/tipo-calculo-valorizacion.service';
 
 @Module({
   controllers: [ParametricasController],
@@ -38,6 +41,8 @@ import { MineralService } from './services/mineral.service';
     LaboratorioService,
     EntidadAporteService,
     MineralService,
+    EscalaPrecioMineralService,
+    TipoCalculoValorizacionService,
   ],
   imports: [
     ConfigModule,
@@ -58,6 +63,7 @@ import { MineralService } from './services/mineral.service';
         TipoEntidadAporte,
         EstadoValorizacion,
         TipoCalculoValorizacion,
+        EscalaPrecioMineral,
       ],
       'ci',
     ),

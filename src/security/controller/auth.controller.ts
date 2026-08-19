@@ -9,14 +9,24 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 
-import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
+import { Request } from 'express';
 
-import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { AuthService } from '../service/auth.service';
 import { LoginUsuarioDto } from '../dto/auth/login-usuario.dto';
-import { RefreshTokenGuard } from '../guards/refreshToken.guard';
+import { RefreshTokenGuard } from '../guards/refresh-token.guard';
 import { Auth, GetUser, RawHeaders } from '../decorators';
 import { Usuario } from '../entities/usuario.entity';
+import { extractBearerToken } from '../helpers/token.helpers';
 
 import { IncomingHttpHeaders } from 'node:http';
 import { AuthResponseDto } from '../dto/auth/auth-response.dto';
@@ -30,7 +40,11 @@ export class AuthController {
   constructor(private $usuario: AuthService) {}
 
   @Post('login')
-  @ApiOperation({ summary: 'Iniciar sesión', description: 'Autentica un usuario y devuelve los tokens JWT.' })
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Iniciar sesión',
+    description: 'Autentica un usuario y devuelve los tokens JWT.',
+  })
   @ApiBody({ type: LoginUsuarioDto }) // DTO de entrada
   @ApiResponse({
     status: HttpStatus.CREATED,
@@ -38,27 +52,72 @@ export class AuthController {
     type: AuthResponseDto,
   })
   @ApiBadRequestResponse({ description: 'Credenciales inválidas o faltantes.' })
-  @ApiUnauthorizedResponse({ description: 'Usuario no autorizado (credenciales incorrectas).' })
-  loginUser(@Body() loginUsuarioDto: LoginUsuarioDto) {
-    return this.$usuario.login(loginUsuarioDto);
+  @ApiUnauthorizedResponse({
+    description: 'Usuario no autorizado (credenciales incorrectas).',
+  })
+  loginUser(@Body() loginUsuarioDto: LoginUsuarioDto, @Req() request: Request) {
+    return this.$usuario.login(loginUsuarioDto, {
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
   }
 
   @Post('refresh_token')
   @UseGuards(RefreshTokenGuard)
-  @ApiOperation({ summary: 'Refrescar token', description: 'Obtiene un nuevo par de tokens usando el refresh token.' })
+  @ApiOperation({
+    summary: 'Refrescar token',
+    description:
+      'Obtiene un nuevo par de tokens usando el refresh token (rota el refresh token: el usado queda revocado).',
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Tokens renovados exitosamente.',
     type: TokenResponseDto,
   })
-  @ApiUnauthorizedResponse({ description: 'Refresh token inválido o expirado.' })
-  refreshToken(@GetUser() user: Usuario) {
-    return this.$usuario.getJwtTokens({ id: user.id });
+  @ApiUnauthorizedResponse({
+    description: 'Refresh token inválido, expirado o ya utilizado.',
+  })
+  refreshToken(@GetUser() user: Usuario, @Req() request: Request) {
+    const refreshTokenActual = extractBearerToken(
+      request.headers.authorization,
+    );
+    return this.$usuario.refrescarTokens(user, refreshTokenActual, {
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
+  }
+
+  @Post('logout')
+  @UseGuards(RefreshTokenGuard)
+  @ApiOperation({
+    summary: 'Cerrar sesión',
+    description:
+      'Revoca el refresh token presentado (Bearer token de refresh).',
+  })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'Sesión cerrada correctamente.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Refresh token inválido o expirado.',
+  })
+  logout(@GetUser() user: Usuario, @Req() request: Request) {
+    const refreshTokenActual = extractBearerToken(
+      request.headers.authorization,
+    );
+    return this.$usuario.cerrarSesion(user.id, refreshTokenActual, {
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
   }
 
   @Get('check-status')
   @Auth() // Protege la ruta
-  @ApiOperation({ summary: 'Verificar estado de autenticación', description: 'Retorna el usuario autenticado (válido para verificar token).' })
+  @ApiOperation({
+    summary: 'Verificar estado de autenticación',
+    description:
+      'Retorna el usuario autenticado (válido para verificar token).',
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Usuario autenticado correctamente.',
@@ -71,7 +130,11 @@ export class AuthController {
 
   @Get('private')
   @Auth()
-  @ApiOperation({ summary: 'Ruta privada de prueba', description: 'Endpoint de ejemplo que devuelve información del usuario y cabeceras.' })
+  @ApiOperation({
+    summary: 'Ruta privada de prueba',
+    description:
+      'Endpoint de ejemplo que devuelve información del usuario y cabeceras.',
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Respuesta exitosa con datos del usuario y cabeceras.',
@@ -79,7 +142,7 @@ export class AuthController {
   })
   @ApiUnauthorizedResponse({ description: 'Token inválido o ausente.' })
   testingPrivateRoute(
-    @Req() request: Express.Request,
+    @Req() request: Request,
     @GetUser() user: Usuario,
     @GetUser('usuario') usuario: string,
     @RawHeaders() rawHeaders: string[],

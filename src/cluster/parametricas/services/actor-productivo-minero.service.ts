@@ -6,14 +6,14 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { Repository } from 'typeorm';
-import { CreateActorProductivoMineroDto } from '../dto/ingenios/create-actor-productivo-minero.dto';
+import { CreateActorProductivoMineroDto } from '../dto/actor-productivo-minero/create-actor-productivo-minero.dto';
 
 import { Usuario } from 'src/security/entities/usuario.entity';
-import { FiltrosActorProductivoMineroDto } from '../dto/ingenios/filtros-actor-productivo-minero.dto';
-import { ActoresProductivosMinerosPaginadosDto } from '../dto/ingenios/actor-productivo-minero-paginacion.dto';
+import { FiltrosActorProductivoMineroDto } from '../dto/actor-productivo-minero/filtros-actor-productivo-minero.dto';
+import { ActoresProductivosMinerosPaginadosDto } from '../dto/actor-productivo-minero/actor-productivo-minero-paginacion.dto';
 import { ActorProductivoMinero } from '../entities/actor-productivo-minero.entity';
 import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
-import { UpdateActorProductivoMineroDto } from '../dto/ingenios/update-actor-productivo-minero.dto';
+import { UpdateActorProductivoMineroDto } from '../dto/actor-productivo-minero/update-actor-productivo-minero.dto';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
 
 @Injectable()
