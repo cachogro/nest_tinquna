@@ -1,11 +1,14 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsNotEmpty,
   IsOptional,
   IsPositive,
   IsString,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { SeccionMinaItemDto } from './seccion-mina-item.dto';
 
 export class CreateActorProductivoMineroDto {
   @IsNotEmpty({
@@ -47,4 +50,37 @@ export class CreateActorProductivoMineroDto {
     message: 'El teléfono no puede exceder los 30 caracteres.',
   })
   telefono?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsPositive({
+    message: 'El municipio seleccionado no es válido.',
+  })
+  idMunicipio?: number;
+
+  @IsOptional()
+  @IsString({
+    message: 'El NIM debe ser una cadena de texto.',
+  })
+  @MaxLength(20, {
+    message: 'El NIM no puede exceder los 20 caracteres.',
+  })
+  nim?: string;
+
+  @IsOptional()
+  @IsString({
+    message: 'El código debe ser una cadena de texto.',
+  })
+  @MaxLength(20, {
+    message: 'El código no puede exceder los 20 caracteres.',
+  })
+  codigo?: string;
+
+  @IsOptional()
+  @IsArray({
+    message: 'Las secciones mineras deben ser un arreglo.',
+  })
+  @ValidateNested({ each: true })
+  @Type(() => SeccionMinaItemDto)
+  seccionesMina?: SeccionMinaItemDto[];
 }

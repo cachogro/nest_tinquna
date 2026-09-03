@@ -2,6 +2,8 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ComercioInternoService } from './services/comercio-interno.service';
 import { ComercioInternoController } from './controller/comercio-interno.controller';
 import { ReportesRecepcionMineralController } from './controller/reportes-recepcion-mineral.controller';
+import { ValorizacionEntregadoController } from './controller/valorizacion-entregado.controller';
+import { ReportesValorizacionMineralController } from './controller/reportes-valorizacion-mineral.controller';
 import { RecepcionMineralReportesService } from './reports/recepcion-mineral-reportes.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SecurityModule } from 'src/security/security.module';
@@ -25,6 +27,9 @@ import { ValorizacionDetalleMineral } from './entities/valorizacion/valorizacion
 import { ValorizacionMineral } from './entities/valorizacion/valorizacion-mineral.entity';
 import { ValorizacionMineralService } from './services/valorizacion-mineral.service';
 import { ValorizacionMineralPdfService } from './services/valorizacion-mineral-pdf.service';
+import { ValorizacionEntregadoService } from './services/valorizacion-entregado.service';
+import { ValorizacionMineralReportesService } from './reports/valorizacion-mineral-reportes.service';
+import { ValorizacionMineralReporteExcelService } from './reports/valorizacion-mineral-reporte-excel.service';
 
 @Module({
   providers: [
@@ -36,8 +41,16 @@ import { ValorizacionMineralPdfService } from './services/valorizacion-mineral-p
     ReciboRecepcionMineralPdfService,
     ValorizacionMineralService,
     ValorizacionMineralPdfService,
+    ValorizacionEntregadoService,
+    ValorizacionMineralReportesService,
+    ValorizacionMineralReporteExcelService,
   ],
-  controllers: [ComercioInternoController, ReportesRecepcionMineralController],
+  controllers: [
+    ComercioInternoController,
+    ReportesRecepcionMineralController,
+    ValorizacionEntregadoController,
+    ReportesValorizacionMineralController,
+  ],
   imports: [
     ConfigModule,
     TypeOrmModule.forFeature(

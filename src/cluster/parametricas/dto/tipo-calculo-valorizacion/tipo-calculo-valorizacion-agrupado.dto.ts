@@ -13,4 +13,10 @@ export class TipoCalculoValorizacionAgrupadoDto {
     type: [TipoCalculoValorizacion],
   })
   penalidades: TipoCalculoValorizacion[];
+
+  @ApiProperty({
+    description: 'Tipos de cálculo del grupo "otros" (id_tipo_calculo = 3).',
+    type: [TipoCalculoValorizacion],
+  })
+  otros: TipoCalculoValorizacion[];
 }

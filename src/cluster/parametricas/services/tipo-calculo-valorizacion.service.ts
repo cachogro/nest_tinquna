@@ -18,7 +18,9 @@ export class TipoCalculoValorizacionService {
     private readonly tipoCalculoRepository: Repository<TipoCalculoValorizacion>,
   ) {}
 
-  private async obtenerTipoCalculo(id: number): Promise<TipoCalculoValorizacion> {
+  private async obtenerTipoCalculo(
+    id: number,
+  ): Promise<TipoCalculoValorizacion> {
     const tipoCalculo = await this.tipoCalculoRepository.findOne({
       where: { id },
     });
@@ -115,6 +117,7 @@ export class TipoCalculoValorizacionService {
     return {
       gastos: tipos.filter((t) => t.idTipoCalculo === 1),
       penalidades: tipos.filter((t) => t.idTipoCalculo === 2),
+      otros: tipos.filter((t) => t.idTipoCalculo === 3),
     };
   }
 }

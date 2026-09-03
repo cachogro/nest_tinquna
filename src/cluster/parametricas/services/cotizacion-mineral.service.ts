@@ -93,26 +93,9 @@ export class CotizacionMineralService {
         );
       }
 
-      // Si no se especifican nuevas alícuotas, se heredan de la última
-      // cotización registrada para el mineral (sin importar su estado).
-      const ultimaCotizacion = cotizacionesMineral[0];
-
-      const alicuotaExterna =
-        createDto.alicuotaExterna ?? ultimaCotizacion?.alicuotaExterna;
-      const alicuotaInterna =
-        createDto.alicuotaInterna ?? ultimaCotizacion?.alicuotaInterna;
-
-      if (alicuotaExterna === undefined || alicuotaInterna === undefined) {
-        throw new BadRequestException(
-          'Debe indicar la alícuota externa e interna: el mineral no tiene una cotización previa de la cual heredarlas.',
-        );
-      }
-
       const cotizacion = queryRunner.manager.create(CotizacionMineral, {
         idMineral: createDto.idMineral,
         cotizacionMineralDolares: createDto.cotizacionMineralDolares,
-        alicuotaExterna,
-        alicuotaInterna,
         fechaVigenciaInicial: ahora,
         fechaVigenciaFinal,
         usuarioRegistro: user.usuario,
@@ -312,12 +295,6 @@ export class CotizacionMineralService {
     cotizacion.usuarioUltimaModificacion = user.usuario;
     if (updateDto.cotizacionMineralDolares !== undefined) {
       cotizacion.cotizacionMineralDolares = updateDto.cotizacionMineralDolares;
-    }
-    if (updateDto.alicuotaExterna !== undefined) {
-      cotizacion.alicuotaExterna = updateDto.alicuotaExterna;
-    }
-    if (updateDto.alicuotaInterna !== undefined) {
-      cotizacion.alicuotaInterna = updateDto.alicuotaInterna;
     }
     return await this.cotizacionRepository.save(cotizacion);
   }

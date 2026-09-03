@@ -35,24 +35,6 @@ export class CotizacionMineral extends Auditoria {
   cotizacionMineralDolares: number;
 
   @Column({
-    name: 'alicuota_externa',
-    type: 'numeric',
-    // precision: 12,
-    // scale: 5,
-    transformer: new ColumnNumericTransformer(),
-  })
-  alicuotaExterna: number;
-
-  @Column({
-    name: 'alicuota_interna',
-    type: 'numeric',
-    // precision: 12,
-    // scale: 5,
-    transformer: new ColumnNumericTransformer(),
-  })
-  alicuotaInterna: number;
-
-  @Column({
     name: 'fecha_vigencia_inicial',
     type: 'timestamptz',
   })

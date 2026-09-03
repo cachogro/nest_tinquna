@@ -205,4 +205,14 @@ export class ValorizacionDetalleMineral extends Auditoria {
     transformer: new ColumnNumericTransformer(),
   })
   precioUsdTm?: number;
+
+  @Column({
+    name: 'porcentaje_factor',
+    type: 'numeric',
+    precision: 8,
+    scale: 4,
+    nullable: true,
+    transformer: new ColumnNumericTransformer(),
+  })
+  factorPorsentaje?: number;
 }

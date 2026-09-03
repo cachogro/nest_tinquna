@@ -18,6 +18,8 @@ import { CotizacionMineral } from './entities/cotizacion-mineral.entity';
 
 import { ActorProductivoMinero } from './entities/actor-productivo-minero.entity';
 import { TipoActorProductivoMinero } from './entities/tipo-actor-productivo-minero.entity';
+import { Municipio } from './entities/municipio.entity';
+import { MunicipioService } from './services/municipio.service';
 import { ActorProdMineroService } from './services/actor-productivo-minero.service';
 import { Laboratorio } from './entities/laboratorio.entity';
 import { LaboratorioService } from './services/laboratorio.service';
@@ -43,6 +45,7 @@ import { TipoCalculoValorizacionService } from './services/tipo-calculo-valoriza
     MineralService,
     EscalaPrecioMineralService,
     TipoCalculoValorizacionService,
+    MunicipioService,
   ],
   imports: [
     ConfigModule,
@@ -58,6 +61,7 @@ import { TipoCalculoValorizacionService } from './services/tipo-calculo-valoriza
         CotizacionMineral,
         ActorProductivoMinero,
         TipoActorProductivoMinero,
+        Municipio,
         Laboratorio,
         EntidadAporte,
         TipoEntidadAporte,

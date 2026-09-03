@@ -13,6 +13,7 @@ import { FiltrosActorProductivoMineroDto } from '../dto/actor-productivo-minero/
 import { ActoresProductivosMinerosPaginadosDto } from '../dto/actor-productivo-minero/actor-productivo-minero-paginacion.dto';
 import { ActorProductivoMinero } from '../entities/actor-productivo-minero.entity';
 import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
+import { Municipio } from '../entities/municipio.entity';
 import { UpdateActorProductivoMineroDto } from '../dto/actor-productivo-minero/update-actor-productivo-minero.dto';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
 
@@ -24,6 +25,9 @@ export class ActorProdMineroService {
 
     @InjectRepository(TipoActorProductivoMinero, 'ci')
     private readonly tipoActorRepository: Repository<TipoActorProductivoMinero>,
+
+    @InjectRepository(Municipio, 'ci')
+    private readonly municipioRepository: Repository<Municipio>,
   ) {}
 
   // async create(
@@ -83,12 +87,28 @@ export class ActorProdMineroService {
       );
     }
 
+    if (createActorDto.idMunicipio) {
+      const municipio = await this.municipioRepository.findOne({
+        where: { id: createActorDto.idMunicipio, activo: true },
+      });
+
+      if (!municipio) {
+        throw new NotFoundException(
+          'El municipio seleccionado no existe o no está activo.',
+        );
+      }
+    }
+
     const actorProductivoMinero = this.actorProdMineroRepository.create({
       idTipoActorProductivoMinero:
         createActorDto.idTipoActorProductivoMinero.toString(),
       nombre: createActorDto.nombre.trim(),
       direccion: createActorDto.direccion.trim(),
       telefono: createActorDto.telefono?.trim(),
+      idMunicipio: createActorDto.idMunicipio,
+      nim: createActorDto.nim?.trim(),
+      codigo: createActorDto.codigo?.trim(),
+      seccionesMina: createActorDto.seccionesMina,
       usuarioRegistro: user.usuario,
     });
 
@@ -141,12 +161,28 @@ export class ActorProdMineroService {
       );
     }
 
+    if (updateActorDto.idMunicipio) {
+      const municipio = await this.municipioRepository.findOne({
+        where: { id: updateActorDto.idMunicipio, activo: true },
+      });
+
+      if (!municipio) {
+        throw new NotFoundException(
+          'El municipio seleccionado no existe o no está activo.',
+        );
+      }
+    }
+
     actorProductivoMinero.idTipoActorProductivoMinero =
       updateActorDto.idTipoActorProductivoMinero.toString();
 
     actorProductivoMinero.nombre = updateActorDto.nombre.trim();
     actorProductivoMinero.direccion = updateActorDto.direccion.trim();
     actorProductivoMinero.telefono = updateActorDto.telefono?.trim();
+    actorProductivoMinero.idMunicipio = updateActorDto.idMunicipio;
+    actorProductivoMinero.nim = updateActorDto.nim?.trim();
+    actorProductivoMinero.codigo = updateActorDto.codigo?.trim();
+    actorProductivoMinero.seccionesMina = updateActorDto.seccionesMina;
     actorProductivoMinero.usuarioUltimaModificacion = user.usuario;
 
     return await this.actorProdMineroRepository.save(actorProductivoMinero);

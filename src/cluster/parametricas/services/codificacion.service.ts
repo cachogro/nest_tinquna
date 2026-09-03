@@ -39,6 +39,7 @@ export class CodificacionService {
       select: {
         id: true,
         descripcion: true,
+        simbolo: true,
       },
     });
 
@@ -55,6 +56,7 @@ export class CodificacionService {
       minerales: mineralesEncontrados.map((mineral) => ({
         id: Number(mineral.id),
         descripcion: mineral.descripcion,
+        simbolo: mineral.simbolo,
       })),
     });
     return await this.codificacionRepository.save(codificacion);
@@ -62,7 +64,7 @@ export class CodificacionService {
 
   private async obtenerMineralesValidos(
     idsMinerales: number[],
-  ): Promise<{ id: number; descripcion: string }[]> {
+  ): Promise<{ id: number; descripcion: string; simbolo: string }[]> {
     const mineralesEncontrados = await this.mineralRepository.find({
       where: {
         id: In(idsMinerales),
@@ -70,6 +72,7 @@ export class CodificacionService {
       select: {
         id: true,
         descripcion: true,
+        simbolo: true,
       },
     });
 
@@ -88,6 +91,7 @@ export class CodificacionService {
     return mineralesEncontrados.map((mineral) => ({
       id: Number(mineral.id),
       descripcion: mineral.descripcion,
+      simbolo: mineral.simbolo,
     }));
   }
 

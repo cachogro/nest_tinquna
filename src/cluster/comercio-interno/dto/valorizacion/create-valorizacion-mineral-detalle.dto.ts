@@ -109,4 +109,12 @@ export class CreateValorizacionMineralDetalleDto {
   @IsOptional()
   @IsNumber()
   precioUsdTm?: number;
+
+  @ApiPropertyOptional({
+    description: 'Porcentaje del factor aplicado a este detalle de mineral.',
+    example: 98.5,
+  })
+  @IsOptional()
+  @IsNumber()
+  factorPorsentaje?: number;
 }

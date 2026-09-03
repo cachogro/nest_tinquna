@@ -1,6 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsNotEmpty, IsNumber, IsString, Length } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Min,
+} from 'class-validator';
 
 export class CreateMineralDto {
   @ApiProperty({
@@ -90,4 +97,32 @@ export class CreateMineralDto {
     message: 'El tipo debe tener entre 2 y 50 caracteres.',
   })
   tipo: string;
+
+  @ApiProperty({
+    example: 4.5,
+    description: 'Alícuota externa del mineral.',
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 5 },
+    { message: 'La alícuota externa debe ser un número válido con máximo 5 decimales.' },
+  )
+  @Min(0, { message: 'La alícuota externa no puede ser negativa.' })
+  alicuotaExterna?: number;
+
+  @ApiProperty({
+    example: 3.2,
+    description: 'Alícuota interna del mineral.',
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 5 },
+    { message: 'La alícuota interna debe ser un número válido con máximo 5 decimales.' },
+  )
+  @Min(0, { message: 'La alícuota interna no puede ser negativa.' })
+  alicuotaInterna?: number;
 }

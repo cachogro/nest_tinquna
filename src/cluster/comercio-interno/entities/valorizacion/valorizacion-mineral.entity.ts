@@ -266,6 +266,16 @@ export class ValorizacionMineral extends Auditoria {
   })
   totalValorLiquidoVentaUsd?: number;
 
+  @Column({
+    name: 'total_valor_neto_venta_bolivianos',
+    type: 'numeric',
+    precision: 14,
+    scale: 2,
+    default: 0,
+    nullable: false,
+  })
+  totalValorNetoVentaBolivianos: number;
+
   // Solo aplica a RAM cargas (pricing por escala de precio, no por cotización).
   @Column({
     name: 'total_valor_tonelada_bolivianos',
@@ -304,6 +314,41 @@ export class ValorizacionMineral extends Auditoria {
     nullable: true,
   })
   fechaValorizacion?: string;
+
+  // Snapshot del objeto completo de la valorización (con recepción,
+  // detalles, cálculos y aportes) tal como quedó al pasar a PRE-VALORIZADO.
+  @Column({
+    name: 'prevalorizado',
+    type: 'jsonb',
+    nullable: true,
+  })
+  prevalorizado?: Record<string, any>;
+
+  // ============================
+  // Entregado (salida del material del ingenio)
+  // ============================
+
+  // true = el material de esta valorización ya salió del ingenio. Solo puede
+  // activarse cuando la valorización está en PRE-VALORIZADO (2) o VALORIZADO
+  // (3). Se gestiona con el servicio/controlador dedicado
+  // (PATCH /comercio_interno/valorizacion_mineral/:id/entregado), no con el
+  // PATCH genérico de la valorización.
+  @Column({
+    name: 'entregado',
+    type: 'boolean',
+    default: false,
+    nullable: false,
+  })
+  entregado: boolean;
+
+  // Momento en que se marcó la salida del material. Queda null mientras
+  // `entregado` sea false.
+  @Column({
+    name: 'fecha_entregado',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  fechaEntregado?: Date | null;
 
   // ============================
   // Relaciones

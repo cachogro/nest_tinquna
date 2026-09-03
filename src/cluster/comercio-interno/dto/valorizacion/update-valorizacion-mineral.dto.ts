@@ -157,6 +157,11 @@ export class UpdateValorizacionMineralDto {
   @IsNumber()
   totalValorLiquidoVentaUsd?: number;
 
+  @ApiPropertyOptional({ example: 44663.0 })
+  @IsOptional()
+  @IsNumber()
+  totalValorNetoVentaBolivianos?: number;
+
   @ApiPropertyOptional({
     description: 'Valor de la tonelada en bolivianos. Solo aplica a RAM cargas.',
     example: 1.5421,

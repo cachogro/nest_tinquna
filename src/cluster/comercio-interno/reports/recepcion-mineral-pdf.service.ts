@@ -423,7 +423,7 @@ export class RecepcionMineralReportePdfService {
       return '--';
     }
 
-    return Number(valor).toLocaleString('es-BO', {
+    return Number(valor).toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     });

@@ -51,13 +51,13 @@ async function bootstrap() {
   app.useWebSocketAdapter(new CustomIoAdapter(app));
   app.enableCors();
 
-  // maquina local
-  //await app.listen(process.env.PORT);
-  await app.listen(process.env.PORT || 3000);
+  // Escucha en todas las interfaces de red (0.0.0.0) para que otros
+  // equipos de la red WiFi/LAN puedan acceder por la IP del servidor.
+  const port = process.env.PORT || 3000;
+  await app.listen(port, '0.0.0.0');
 
-  //habilitar para el escucha red local
-  // await app.listen(process.env.PORT || 3000, '0.0.0.0');
-
-  logger.log(`Aplicación lista corriendo en el puerto: ${process.env.PORT}`);
+  logger.log(`Aplicación lista corriendo en el puerto: ${port}`);
+  logger.log(`Local:  http://localhost:${port}/api`);
+  logger.log(`Red:    http://<IP-DE-ESTA-PC>:${port}/api`);
 }
 bootstrap();

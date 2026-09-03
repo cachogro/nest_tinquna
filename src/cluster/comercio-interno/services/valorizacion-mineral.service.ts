@@ -280,7 +280,9 @@ export class ValorizacionMineralService {
         (actual.ajustePuntosLey ?? null) ===
           (detalle.ajustePuntosLey ?? null) &&
         (actual.leyAjustada ?? null) === (detalle.leyAjustada ?? null) &&
-        (actual.precioUsdTm ?? null) === (detalle.precioUsdTm ?? null);
+        (actual.precioUsdTm ?? null) === (detalle.precioUsdTm ?? null) &&
+        (actual.factorPorsentaje ?? null) ===
+          (detalle.factorPorsentaje ?? null);
 
       if (sinCambios) {
         continue;
@@ -325,6 +327,7 @@ export class ValorizacionMineralService {
           ajustePuntosLey: detalle.ajustePuntosLey,
           leyAjustada: detalle.leyAjustada,
           precioUsdTm: detalle.precioUsdTm,
+          factorPorsentaje: detalle.factorPorsentaje,
           usuarioRegistro: user.usuario,
         }),
       );
@@ -517,6 +520,7 @@ export class ValorizacionMineralService {
         'actorProductivoMinero.tipoActorProductivoMinero',
         'tipoActorProductivoMinero',
       )
+      .leftJoinAndSelect('actorProductivoMinero.municipio', 'municipio')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.estado', 'estadoRecepcion')
       .leftJoinAndSelect('valorizacion.laboratorio', 'laboratorio')
@@ -653,18 +657,43 @@ export class ValorizacionMineralService {
       );
     }
 
-    const valorizacion = this.valorizacionRepository.create({
-      idRecepcionMineral: idRecepcionMineral.toString(),
-      idEstadoValorizacion: ESTADO_VALORIZACION_BORRADOR,
-      anticipo: recepcion.anticipo ?? 0,
-      pesoBrutoHumedoKilogramos: recepcion.balanzaL,
-      totalValorLiquidoVentaBolivianos: 0,
-      usuarioRegistro: user.usuario,
-    });
+    const queryRunner = this.dataSource.createQueryRunner();
 
-    const registro = await this.valorizacionRepository.save(valorizacion);
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    return await this.obtenerValorizacionCompleta(registro.id);
+    try {
+      const valorizacion = queryRunner.manager.create(ValorizacionMineral, {
+        idRecepcionMineral: idRecepcionMineral.toString(),
+        idEstadoValorizacion: ESTADO_VALORIZACION_BORRADOR,
+        anticipo: recepcion.anticipo ?? 0,
+        pesoBrutoHumedoKilogramos: recepcion.balanzaL,
+        totalValorLiquidoVentaBolivianos: 0,
+        totalValorNetoVentaBolivianos: 0,
+        usuarioRegistro: user.usuario,
+      });
+
+      const registro = await queryRunner.manager.save(
+        ValorizacionMineral,
+        valorizacion,
+      );
+
+      // Puebla el puntero inverso en la recepción para poder consultar
+      // directamente el id de su valorización, sin necesidad de join.
+      await queryRunner.manager.update(RecepcionMineral, idRecepcionMineral, {
+        idValorizacion: registro.id,
+        usuarioUltimaModificacion: user.usuario,
+      });
+
+      await queryRunner.commitTransaction();
+
+      return await this.obtenerValorizacionCompleta(registro.id);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   // ============================
@@ -751,6 +780,7 @@ export class ValorizacionMineralService {
         otrosAnticipo: dto.otrosAnticipo,
         totalValorLiquidoVentaBolivianos: dto.totalValorLiquidoVentaBolivianos,
         totalValorLiquidoVentaUsd: dto.totalValorLiquidoVentaUsd,
+        totalValorNetoVentaBolivianos: dto.totalValorNetoVentaBolivianos,
 
         totalValorToneladaBolivianos: dto.totalValorToneladaBolivianos,
         totalValorToneladaUsd: dto.totalValorToneladaUsd,
@@ -849,6 +879,20 @@ export class ValorizacionMineralService {
       );
     }
 
+    // Al pasar a PRE-VALORIZADO se guarda una foto completa del objeto
+    // (recepción, detalles, cálculos y aportes) tal como queda en ese
+    // momento, para dejar registro de con qué datos se pre-valorizó.
+    let prevalorizado: Record<string, any> | undefined;
+
+    if (dto.idEstadoValorizacion === ESTADO_VALORIZACION_PRE_VALORIZADO) {
+      const valorizacionCompleta = await this.obtenerValorizacionCompleta(id);
+
+      prevalorizado = {
+        ...valorizacionCompleta,
+        idEstadoValorizacion: dto.idEstadoValorizacion,
+      };
+    }
+
     const queryRunner = this.dataSource.createQueryRunner();
 
     await queryRunner.connect();
@@ -857,6 +901,7 @@ export class ValorizacionMineralService {
     try {
       await queryRunner.manager.update(ValorizacionMineral, id, {
         idEstadoValorizacion: dto.idEstadoValorizacion,
+        ...(prevalorizado ? { prevalorizado } : {}),
         usuarioUltimaModificacion: user.usuario,
       });
 

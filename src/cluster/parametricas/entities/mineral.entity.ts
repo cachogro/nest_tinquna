@@ -47,6 +47,22 @@ export class Mineral extends Auditoria {
   })
   tipo: string;
 
+  @Column({
+    name: 'alicuota_externa',
+    type: 'numeric',
+    nullable: true,
+    transformer: new ColumnNumericTransformer(),
+  })
+  alicuotaExterna?: number;
+
+  @Column({
+    name: 'alicuota_interna',
+    type: 'numeric',
+    nullable: true,
+    transformer: new ColumnNumericTransformer(),
+  })
+  alicuotaInterna?: number;
+
   @OneToOne(
     () => CotizacionMineral,
     (cotizacionMineral) => cotizacionMineral.mineral,

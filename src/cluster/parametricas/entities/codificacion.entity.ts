@@ -25,5 +25,6 @@ export class Codificacion extends Auditoria {
   minerales: {
     id: number;
     descripcion: string;
+    simbolo: string;
   }[];
 }

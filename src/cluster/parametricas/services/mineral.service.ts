@@ -55,6 +55,8 @@ export class MineralService {
       detalleMineral: createMineralDto.detalleMineral.trim(),
       factorConversion: createMineralDto.factorConversion,
       tipo: createMineralDto.tipo.trim(),
+      alicuotaExterna: createMineralDto.alicuotaExterna,
+      alicuotaInterna: createMineralDto.alicuotaInterna,
       usuarioRegistro: user.usuario,
     });
 
@@ -90,6 +92,12 @@ export class MineralService {
     mineral.detalleMineral = updateMineralDto.detalleMineral.trim();
     mineral.factorConversion = updateMineralDto.factorConversion;
     mineral.tipo = updateMineralDto.tipo.trim();
+    if (updateMineralDto.alicuotaExterna !== undefined) {
+      mineral.alicuotaExterna = updateMineralDto.alicuotaExterna;
+    }
+    if (updateMineralDto.alicuotaInterna !== undefined) {
+      mineral.alicuotaInterna = updateMineralDto.alicuotaInterna;
+    }
     mineral.usuarioUltimaModificacion = user.usuario;
     return await this.mineralRepository.save(mineral);
   }

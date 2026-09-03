@@ -5,6 +5,7 @@ import {
   JoinColumn,
   ManyToOne,
   OneToMany,
+  OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
@@ -183,6 +184,26 @@ export class RecepcionMineral extends Auditoria {
     },
   )
   valorizaciones?: ValorizacionMineral[];
+
+  // Puntero directo a la valorización generada para esta recepción (se
+  // llena al crear el borrador de la valorización). Complementa a
+  // `valorizaciones` para no tener que hacer join cuando solo se necesita
+  // saber si ya existe una valorización y cuál es su id.
+  @Column({
+    name: 'id_valorizacion',
+    type: 'bigint',
+    nullable: true,
+  })
+  idValorizacion?: string;
+
+  @OneToOne(() => ValorizacionMineral, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_valorizacion',
+  })
+  valorizacion?: ValorizacionMineral;
 
   // ============================
   // Estado

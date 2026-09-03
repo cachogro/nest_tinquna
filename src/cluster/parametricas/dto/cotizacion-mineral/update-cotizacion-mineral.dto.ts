@@ -24,24 +24,6 @@ export class UpdateCotizacionMineralDto {
   cotizacionMineralDolares?: number;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsNumber(
-    { maxDecimalPlaces: 5 },
-    { message: 'La alícuota externa debe ser un número válido con máximo 5 decimales.' }
-  )
-  @Min(0, { message: 'La alícuota externa no puede ser negativa.' })
-  alicuotaExterna?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber(
-    { maxDecimalPlaces: 5 },
-    { message: 'La alícuota interna debe ser un número válido con máximo 5 decimales.' }
-  )
-  @Min(0, { message: 'La alícuota interna no puede ser negativa.' })
-  alicuotaInterna?: number;
-
-  @IsOptional()
   @IsDateString({}, { message: 'La fecha de vigencia final no tiene un formato válido.' })
   fechaVigenciaFinal?: Date;
 }

@@ -78,6 +78,8 @@ import { CreateTipoCalculoValorizacionDto } from '../dto/tipo-calculo-valorizaci
 import { UpdateTipoCalculoValorizacionDto } from '../dto/tipo-calculo-valorizacion/update-tipo-calculo-valorizacion.dto';
 import { TipoCalculoValorizacionService } from '../services/tipo-calculo-valorizacion.service';
 import { TipoCalculoValorizacionAgrupadoDto } from '../dto/tipo-calculo-valorizacion/tipo-calculo-valorizacion-agrupado.dto';
+import { Municipio } from '../entities/municipio.entity';
+import { MunicipioService } from '../services/municipio.service';
 
 @ApiTags('Paramétricas')
 @Controller('parametricas')
@@ -94,6 +96,7 @@ export class ParametricasController {
     private readonly mineralService: MineralService,
     private readonly escalaPrecioMineralService: EscalaPrecioMineralService,
     private readonly tipoCalculoValorizacionService: TipoCalculoValorizacionService,
+    private readonly municipioService: MunicipioService,
   ) {}
 
   @Post('codificacion')
@@ -305,8 +308,7 @@ export class ParametricasController {
       'Si el body no incluye "id", registra una nueva cotización para el mineral indicado (solo puede existir una cotización vigente por mineral). ' +
       'Si el body incluye "id", actualiza la cotización correspondiente (no se puede modificar una cotización que ya venció). ' +
       '"fechaVigenciaInicial" nunca se envía: el backend la fija automáticamente con el instante exacto del servidor al crear. ' +
-      '"fechaVigenciaFinal" se envía solo como fecha ("YYYY-MM-DD"); el backend la normaliza internamente al fin de ese día (23:59:59.999, hora de Bolivia UTC-4). ' +
-      'Si "alicuotaExterna"/"alicuotaInterna" se omiten al crear, se heredan de la última cotización registrada para ese mineral.',
+      '"fechaVigenciaFinal" se envía solo como fecha ("YYYY-MM-DD"); el backend la normaliza internamente al fin de ese día (23:59:59.999, hora de Bolivia UTC-4).',
   })
   @ApiBody({
     type: CreateCotizacionMineralDto,
@@ -314,19 +316,7 @@ export class ParametricasController {
       'Datos para crear (sin "id") o actualizar (con "id") una cotización.',
     examples: {
       crear: {
-        summary: 'Crear cotización con alícuotas explícitas',
-        value: {
-          idMineral: 1,
-          cotizacionMineralDolares: 3125.45896,
-          alicuotaExterna: 4.5,
-          alicuotaInterna: 3.2,
-          fechaVigenciaFinal: '2026-07-31',
-        },
-      },
-      crearHeredandoAlicuotas: {
-        summary: 'Crear cotización heredando alícuotas de la última registrada',
-        description:
-          'Al omitir alicuotaExterna/alicuotaInterna, se copian de la última cotización del mineral. Falla si el mineral nunca tuvo una cotización previa.',
+        summary: 'Crear cotización',
         value: {
           idMineral: 1,
           cotizacionMineralDolares: 3125.45896,
@@ -340,8 +330,6 @@ export class ParametricasController {
         value: {
           id: 42,
           cotizacionMineralDolares: 3200,
-          alicuotaExterna: 5,
-          alicuotaInterna: 3.5,
           fechaVigenciaFinal: '2026-08-15',
         },
       },
@@ -354,7 +342,7 @@ export class ParametricasController {
   })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos: ya existe una cotización vigente para el mineral, la fecha de vigencia final es anterior a hoy, la cotización a actualizar ya no está vigente, o faltan alícuotas y el mineral no tiene cotización previa de la cual heredarlas.',
+      'Datos inválidos: ya existe una cotización vigente para el mineral, la fecha de vigencia final es anterior a hoy, o la cotización a actualizar ya no está vigente.',
   })
   @ApiNotFoundResponse({
     description:
@@ -909,6 +897,32 @@ export class ParametricasController {
   }
 
   //---------------------------------------------------------------------------
+  //                        Municipios (solo lectura)
+  //---------------------------------------------------------------------------
+
+  @Get('municipio')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los municipios activos',
+    description:
+      'Retorna todos los municipios activos. Es una tabla de referencia ya poblada ' +
+      '(sin CRUD): la búsqueda/filtrado la realiza el front sobre este listado.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de municipios activos obtenido correctamente.',
+    type: [Municipio],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllMunicipios(): Promise<Municipio[]> {
+    return await this.municipioService.findAll();
+  }
+
+  //---------------------------------------------------------------------------
   //                        Laboratorios
   //---------------------------------------------------------------------------
 
@@ -1228,7 +1242,8 @@ export class ParametricasController {
   @ApiOperation({
     summary: 'Registrar o actualizar un mineral',
     description:
-      'Si no se envía el campo id se registra un nuevo mineral. Si se envía el id, se actualiza el mineral correspondiente.',
+      'Si no se envía el campo id se registra un nuevo mineral. Si se envía el id, se actualiza el mineral correspondiente. ' +
+      '"alicuotaExterna" y "alicuotaInterna" son opcionales.',
   })
   @ApiBody({
     description: 'Datos del mineral.',
@@ -1242,6 +1257,8 @@ export class ParametricasController {
           detalleMineral: 'Mineral de plata',
           factorConversion: 31.1035,
           tipo: 'METALICO',
+          alicuotaExterna: 4.5,
+          alicuotaInterna: 3.2,
         },
       },
       actualizar: {
@@ -1254,6 +1271,8 @@ export class ParametricasController {
           detalleMineral: 'Mineral de plata',
           factorConversion: 31.1035,
           tipo: 'METALICO',
+          alicuotaExterna: 4.5,
+          alicuotaInterna: 3.2,
         },
       },
     },
