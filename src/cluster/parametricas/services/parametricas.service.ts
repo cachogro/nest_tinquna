@@ -12,6 +12,9 @@ import { PersonaTipo } from '../entities/persona-tipo.entity';
 import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
 import { EstadoRegistro } from '../entities/estado-registro.entity';
 import { EstadoValorizacion } from '../entities/estado-valorizacion.entity';
+import { FormaPago } from '../entities/forma-pago.entity';
+import { KardexSubcuenta } from '../entities/kardex-subcuenta.entity';
+import { DestinoGasto } from '../entities/destino-gasto.entity';
 
 @Injectable()
 export class ParametricasService {
@@ -36,6 +39,15 @@ export class ParametricasService {
 
     @InjectRepository(TipoActorProductivoMinero, 'ci')
     private readonly TipoActorMineroRepository: Repository<TipoActorProductivoMinero>,
+
+    @InjectRepository(FormaPago, 'ci')
+    private readonly formaPagoRepository: Repository<FormaPago>,
+
+    @InjectRepository(KardexSubcuenta, 'ci')
+    private readonly kardexSubcuentaRepository: Repository<KardexSubcuenta>,
+
+    @InjectRepository(DestinoGasto, 'ci')
+    private readonly destinoGastoRepository: Repository<DestinoGasto>,
   ) {}
 
   async findAllTipoDocumentos(): Promise<TipoDocumentoResponseDto[]> {
@@ -93,5 +105,26 @@ export class ParametricasService {
       order: { id: 'ASC' },
     });
     return allEstadoRecepcionMineral;
+  }
+
+  async findAllFormaPago(): Promise<FormaPago[]> {
+    return await this.formaPagoRepository.find({
+      where: { activo: true },
+      order: { id: 'ASC' },
+    });
+  }
+
+  async findAllKardexSubcuenta(): Promise<KardexSubcuenta[]> {
+    return await this.kardexSubcuentaRepository.find({
+      where: { activo: true },
+      order: { nombre: 'ASC' },
+    });
+  }
+
+  async findAllDestinoGasto(): Promise<DestinoGasto[]> {
+    return await this.destinoGastoRepository.find({
+      where: { activo: true },
+      order: { nombre: 'ASC' },
+    });
   }
 }

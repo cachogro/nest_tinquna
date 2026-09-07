@@ -101,6 +101,37 @@ export class PersonaCi extends Auditoria {
   })
   actorProductivoMinero?: ActorProductivoMinero;
 
+  // --- Datos laborales: obligatorios solo cuando la persona es personal de la
+  //     empresa (idActorProductivoMinero = 1). Nulos para proveedores y demás. ---
+  @Column({
+    name: 'fecha_nacimiento',
+    type: 'date',
+    nullable: true,
+  })
+  fechaNacimiento?: string;
+
+  @Column({
+    name: 'fecha_inicio_laboral',
+    type: 'date',
+    nullable: true,
+  })
+  fechaInicioLaboral?: string;
+
+  @Column({
+    name: 'fecha_fin_labores',
+    type: 'date',
+    nullable: true,
+  })
+  fechaFinLabores?: string;
+
+  @Column({
+    name: 'direccion',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  direccion?: string;
+
   // Relaciones existentes
   @OneToMany(() => PersonaPersonaTipo, (personaTipo) => personaTipo.persona, {
     // eager: true,

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -36,6 +37,52 @@ export class PersonaCiService {
     @InjectDataSource('ci')
     private readonly dataSource: DataSource,
   ) {}
+
+  /**
+   * Id del actor productivo minero que representa a la propia empresa.
+   * Una persona asociada a este actor es personal interno y debe registrar
+   * sus datos laborales.
+   */
+  private readonly ID_ACTOR_EMPRESA = '1';
+
+  /**
+   * Cuando la persona es personal de la empresa (idActorProductivoMinero =
+   * ID_ACTOR_EMPRESA) exige fecha de nacimiento, fecha de inicio laboral y
+   * dirección. `fechaFinLabores` queda opcional (se llena al desvincular).
+   */
+  private validarDatosLaborales(
+    dto: CreatePersonaCiDto | UpdatePersonaCiDto,
+    idActorProductivoMinero?: string,
+  ): void {
+    const esPersonalEmpresa =
+      idActorProductivoMinero != null &&
+      String(idActorProductivoMinero) === this.ID_ACTOR_EMPRESA;
+
+    if (!esPersonalEmpresa) {
+      return;
+    }
+
+    const faltantes: string[] = [];
+    if (!dto.fechaNacimiento) faltantes.push('fecha de nacimiento');
+    if (!dto.fechaInicioLaboral) faltantes.push('fecha de inicio laboral');
+    if (!dto.direccion) faltantes.push('dirección');
+
+    if (faltantes.length > 0) {
+      throw new BadRequestException(
+        `El personal de la empresa requiere: ${faltantes.join(', ')}.`,
+      );
+    }
+
+    if (
+      dto.fechaInicioLaboral &&
+      dto.fechaFinLabores &&
+      dto.fechaFinLabores < dto.fechaInicioLaboral
+    ) {
+      throw new BadRequestException(
+        'La fecha de fin de labores no puede ser anterior a la fecha de inicio laboral.',
+      );
+    }
+  }
 
   // En persona-ci.service.ts
 
@@ -76,6 +123,9 @@ export class PersonaCiService {
         );
       }
     }
+
+    // Si la persona es personal de la empresa, exigir sus datos laborales
+    this.validarDatosLaborales(createPersonaDto, idActorProductivoMinero);
 
     // Validar tipos de persona
     const tipos = await this.personaTipoRepository.findBy({
@@ -173,6 +223,9 @@ export class PersonaCiService {
         );
       }
     }
+
+    // Si la persona es personal de la empresa, exigir sus datos laborales
+    this.validarDatosLaborales(updatePersonaDto, idActorProductivoMinero);
 
     // Validar tipos
     const tipos = await this.personaTipoRepository.findBy({

@@ -32,6 +32,15 @@ import { MineralService } from './services/mineral.service';
 import { EscalaPrecioMineral } from './entities/escala-precio-mineral.entity';
 import { EscalaPrecioMineralService } from './services/escala-precio-mineral.service';
 import { TipoCalculoValorizacionService } from './services/tipo-calculo-valorizacion.service';
+import { PersonaTipoService } from './services/persona-tipo.service';
+import { EntidadFinanciera } from './entities/entidad-financiera.entity';
+import { CuentaBancaria } from './entities/cuenta-bancaria.entity';
+import { EntidadFinancieraService } from './services/entidad-financiera.service';
+import { FormaPago } from './entities/forma-pago.entity';
+import { KardexSubcuenta } from './entities/kardex-subcuenta.entity';
+import { DestinoGasto } from './entities/destino-gasto.entity';
+import { Caja } from './entities/caja.entity';
+import { CajaService } from './services/caja.service';
 
 @Module({
   controllers: [ParametricasController],
@@ -46,6 +55,9 @@ import { TipoCalculoValorizacionService } from './services/tipo-calculo-valoriza
     EscalaPrecioMineralService,
     TipoCalculoValorizacionService,
     MunicipioService,
+    PersonaTipoService,
+    EntidadFinancieraService,
+    CajaService,
   ],
   imports: [
     ConfigModule,
@@ -68,6 +80,12 @@ import { TipoCalculoValorizacionService } from './services/tipo-calculo-valoriza
         EstadoValorizacion,
         TipoCalculoValorizacion,
         EscalaPrecioMineral,
+        EntidadFinanciera,
+        CuentaBancaria,
+        FormaPago,
+        KardexSubcuenta,
+        DestinoGasto,
+        Caja,
       ],
       'ci',
     ),

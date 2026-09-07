@@ -80,6 +80,18 @@ import { TipoCalculoValorizacionService } from '../services/tipo-calculo-valoriz
 import { TipoCalculoValorizacionAgrupadoDto } from '../dto/tipo-calculo-valorizacion/tipo-calculo-valorizacion-agrupado.dto';
 import { Municipio } from '../entities/municipio.entity';
 import { MunicipioService } from '../services/municipio.service';
+import { PersonaTipoService } from '../services/persona-tipo.service';
+import { UpdatePersonaTipoDto } from '../dto/persona-tipo/update-persona-tipo.dto';
+import { EntidadFinancieraService } from '../services/entidad-financiera.service';
+import { UpdateEntidadFinancieraDto } from '../dto/entidad-financiera/update-entidad-financiera.dto';
+import { EntidadFinanciera } from '../entities/entidad-financiera.entity';
+import { CuentaBancaria } from '../entities/cuenta-bancaria.entity';
+import { FormaPago } from '../entities/forma-pago.entity';
+import { KardexSubcuenta } from '../entities/kardex-subcuenta.entity';
+import { DestinoGasto } from '../entities/destino-gasto.entity';
+import { CajaService } from '../services/caja.service';
+import { UpdateCajaDto } from '../dto/caja/update-caja.dto';
+import { Caja } from '../entities/caja.entity';
 
 @ApiTags('Paramétricas')
 @Controller('parametricas')
@@ -97,6 +109,9 @@ export class ParametricasController {
     private readonly escalaPrecioMineralService: EscalaPrecioMineralService,
     private readonly tipoCalculoValorizacionService: TipoCalculoValorizacionService,
     private readonly municipioService: MunicipioService,
+    private readonly personaTipoService: PersonaTipoService,
+    private readonly entidadFinancieraService: EntidadFinancieraService,
+    private readonly cajaService: CajaService,
   ) {}
 
   @Post('codificacion')
@@ -295,6 +310,135 @@ export class ParametricasController {
   })
   async findAllPersinaTipo(): Promise<PersonaTipo[]> {
     return await this.parametricaService.findAllPersonaTipo();
+  }
+
+  //------------------ CRUD tipo de persona ----------------------
+
+  @Post('persona-tipo')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar un tipo de persona',
+    description:
+      'Si no se envía el campo id se registra un nuevo tipo de persona (solo si no existe ya uno con el mismo código). Si se envía el id, se actualiza el registro. El código, nombre y descripción se guardan siempre en MAYÚSCULAS.',
+  })
+  @ApiBody({
+    type: UpdatePersonaTipoDto,
+    examples: {
+      crear: {
+        summary: 'Registrar tipo de persona',
+        value: {
+          codigo: 'INT',
+          nombre: 'PERSONAL INTERNO',
+          descripcion: 'TRABAJADOR DE LA EMPRESA',
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar tipo de persona',
+        value: {
+          id: 3,
+          codigo: 'INT',
+          nombre: 'PERSONAL INTERNO',
+          descripcion: 'TRABAJADOR DEPENDIENTE DE LA EMPRESA',
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Tipo de persona registrado o actualizado correctamente.',
+    type: PersonaTipo,
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe un tipo de persona con ese código.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el tipo de persona a actualizar.',
+  })
+  @ApiBadRequestResponse({
+    description: 'Los datos enviados no son válidos.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createPersonaTipo(
+    @Body() body: UpdatePersonaTipoDto,
+    @GetUser() user: Usuario,
+  ): Promise<PersonaTipo> {
+    if (body.id) {
+      return await this.personaTipoService.update(body, user);
+    }
+
+    return await this.personaTipoService.create(body, user);
+  }
+
+  @Patch('persona-tipo/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de un tipo de persona',
+    description:
+      'Permite activar o desactivar un tipo de persona mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del tipo de persona.',
+    example: '3',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado del tipo de persona.',
+  })
+  @ApiOkResponse({
+    description: 'Estado del tipo de persona actualizado correctamente.',
+    type: PersonaTipo,
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el tipo de persona solicitado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStatePersonaTipo(
+    @Param('id') id: string,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<PersonaTipo> {
+    return await this.personaTipoService.cambiarEstado(id, activo, user);
+  }
+
+  @Get('persona-tipo')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar tipos de persona',
+    description:
+      'Obtiene la lista completa de tipos de persona registrados, ordenados por código.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de tipos de persona obtenido correctamente.',
+    type: PersonaTipo,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllPersonaTipoCrud(): Promise<PersonaTipo[]> {
+    return await this.personaTipoService.findAll();
   }
 
   //------------------ crear cotizacion ----------------------
@@ -679,6 +823,7 @@ export class ParametricasController {
           nombre: 'Ingenio Minero San Cristóbal',
           direccion: 'Carretera Uyuni - Atocha Km. 35',
           telefono: '72451234',
+          fechaInicioOperaciones: '2026-01-15',
         },
       },
       crearCooperativa: {
@@ -920,6 +1065,381 @@ export class ParametricasController {
   })
   async findAllMunicipios(): Promise<Municipio[]> {
     return await this.municipioService.findAll();
+  }
+
+  //---------------------------------------------------------------------------
+  //          Catálogos del módulo de kardex / caja (solo lectura)
+  //---------------------------------------------------------------------------
+
+  @Get('forma-pago')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todas las formas de pago',
+    description:
+      'Catálogo usado en la libreta de bancos y en el kardex de anticipos (EFECTIVO, QR, TRANSFERENCIA, CHEQUE, DEPOSITO, TRANZADO, DSCT_LEY, DSCT_ANTICIPO). Sin CRUD por ahora: solo lectura de los valores activos.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de formas de pago obtenida exitosamente.',
+    type: [FormaPago],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllFormaPago(): Promise<FormaPago[]> {
+    return await this.parametricaService.findAllFormaPago();
+  }
+
+  @Get('kardex-subcuenta')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todas las subcuentas de kardex',
+    description:
+      'Catálogo de subcuentas del kardex de anticipos por actor ("PRINCIPAL", "COMPRESORA"...). Sin CRUD por ahora: solo lectura de los valores activos.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de subcuentas obtenida exitosamente.',
+    type: [KardexSubcuenta],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllKardexSubcuenta(): Promise<KardexSubcuenta[]> {
+    return await this.parametricaService.findAllKardexSubcuenta();
+  }
+
+  @Get('destino-gasto')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los destinos de gasto',
+    description:
+      'Catálogo de categorías de ingreso/egreso de la caja de flujo ("DESTINO DEL GASTO" del Excel), cada una marcada como ingreso o egreso (`esEgreso`). Sin CRUD por ahora: solo lectura de los valores activos.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de destinos de gasto obtenida exitosamente.',
+    type: [DestinoGasto],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllDestinoGasto(): Promise<DestinoGasto[]> {
+    return await this.parametricaService.findAllDestinoGasto();
+  }
+
+  //---------------------------------------------------------------------------
+  //                        Caja (fondo de efectivo)
+  //---------------------------------------------------------------------------
+
+  @Post('caja')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar una caja',
+    description:
+      'Si no se envía el campo id se registra una nueva caja (solo si no existe ya una con el mismo nombre). Si se envía el id, se actualiza. Una caja opera en Bs. y $us. a la vez, por eso lleva un saldo inicial separado por moneda. El nombre se guarda en MAYÚSCULAS.',
+  })
+  @ApiBody({
+    type: UpdateCajaDto,
+    examples: {
+      crear: {
+        summary: 'Registrar caja',
+        value: {
+          nombre: 'CAJA PRINCIPAL',
+          saldoInicialBob: 1587523,
+          fechaSaldoInicialBob: '2025-06-30',
+          saldoInicialUsd: 0,
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar caja',
+        value: {
+          id: 1,
+          nombre: 'CAJA PRINCIPAL',
+          saldoInicialBob: 1587523,
+          fechaSaldoInicialBob: '2025-06-30',
+          saldoInicialUsd: 0,
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Caja registrada o actualizada correctamente.',
+    type: Caja,
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe una caja con ese nombre.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la caja a actualizar.',
+  })
+  @ApiBadRequestResponse({
+    description: 'Los datos enviados no son válidos.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createCaja(
+    @Body() body: UpdateCajaDto,
+    @GetUser() user: Usuario,
+  ): Promise<Caja> {
+    if (body.id) {
+      return await this.cajaService.update(body, user);
+    }
+
+    return await this.cajaService.create(body, user);
+  }
+
+  @Patch('caja/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de una caja',
+    description: 'Permite activar o desactivar una caja mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la caja.',
+    example: '1',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { activo: { type: 'boolean', example: false } },
+    },
+    description: 'Nuevo estado de la caja.',
+  })
+  @ApiOkResponse({
+    description: 'Estado de la caja actualizado correctamente.',
+    type: Caja,
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la caja solicitada.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateCaja(
+    @Param('id') id: string,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<Caja> {
+    return await this.cajaService.cambiarEstado(id, activo, user);
+  }
+
+  @Get('caja')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar cajas',
+    description:
+      'Obtiene la lista completa de cajas registradas, ordenadas por nombre.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de cajas obtenido correctamente.',
+    type: Caja,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllCaja(): Promise<Caja[]> {
+    return await this.cajaService.findAll();
+  }
+
+  //---------------------------------------------------------------------------
+  //                        Entidades financieras y cuentas
+  //---------------------------------------------------------------------------
+
+  @Post('entidad-financiera')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar una entidad financiera',
+    description:
+      'Si no se envía el campo id se registra una nueva entidad (solo si no existe ya una con el mismo nombre). Si se envía el id, se actualiza. Las cuentas se pueden asignar desde la creación: al actualizar, cada cuenta con id se modifica y sin id se agrega (las que no vengan no se tocan; para darlas de baja usar el endpoint de estado de cuenta). Nombre y sigla se guardan en MAYÚSCULAS.',
+  })
+  @ApiBody({
+    type: UpdateEntidadFinancieraDto,
+    examples: {
+      crear: {
+        summary: 'Registrar entidad con dos cuentas',
+        value: {
+          nombre: 'BANCO MERCANTIL SANTA CRUZ',
+          sigla: 'BMSC',
+          cuentas: [
+            { numeroCuenta: '4010123456', moneda: 'BOB', alias: 'Operativa Bs' },
+            { numeroCuenta: '4020987654', moneda: 'USD', alias: 'Dólares' },
+          ],
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar y agregar una cuenta',
+        value: {
+          id: 6,
+          nombre: 'BANCO MERCANTIL SANTA CRUZ',
+          sigla: 'BMSC',
+          cuentas: [
+            { id: 3, numeroCuenta: '4010123456', moneda: 'BOB', alias: 'Caja operativa' },
+            { numeroCuenta: '4030555555', moneda: 'BOB' },
+          ],
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Entidad financiera registrada o actualizada correctamente.',
+    type: EntidadFinanciera,
+  })
+  @ApiConflictResponse({
+    description:
+      'Ya existe una entidad financiera con ese nombre, o una cuenta con ese número dentro de la entidad.',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'No se encontró la entidad a actualizar, o una cuenta indicada por id no le pertenece.',
+  })
+  @ApiBadRequestResponse({
+    description: 'Datos inválidos o números de cuenta repetidos en la solicitud.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createEntidadFinanciera(
+    @Body() body: UpdateEntidadFinancieraDto,
+    @GetUser() user: Usuario,
+  ): Promise<EntidadFinanciera> {
+    if (body.id) {
+      return await this.entidadFinancieraService.update(body, user);
+    }
+
+    return await this.entidadFinancieraService.create(body, user);
+  }
+
+  @Patch('entidad-financiera/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de una entidad financiera',
+    description:
+      'Activa o desactiva una entidad financiera mediante baja lógica. No afecta el estado de sus cuentas.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la entidad financiera.',
+    example: '3',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { activo: { type: 'boolean', example: false } },
+    },
+    description: 'Nuevo estado de la entidad financiera.',
+  })
+  @ApiOkResponse({
+    description: 'Estado de la entidad financiera actualizado correctamente.',
+    type: EntidadFinanciera,
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la entidad financiera solicitada.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateEntidadFinanciera(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<EntidadFinanciera> {
+    return await this.entidadFinancieraService.cambiarEstado(id, activo, user);
+  }
+
+  @Patch('entidad-financiera/cuenta/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de una cuenta bancaria',
+    description:
+      'Activa o desactiva una sola cuenta sin afectar a la entidad financiera ni a las demás cuentas.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la cuenta bancaria.',
+    example: '5',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { activo: { type: 'boolean', example: false } },
+    },
+    description: 'Nuevo estado de la cuenta.',
+  })
+  @ApiOkResponse({
+    description: 'Estado de la cuenta actualizado correctamente.',
+    type: CuentaBancaria,
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la cuenta solicitada.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateCuentaBancaria(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<CuentaBancaria> {
+    return await this.entidadFinancieraService.cambiarEstadoCuenta(
+      id,
+      activo,
+      user,
+    );
+  }
+
+  @Get('entidad-financiera')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar entidades financieras',
+    description:
+      'Devuelve todas las entidades financieras con sus cuentas, ordenadas por nombre. Sin paginación.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de entidades financieras obtenido correctamente.',
+    type: EntidadFinanciera,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllEntidadFinanciera(): Promise<EntidadFinanciera[]> {
+    return await this.entidadFinancieraService.findAll();
   }
 
   //---------------------------------------------------------------------------

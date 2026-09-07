@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDateString,
   IsNotEmpty,
   IsOptional,
   IsPositive,
@@ -83,4 +84,19 @@ export class CreateActorProductivoMineroDto {
   @ValidateNested({ each: true })
   @Type(() => SeccionMinaItemDto)
   seccionesMina?: SeccionMinaItemDto[];
+
+  /**
+   * Fecha de inicio de operaciones del actor con la empresa (YYYY-MM-DD).
+   * Si el front la envía vacía, el servicio la completa con la fecha actual
+   * (hora de Bolivia) al registrar.
+   */
+  @IsOptional()
+  @IsDateString(
+    {},
+    {
+      message:
+        'La fecha de inicio de operaciones debe tener el formato YYYY-MM-DD.',
+    },
+  )
+  fechaInicioOperaciones?: string;
 }

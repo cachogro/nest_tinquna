@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsDateString,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -96,4 +97,53 @@ export class CreatePersonaCiDto {
   @IsOptional()
   @IsString()
   idActorProductivoMinero?: string;
+
+  // --- Datos laborales ---
+  // Obligatorios (salvo fechaFinLabores) cuando idActorProductivoMinero = '1',
+  // es decir cuando la persona es personal de la empresa. Se validan en el servicio.
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha de nacimiento (YYYY-MM-DD). Obligatoria para personal de la empresa.',
+    example: '1990-05-12',
+  })
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de nacimiento debe tener el formato YYYY-MM-DD.' },
+  )
+  fechaNacimiento?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha de inicio laboral (YYYY-MM-DD). Obligatoria para personal de la empresa.',
+    example: '2026-02-01',
+  })
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de inicio laboral debe tener el formato YYYY-MM-DD.' },
+  )
+  fechaInicioLaboral?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Fecha de fin de labores (YYYY-MM-DD). Se registra al desvincular a la persona.',
+    example: '2026-12-31',
+  })
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de fin de labores debe tener el formato YYYY-MM-DD.' },
+  )
+  fechaFinLabores?: string;
+
+  @ApiPropertyOptional({
+    description: 'Dirección de domicilio. Obligatoria para personal de la empresa.',
+    example: 'Calle Bolívar N° 245, Zona Central',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  direccion?: string;
 }

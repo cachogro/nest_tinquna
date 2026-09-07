@@ -108,6 +108,13 @@ export class ActorProductivoMinero extends Auditoria {
   })
   seccionesMina?: SeccionMinaItem[];
 
+  @Column({
+    name: 'fecha_inicio_operaciones',
+    type: 'date',
+    nullable: false,
+  })
+  fechaInicioOperaciones: string;
+
   // --- Relación inversa con PersonaCi (opcional) ---
   @OneToMany(() => PersonaCi, (persona) => persona.actorProductivoMinero)
   personas?: PersonaCi[];

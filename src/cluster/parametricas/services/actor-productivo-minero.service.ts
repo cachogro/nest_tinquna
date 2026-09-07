@@ -109,6 +109,11 @@ export class ActorProdMineroService {
       nim: createActorDto.nim?.trim(),
       codigo: createActorDto.codigo?.trim(),
       seccionesMina: createActorDto.seccionesMina,
+      // Si el front no envía la fecha de inicio de operaciones, se toma la
+      // fecha actual en hora de Bolivia (UTC-4 fijo, sin horario de verano).
+      fechaInicioOperaciones:
+        createActorDto.fechaInicioOperaciones ??
+        new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10),
       usuarioRegistro: user.usuario,
     });
 
@@ -183,6 +188,12 @@ export class ActorProdMineroService {
     actorProductivoMinero.nim = updateActorDto.nim?.trim();
     actorProductivoMinero.codigo = updateActorDto.codigo?.trim();
     actorProductivoMinero.seccionesMina = updateActorDto.seccionesMina;
+    // La fecha de inicio de operaciones solo se actualiza si el front la envía;
+    // si llega vacía se conserva la registrada al crear el actor.
+    if (updateActorDto.fechaInicioOperaciones) {
+      actorProductivoMinero.fechaInicioOperaciones =
+        updateActorDto.fechaInicioOperaciones;
+    }
     actorProductivoMinero.usuarioUltimaModificacion = user.usuario;
 
     return await this.actorProdMineroRepository.save(actorProductivoMinero);
