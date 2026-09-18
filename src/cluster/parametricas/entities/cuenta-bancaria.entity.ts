@@ -42,7 +42,7 @@ export class CuentaBancaria extends Auditoria {
     name: 'moneda',
     type: 'varchar',
     length: 3,
-    default: 'BOB',
+    default: 'BS',
   })
   moneda: string;
 

@@ -47,13 +47,24 @@ export class CreateMovimientoCajaDto {
   fecha: string;
 
   @ApiPropertyOptional({
-    example: 'REC:R-0009',
-    description: 'N° de comprobante (factura y/o recibo).',
+    example: '4613159797',
+    description:
+      'N° de comprobante real de la transacción (ej. n° de transferencia/QR), independiente del recibo o factura que la respalda.',
   })
   @IsOptional()
   @IsString({ message: 'El N° de comprobante debe ser una cadena de texto.' })
   @MaxLength(30, { message: 'El N° de comprobante no puede exceder los 30 caracteres.' })
   nroComprobante?: string;
+
+  @ApiPropertyOptional({
+    example: 'REC:R-0009',
+    description:
+      'Documento que respalda el movimiento: si es un recibo, su código (ej. "REC:R-0009"); si es una factura, su número (ej. "BCL-737").',
+  })
+  @IsOptional()
+  @IsString({ message: 'El campo factura/recibo debe ser una cadena de texto.' })
+  @MaxLength(30, { message: 'El campo factura/recibo no puede exceder los 30 caracteres.' })
+  facturaRecibo?: string;
 
   @ApiPropertyOptional({
     example: 1,
@@ -68,12 +79,12 @@ export class CreateMovimientoCajaDto {
   @ApiPropertyOptional({
     example: 'RAFAEL DOUCHEN',
     description:
-      'Beneficiario / contraparte del movimiento (texto libre). Si se envía `idPersona`, este texto es opcional: se completa con el nombre de la persona.',
+      'Beneficiario / contraparte del movimiento ("ENTREGA DE FONDOS A:" del Excel, texto libre). Si se envía `idPersona`, este texto es opcional: se completa con el nombre de la persona.',
   })
   @IsOptional()
-  @IsString({ message: 'El campo nombres y apellidos debe ser una cadena de texto.' })
+  @IsString({ message: 'El campo "entrega de fondos a" debe ser una cadena de texto.' })
   @MaxLength(255)
-  nombresApellidos?: string;
+  entregaFondosA?: string;
 
   @ApiPropertyOptional({
     example: '15',

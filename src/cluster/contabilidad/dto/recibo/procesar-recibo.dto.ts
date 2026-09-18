@@ -24,11 +24,11 @@ export class ProcesarReciboDto {
   @ApiProperty({
     type: [ReciboDetalleDto],
     description:
-      'Cómo se subdivide el monto total del recibo entre kardex personal, kardex de actor productivo minero, y efectivo directo. La suma debe ser igual al `montoTotal` ya guardado en el recibo.',
+      'Cómo se subdivide el monto total del recibo entre kardex personal, kardex de actor productivo minero, y efectivo directo. La suma debe ser igual al `montoTotal` ya guardado en el recibo. Cada línea puede tener su propio `idDestinoGasto` y genera su propio movimiento de caja de flujo.',
     example: [
-      { destino: 'PERSONAL', idPersona: '18', monto: 150000 },
-      { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 100000 },
-      { destino: 'EFECTIVO', monto: 50000 },
+      { destino: 'PERSONAL', idPersona: '18', monto: 150000, idDestinoGasto: 8 },
+      { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 100000, idDestinoGasto: 12 },
+      { destino: 'EFECTIVO', monto: 50000, idDestinoGasto: 3 },
     ],
   })
   @IsArray({ message: 'Los detalles deben ser una lista.' })
@@ -67,15 +67,4 @@ export class ProcesarReciboDto {
   @IsString({ message: 'El N° de comprobante debe ser una cadena de texto.' })
   @MaxLength(30, { message: 'El N° de comprobante no puede exceder los 30 caracteres.' })
   nroComprobante?: string;
-
-  @ApiPropertyOptional({
-    example: 8,
-    description:
-      'Id del destino del gasto (parametrica.destino_gasto), aplicado tanto a las líneas de kardex como a los movimientos de caja de flujo que se generan. Si no se envía, se conserva el del borrador.',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
 }

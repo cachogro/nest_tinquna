@@ -1285,7 +1285,7 @@ export class ParametricasController {
           nombre: 'BANCO MERCANTIL SANTA CRUZ',
           sigla: 'BMSC',
           cuentas: [
-            { numeroCuenta: '4010123456', moneda: 'BOB', alias: 'Operativa Bs' },
+            { numeroCuenta: '4010123456', moneda: 'BS', alias: 'Operativa Bs' },
             { numeroCuenta: '4020987654', moneda: 'USD', alias: 'Dólares' },
           ],
         },
@@ -1297,8 +1297,8 @@ export class ParametricasController {
           nombre: 'BANCO MERCANTIL SANTA CRUZ',
           sigla: 'BMSC',
           cuentas: [
-            { id: 3, numeroCuenta: '4010123456', moneda: 'BOB', alias: 'Caja operativa' },
-            { numeroCuenta: '4030555555', moneda: 'BOB' },
+            { id: 3, numeroCuenta: '4010123456', moneda: 'BS', alias: 'Caja operativa' },
+            { numeroCuenta: '4030555555', moneda: 'BS' },
           ],
         },
       },

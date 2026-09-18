@@ -44,18 +44,19 @@ export class MovimientoCajaService {
   ) {}
 
   /**
-   * Resuelve el beneficiario del movimiento:
+   * Resuelve el beneficiario del movimiento ("ENTREGA DE FONDOS A:" del
+   * Excel):
    *   - con `idPersona`: valida que exista en persona_ci y usa su nombre
    *     (o el texto manual si vino);
-   *   - sin `idPersona`: guarda solo el texto libre `nombresApellidos`.
+   *   - sin `idPersona`: guarda solo el texto libre `entregaFondosA`.
    */
   private async resolverBeneficiario(
     dto: CreateMovimientoCajaDto,
-  ): Promise<{ idPersona: string | null; nombresApellidos: string | null }> {
-    const textoManual = dto.nombresApellidos?.trim() || null;
+  ): Promise<{ idPersona: string | null; entregaFondosA: string | null }> {
+    const textoManual = dto.entregaFondosA?.trim() || null;
 
     if (!dto.idPersona) {
-      return { idPersona: null, nombresApellidos: textoManual };
+      return { idPersona: null, entregaFondosA: textoManual };
     }
 
     const persona = await this.personaRepository.findOne({
@@ -77,7 +78,7 @@ export class MovimientoCajaService {
 
     return {
       idPersona: persona.id,
-      nombresApellidos: textoManual || nombreDerivado || null,
+      entregaFondosA: textoManual || nombreDerivado || null,
     };
   }
 
@@ -270,7 +271,7 @@ export class MovimientoCajaService {
 
       const movs = await manager.find(MovimientoCaja, {
         where: { idPeriodoCaja: periodo.id, activo: true },
-        order: { fecha: 'ASC', id: 'ASC' },
+        order: { folio: 'ASC', id: 'ASC' },
       });
 
       const saldoInicial = running;
@@ -316,12 +317,14 @@ export class MovimientoCajaService {
       moneda: MonedaCaja;
       fecha: string;
       nroComprobante?: string | null;
+      facturaRecibo?: string | null;
       idFormaPago?: number | null;
       idPersona?: string | null;
-      nombresApellidos?: string | null;
+      entregaFondosA?: string | null;
       concepto: string;
       idDestinoGasto?: number | null;
       idRecibo?: string | null;
+      idMovimientoKardex?: string | null;
       ingreso: number;
       egreso: number;
     },
@@ -346,12 +349,14 @@ export class MovimientoCajaService {
         folio,
         fecha: datos.fecha,
         nroComprobante: datos.nroComprobante ?? null,
+        facturaRecibo: datos.facturaRecibo ?? null,
         idFormaPago: datos.idFormaPago ?? null,
         idPersona: datos.idPersona ?? null,
-        nombresApellidos: datos.nombresApellidos ?? null,
+        entregaFondosA: datos.entregaFondosA ?? null,
         concepto: datos.concepto,
         idDestinoGasto: datos.idDestinoGasto ?? null,
         idRecibo: datos.idRecibo ?? null,
+        idMovimientoKardex: datos.idMovimientoKardex ?? null,
         ingreso: datos.ingreso,
         egreso: datos.egreso,
         saldo: 0,
@@ -385,9 +390,10 @@ export class MovimientoCajaService {
           moneda: dto.moneda,
           fecha: dto.fecha,
           nroComprobante: dto.nroComprobante?.trim() || null,
+          facturaRecibo: dto.facturaRecibo?.trim() || null,
           idFormaPago,
           idPersona: beneficiario.idPersona,
-          nombresApellidos: beneficiario.nombresApellidos,
+          entregaFondosA: beneficiario.entregaFondosA,
           concepto: dto.concepto.trim(),
           idDestinoGasto,
           ingreso,
@@ -453,9 +459,10 @@ export class MovimientoCajaService {
         folio,
         fecha: dto.fecha,
         nroComprobante: dto.nroComprobante?.trim() || null,
+        facturaRecibo: dto.facturaRecibo?.trim() || null,
         idFormaPago,
         idPersona: beneficiario.idPersona,
-        nombresApellidos: beneficiario.nombresApellidos,
+        entregaFondosA: beneficiario.entregaFondosA,
         concepto: dto.concepto.trim(),
         idDestinoGasto,
         ingreso,
@@ -522,7 +529,7 @@ export class MovimientoCajaService {
       qb.andWhere('p.mes = :m', { m: filtro.mes });
     }
 
-    qb.orderBy('m.fecha', 'ASC').addOrderBy('m.id', 'ASC');
+    qb.orderBy('m.folio', 'ASC').addOrderBy('m.id', 'ASC');
     const movimientos = await qb.getMany();
 
     const wherePeriodo: Record<string, unknown> = {

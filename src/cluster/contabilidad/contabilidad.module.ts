@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 
 import { SecurityModule } from 'src/security/security.module';
+import { CommonModule } from 'src/common/common.module';
 import { ParametricasModule } from '../parametricas/parametricas.module';
 
 import { ContabilidadController } from './controller/contabilidad.controller';
@@ -10,12 +11,15 @@ import { KardexController } from './controller/kardex.controller';
 import { MovimientoKardexController } from './controller/movimiento-kardex.controller';
 import { CajaController } from './controller/caja.controller';
 import { ReciboController } from './controller/recibo.controller';
+import { ReciboPdfProcesadoController } from './controller/recibo-pdf-procesado.controller';
 import { LibretaBancoService } from './services/libreta-banco.service';
 import { KardexService } from './services/kardex.service';
 import { MovimientoKardexService } from './services/movimiento-kardex.service';
 import { MovimientoCajaService } from './services/movimiento-caja.service';
 import { ReciboService } from './services/recibo.service';
 import { ReciboPdfService } from './services/recibo-pdf.service';
+import { KardexExcelService } from './services/kardex-excel.service';
+import { CajaFlujoExcelService } from './services/caja-flujo-excel.service';
 import { LibretaBanco } from './entities/libreta-banco.entity';
 import { PeriodoBanco } from './entities/periodo-banco.entity';
 import { Kardex } from './entities/kardex.entity';
@@ -34,6 +38,7 @@ import { ValorizacionMineral } from '../comercio-interno/entities/valorizacion/v
     MovimientoKardexController,
     CajaController,
     ReciboController,
+    ReciboPdfProcesadoController,
   ],
   providers: [
     LibretaBancoService,
@@ -42,9 +47,12 @@ import { ValorizacionMineral } from '../comercio-interno/entities/valorizacion/v
     MovimientoCajaService,
     ReciboService,
     ReciboPdfService,
+    KardexExcelService,
+    CajaFlujoExcelService,
   ],
   imports: [
     ConfigModule,
+    CommonModule,
     TypeOrmModule.forFeature(
       [
         LibretaBanco,

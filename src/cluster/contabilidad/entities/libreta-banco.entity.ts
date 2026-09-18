@@ -9,6 +9,8 @@ import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { PeriodoBanco } from './periodo-banco.entity';
+import { Recibo } from './recibo.entity';
+import { MovimientoKardex } from './movimiento-kardex.entity';
 
 /**
  * Libreta de bancos: el mayor de una cuenta bancaria. Una fila por movimiento,
@@ -73,7 +75,8 @@ export class LibretaBanco extends Auditoria {
   })
   fecha: string;
 
-  // N° de transacción del banco.
+  // N° de transacción del banco (ej. n° de transferencia/QR), independiente
+  // del recibo/factura que la respalda.
   @Column({
     name: 'nro_transaccion',
     type: 'varchar',
@@ -81,6 +84,16 @@ export class LibretaBanco extends Auditoria {
     nullable: true,
   })
   nroTransaccion?: string;
+
+  // Código del recibo (o factura) que respalda el movimiento (ej.
+  // "REC:INGRESO-0009"), independiente del n° de transacción bancaria.
+  @Column({
+    name: 'factura_recibo',
+    type: 'varchar',
+    length: 30,
+    nullable: true,
+  })
+  facturaRecibo?: string | null;
 
   // Beneficiario / contraparte del movimiento (texto libre).
   @Column({
@@ -116,6 +129,48 @@ export class LibretaBanco extends Auditoria {
     length: 255,
   })
   concepto: string;
+
+  // Presente cuando el movimiento nace de la línea EFECTIVO de un recibo
+  // pagado por un medio bancario (idCuentaBancaria). Las líneas
+  // PERSONAL/ACTOR de un recibo nunca generan movimiento acá: solo saldan
+  // una deuda en el kardex, no representan plata que realmente se mueve.
+  @Column({
+    name: 'id_recibo',
+    type: 'bigint',
+    nullable: true,
+  })
+  idRecibo?: string | null;
+
+  @ManyToOne(() => Recibo, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_recibo',
+    referencedColumnName: 'id',
+  })
+  recibo?: Recibo;
+
+  // Presente cuando el movimiento nace de una línea de kardex cargada
+  // directamente (no vía recibo) con idCuentaBancaria: misma dirección que
+  // el movimiento de caja que generó esa línea (DEBE=anticipo->sale del
+  // banco, HABER=pago->entra al banco).
+  @Column({
+    name: 'id_movimiento_kardex',
+    type: 'bigint',
+    nullable: true,
+  })
+  idMovimientoKardex?: string | null;
+
+  @ManyToOne(() => MovimientoKardex, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_movimiento_kardex',
+    referencedColumnName: 'id',
+  })
+  movimientoKardex?: MovimientoKardex;
 
   @Column({
     name: 'debe',

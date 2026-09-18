@@ -38,13 +38,34 @@ export class CreateMovimientoKardexDto {
   fecha: string;
 
   @ApiPropertyOptional({
-    example: 'REC:C-273',
-    description: 'N° de comprobante / documento.',
+    example: '4613159797',
+    description:
+      'N° de comprobante real de la transacción bancaria (ej. n° de transferencia/QR), cuando se pagó por un medio bancario.',
   })
   @IsOptional()
   @IsString()
   @MaxLength(30, { message: 'El N° de comprobante no puede exceder los 30 caracteres.' })
   nroComprobante?: string;
+
+  @ApiPropertyOptional({
+    example: 'REC:C-273',
+    description: 'Documento que respalda la línea (ej. "REC:C-273", "DET. ADJ.", "ICC-1810").',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(30, { message: 'El campo factura/recibo no puede exceder los 30 caracteres.' })
+  facturaRecibo?: string;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'Id de la cuenta bancaria (parametrica.cuenta_bancaria), cuando idFormaPago es un medio bancario (QR, Transferencia, Cheque, Depósito). Si viene, la línea también postea un movimiento en la libreta de bancos (misma dirección: DEBE si el tipo es DEBE, HABER si es HABER).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive({ message: 'La cuenta bancaria no es válida.' })
+  idCuentaBancaria?: number;
 
   @ApiProperty({
     example: 'ANTICIPO A CTA COMPRESORA',

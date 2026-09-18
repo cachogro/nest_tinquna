@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -25,10 +26,12 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 
 import { Auth, GetUser } from 'src/security/decorators';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { KardexService } from '../services/kardex.service';
+import { KardexExcelService } from '../services/kardex-excel.service';
 import { Kardex } from '../entities/kardex.entity';
 import { AbrirKardexDto } from '../dto/kardex/abrir-kardex.dto';
 import { FiltrosKardexDto } from '../dto/kardex/filtros-kardex.dto';
@@ -38,7 +41,10 @@ import { KardexPaginadoDto } from '../dto/kardex/kardex-paginado.dto';
 @Controller('contabilidad')
 @ApiBearerAuth()
 export class KardexController {
-  constructor(private readonly kardexService: KardexService) {}
+  constructor(
+    private readonly kardexService: KardexService,
+    private readonly kardexExcelService: KardexExcelService,
+  ) {}
 
   @Post('kardex')
   @Auth()
@@ -205,5 +211,33 @@ export class KardexController {
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async buscarPorId(@Param('id') id: string): Promise<Kardex> {
     return await this.kardexService.buscarPorId(id);
+  }
+
+  @Get('kardex/:id/excel')
+  @Auth()
+  @ApiOperation({
+    summary: 'Exportar el kardex actual a Excel',
+    description:
+      'Genera el .xlsx del kardex (actor o persona) con el mismo formato del libro físico: cabecera con destinatario, cuenta y gestión, el detalle de todas las líneas activas (en orden de registro) y el total de anticipos por cobrar.',
+  })
+  @ApiParam({ name: 'id', description: 'Id del kardex.', example: '3' })
+  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiNotFoundResponse({ description: 'No se encontró el kardex.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async exportarExcel(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.kardexExcelService.generar(id);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=kardex-${id}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
   }
 }

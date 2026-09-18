@@ -2,7 +2,6 @@ import { RecepcionMineral } from 'src/cluster/comercio-interno/entities/recepcio
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 
-
 @Entity({
   name: 'estado_registro',
   schema: 'parametrica',
@@ -29,9 +28,6 @@ export class EstadoRegistro extends Auditoria {
   })
   descripcion?: string;
 
-  @OneToMany(
-    () => RecepcionMineral,
-    (recepcion) => recepcion.estado,
-  )
+  @OneToMany(() => RecepcionMineral, (recepcion) => recepcion.estado)
   recepciones: RecepcionMineral[];
 }

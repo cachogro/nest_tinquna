@@ -12,6 +12,7 @@ import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.en
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { PeriodoCaja, MonedaCaja } from './periodo-caja.entity';
 import { Recibo } from './recibo.entity';
+import { MovimientoKardex } from './movimiento-kardex.entity';
 
 /**
  * Caja de flujo: una fila por ingreso o egreso físico de efectivo (hoja
@@ -83,7 +84,8 @@ export class MovimientoCaja extends Auditoria {
   })
   fecha: string;
 
-  // "FACTURA Y/O RECIBO" / "Nº CPTE" del Excel (ej. "REC:R-0009", "BCL-737").
+  // "Nº CPTE" del Excel: n° de comprobante real de la transacción (ej. n°
+  // de transferencia/QR), independiente del recibo/factura que la respalda.
   @Column({
     name: 'nro_comprobante',
     type: 'varchar',
@@ -91,6 +93,16 @@ export class MovimientoCaja extends Auditoria {
     nullable: true,
   })
   nroComprobante?: string;
+
+  // "FACTURA Y/O RECIBO" del Excel: si el respaldo es un recibo, su código
+  // (ej. "REC:R-0009"); si es una factura, su número (ej. "BCL-737").
+  @Column({
+    name: 'factura_recibo',
+    type: 'varchar',
+    length: 30,
+    nullable: true,
+  })
+  facturaRecibo?: string | null;
 
   @Column({
     name: 'id_forma_pago',
@@ -109,17 +121,17 @@ export class MovimientoCaja extends Auditoria {
   })
   formaPago?: FormaPago;
 
-  // Beneficiario / contraparte del movimiento ("ENTREGA DE FONDOS A:").
+  // Beneficiario / contraparte del movimiento ("ENTREGA DE FONDOS A:" del Excel).
   @Column({
-    name: 'nombres_apellidos',
+    name: 'entrega_fondos_a',
     type: 'varchar',
     length: 255,
     nullable: true,
   })
-  nombresApellidos?: string;
+  entregaFondosA?: string;
 
   // Vínculo opcional a una persona ya registrada (persona_ci). Si el
-  // beneficiario no está en la lista, queda NULL y solo vale nombresApellidos.
+  // beneficiario no está en la lista, queda NULL y solo vale entregaFondosA.
   @Column({
     name: 'id_persona',
     type: 'bigint',
@@ -162,11 +174,11 @@ export class MovimientoCaja extends Auditoria {
   })
   destinoGasto?: DestinoGasto;
 
-  // Presente cuando el movimiento nace de generar un recibo. Un recibo
-  // puede generar hasta DOS movimientos de caja: uno INGRESO (por la
-  // porción aplicada a kardex personal/actor, valor recuperado por la
-  // empresa) y uno EGRESO (por la porción EFECTIVO, dinero que sale de
-  // verdad), por eso el vínculo vive acá y no como FK único en `recibo`.
+  // Presente cuando el movimiento nace de generar un recibo. Cada línea de
+  // recibo_detalle genera su propio movimiento_caja (INGRESO si es
+  // PERSONAL/ACTOR, valor recuperado por la empresa; EGRESO si es
+  // EFECTIVO, dinero que sale de verdad), por eso el vínculo vive acá y no
+  // como FK único en `recibo`.
   @Column({
     name: 'id_recibo',
     type: 'bigint',
@@ -183,6 +195,25 @@ export class MovimientoCaja extends Auditoria {
     referencedColumnName: 'id',
   })
   recibo?: Recibo;
+
+  // Presente cuando el movimiento nace de cargar directamente una línea de
+  // kardex (no vía recibo): DEBE (anticipo) -> EGRESO, HABER (pago) -> INGRESO.
+  @Column({
+    name: 'id_movimiento_kardex',
+    type: 'bigint',
+    nullable: true,
+  })
+  idMovimientoKardex?: string | null;
+
+  @ManyToOne(() => MovimientoKardex, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_movimiento_kardex',
+    referencedColumnName: 'id',
+  })
+  movimientoKardex?: MovimientoKardex;
 
   @Column({
     name: 'ingreso',

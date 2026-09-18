@@ -201,7 +201,7 @@ export class LibretaBancoService {
 
       const movs = await manager.find(LibretaBanco, {
         where: { idPeriodoBanco: periodo.id, activo: true },
-        order: { fecha: 'ASC', id: 'ASC' },
+        order: { folio: 'ASC', id: 'ASC' },
       });
 
       const saldoInicial = running;
@@ -226,6 +226,76 @@ export class LibretaBancoService {
     }
   }
 
+  /**
+   * Valida que la cuenta esté aperturada (tenga `fechaSaldoInicial` seteada)
+   * antes de permitirle registrar movimientos.
+   */
+  async obtenerCuentaAperturada(id: number): Promise<CuentaBancaria> {
+    const cuenta = await this.obtenerCuentaActiva(id);
+    if (!cuenta.fechaSaldoInicial) {
+      throw new BadRequestException(
+        `La cuenta bancaria "${cuenta.numeroCuenta}" todavía no fue aperturada. Cargá el saldo y la fecha de apertura antes de registrar movimientos.`,
+      );
+    }
+    return cuenta;
+  }
+
+  /**
+   * Core de la creación de un movimiento, reusable dentro de una transacción
+   * ya abierta por otro servicio (ej. ReciboService, que necesita que su
+   * posteo a libreta_banco sea atómico junto con el resto del recibo).
+   */
+  async crearMovimientoEnTransaccion(
+    manager: EntityManager,
+    cuenta: CuentaBancaria,
+    datos: {
+      fecha: string;
+      nroTransaccion?: string | null;
+      facturaRecibo?: string | null;
+      idPersona?: string | null;
+      nombresApellidos?: string | null;
+      concepto: string;
+      idRecibo?: string | null;
+      idMovimientoKardex?: string | null;
+      debe: number;
+      haber: number;
+    },
+    user: Usuario,
+  ): Promise<LibretaBanco> {
+    const [gestion, mes] = this.gestionMesDeFecha(datos.fecha);
+    const periodo = await this.obtenerOCrearPeriodoMensual(
+      manager,
+      cuenta.id,
+      gestion,
+      mes,
+      user,
+    );
+    const folio = await this.siguienteFolio(manager, cuenta.id, gestion);
+
+    const mov = await manager.save(
+      manager.create(LibretaBanco, {
+        idCuentaBancaria: cuenta.id,
+        idPeriodoBanco: periodo.id,
+        folio,
+        fecha: datos.fecha,
+        nroTransaccion: datos.nroTransaccion ?? null,
+        facturaRecibo: datos.facturaRecibo ?? null,
+        idPersona: datos.idPersona ?? null,
+        nombresApellidos: datos.nombresApellidos ?? null,
+        concepto: datos.concepto,
+        idRecibo: datos.idRecibo ?? null,
+        idMovimientoKardex: datos.idMovimientoKardex ?? null,
+        debe: this.r2(datos.debe),
+        haber: this.r2(datos.haber),
+        saldo: 0,
+        usuarioRegistro: user.usuario,
+      }),
+    );
+
+    await this.recalcularCuenta(manager, cuenta.id);
+    return mov;
+  }
+
   // ------------------------------------------------------------------ CRUD
   async guardar(
     dto: CreateLibretaBancoDto,
@@ -239,25 +309,14 @@ export class LibretaBancoService {
     user: Usuario,
   ): Promise<LibretaBanco> {
     const cuenta = await this.obtenerCuentaActiva(dto.idCuentaBancaria);
-    const [gestion, mes] = this.gestionMesDeFecha(dto.fecha);
     const { debe, haber } = this.debeHaber(dto);
     const beneficiario = await this.resolverBeneficiario(dto);
 
     return this.dataSource.transaction(async (manager) => {
-      const periodo = await this.obtenerOCrearPeriodoMensual(
+      const mov = await this.crearMovimientoEnTransaccion(
         manager,
-        cuenta.id,
-        gestion,
-        mes,
-        user,
-      );
-      const folio = await this.siguienteFolio(manager, cuenta.id, gestion);
-
-      const mov = await manager.save(
-        manager.create(LibretaBanco, {
-          idCuentaBancaria: cuenta.id,
-          idPeriodoBanco: periodo.id,
-          folio,
+        cuenta,
+        {
           fecha: dto.fecha,
           nroTransaccion: dto.nroTransaccion?.trim() || null,
           idPersona: beneficiario.idPersona,
@@ -265,12 +324,9 @@ export class LibretaBancoService {
           concepto: dto.concepto.trim(),
           debe,
           haber,
-          saldo: 0,
-          usuarioRegistro: user.usuario,
-        }),
+        },
+        user,
       );
-
-      await this.recalcularCuenta(manager, cuenta.id);
 
       return manager.findOne(LibretaBanco, {
         where: { id: mov.id },
@@ -397,7 +453,7 @@ export class LibretaBancoService {
       qb.andWhere('p.mes = :m', { m: filtro.mes });
     }
 
-    qb.orderBy('l.fecha', 'ASC').addOrderBy('l.id', 'ASC');
+    qb.orderBy('l.folio', 'ASC').addOrderBy('l.id', 'ASC');
     const movimientos = await qb.getMany();
 
     const wherePeriodo: Record<string, unknown> = {

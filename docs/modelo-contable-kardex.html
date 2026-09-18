@@ -1,0 +1,1365 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Kardex y Caja de Flujo</title>
+<meta name="description" content="Modelo de datos propuesto para el módulo contable de tinkurikuna S.R.L.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root {
+    --ground: #f6f5f2;
+    --surface: #ffffff;
+    --surface-2: #efeee9;
+    --ink: #23262b;
+    --muted: #6b7076;
+    --line: #e2e0da;
+    --line-strong: #cfccc3;
+    --accent: #2e6e68;
+    --accent-ink: #245a55;
+    --accent-soft: #dde9e7;
+    --ok: #3b7d4f;
+    --warn: #9a6a12;
+    --danger: #a63d40;
+
+    --f-display: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --f-body: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+    --measure: 68ch;
+    --pad: clamp(1.1rem, 4vw, 2.75rem);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #16181b;
+      --surface: #1e2124;
+      --surface-2: #24272b;
+      --ink: #e8e6e1;
+      --muted: #9aa0a6;
+      --line: #2e3236;
+      --line-strong: #3c4147;
+      --accent: #5ca89f;
+      --accent-ink: #7cbfb6;
+      --accent-soft: #223330;
+      --ok: #6fb283;
+      --warn: #cf9a4a;
+      --danger: #d98387;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #16181b;
+    --surface: #1e2124;
+    --surface-2: #24272b;
+    --ink: #e8e6e1;
+    --muted: #9aa0a6;
+    --line: #2e3236;
+    --line-strong: #3c4147;
+    --accent: #5ca89f;
+    --accent-ink: #7cbfb6;
+    --accent-soft: #223330;
+    --ok: #6fb283;
+    --warn: #cf9a4a;
+    --danger: #d98387;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 1rem;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 var(--pad) 6rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  @media (min-width: 1000px) {
+    .wrap { grid-template-columns: 208px minmax(0, 1fr); column-gap: clamp(2rem, 5vw, 4.5rem); }
+  }
+
+  /* ---- masthead ---- */
+  .masthead {
+    grid-column: 1 / -1;
+    padding: clamp(2.5rem, 7vw, 4.5rem) 0 clamp(1.5rem, 4vw, 2.25rem);
+    border-bottom: 2px solid var(--ink);
+  }
+  .masthead .kicker {
+    font-family: var(--f-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 0.9rem;
+  }
+  .masthead h1 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(2rem, 6vw, 3rem);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0 0 0.9rem;
+  }
+  .masthead p {
+    max-width: 60ch;
+    margin: 0;
+    color: var(--muted);
+    font-size: 1.05rem;
+  }
+  .masthead .meta {
+    margin-top: 1.6rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.5rem;
+    font-family: var(--f-mono);
+    font-size: 0.72rem;
+  }
+  .masthead .meta span {
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 0.28rem 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  /* ---- side nav ---- */
+  nav.rail {
+    grid-column: 1;
+    align-self: start;
+    padding-top: 2.5rem;
+  }
+  @media (min-width: 1000px) {
+    nav.rail { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding-top: 3rem; }
+  }
+  nav.rail ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    counter-reset: nav;
+  }
+  nav.rail a {
+    display: block;
+    font-family: var(--f-mono);
+    font-size: 0.76rem;
+    line-height: 1.35;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 0.4rem 0.5rem 0.4rem 0;
+    border-left: 2px solid transparent;
+    padding-left: 0.75rem;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  nav.rail a:hover { color: var(--ink); border-color: var(--line-strong); }
+  nav.rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 999px) {
+    nav.rail { border-bottom: 1px solid var(--line); padding-bottom: 1.25rem; margin-bottom: 1rem; }
+    nav.rail ol { flex-direction: row; flex-wrap: wrap; gap: 0.4rem; }
+    nav.rail a { border: 1px solid var(--line-strong); border-radius: 999px; padding: 0.3rem 0.7rem; }
+    nav.rail a:hover { border-color: var(--accent); }
+  }
+
+  /* ---- main flow ---- */
+  main { grid-column: 1; min-width: 0; padding-top: 2.5rem; }
+  @media (min-width: 1000px) { main { grid-column: 2; } }
+
+  section { padding: 2.75rem 0; border-bottom: 1px solid var(--line); }
+  section:last-child { border-bottom: 0; }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0 0 0.6rem;
+  }
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(1.35rem, 3.4vw, 1.7rem);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.02rem;
+    margin: 2rem 0 0.5rem;
+  }
+  p, li { max-width: var(--measure); }
+  p { margin: 0 0 1rem; }
+  ul, ol { padding-left: 1.2rem; margin: 0 0 1rem; }
+  li { margin: 0.3rem 0; }
+  strong { font-weight: 600; }
+  a.inl { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+
+  code, .m {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.08em 0.36em;
+    white-space: nowrap;
+  }
+
+  .lede {
+    font-size: 1.12rem;
+    line-height: 1.6;
+    border-left: 3px solid var(--accent);
+    padding-left: 1.1rem;
+    color: var(--ink);
+  }
+
+  /* ---- schema-diagram panel (fixed light) ---- */
+  .er {
+    background: #fbfaf7;
+    color: #23262b;
+    border: 1px solid var(--line-strong);
+    border-radius: 12px;
+    padding: 1.25rem;
+    overflow-x: auto;
+  }
+  .er .mermaid { display: flex; justify-content: center; min-width: 640px; }
+  .er-cap {
+    font-family: var(--f-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0.7rem 0 0;
+    text-transform: uppercase;
+  }
+
+  /* ---- table spec blocks ---- */
+  .catalog { display: flex; flex-direction: column; gap: 0; }
+  .tbl { padding: 1.6rem 0; border-top: 1px solid var(--line); }
+  .tbl:first-child { border-top: 2px solid var(--line-strong); }
+  .tbl__head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.6rem 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .tbl__name {
+    font-family: var(--f-mono);
+    font-weight: 600;
+    font-size: 1rem;
+    margin: 0;
+    color: var(--ink);
+  }
+  .pill {
+    font-family: var(--f-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--accent);
+    color: var(--accent-ink);
+    white-space: nowrap;
+  }
+  .pill.ext { border-color: var(--line-strong); color: var(--muted); }
+  .pill.new { background: var(--accent-soft); border-color: transparent; }
+  .tbl__purpose { color: var(--muted); margin: 0 0 0.9rem; max-width: var(--measure); }
+
+  .scroll { overflow-x: auto; }
+  table.cols {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 520px;
+    font-family: var(--f-mono);
+    font-size: 0.8rem;
+  }
+  table.cols th {
+    text-align: left;
+    font-weight: 500;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line-strong);
+    padding: 0.4rem 0.9rem 0.4rem 0;
+  }
+  table.cols td {
+    vertical-align: top;
+    border-bottom: 1px solid var(--line);
+    padding: 0.42rem 0.9rem 0.42rem 0;
+  }
+  table.cols td:first-child { color: var(--ink); font-weight: 500; white-space: nowrap; }
+  table.cols td:nth-child(2) { color: var(--accent-ink); white-space: nowrap; }
+  table.cols td:last-child { font-family: var(--f-body); font-size: 0.92rem; color: var(--muted); min-width: 15ch; }
+  table.cols tr:last-child td { border-bottom: 0; }
+
+  /* ---- generic data table ---- */
+  .scroll table.grid {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 480px;
+    font-size: 0.92rem;
+  }
+  table.grid th, table.grid td {
+    text-align: left;
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.grid th {
+    font-family: var(--f-mono);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line-strong);
+  }
+  table.grid td:first-child { font-family: var(--f-mono); font-size: 0.82rem; white-space: nowrap; }
+
+  /* ---- flow (numbered sequences) ---- */
+  .flow { counter-reset: step; display: flex; flex-direction: column; gap: 1.4rem; margin-top: 1.25rem; }
+  .flow > li {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 2.1rem 1fr;
+    gap: 0.9rem;
+    max-width: none;
+  }
+  .flow > li::before {
+    counter-increment: step;
+    content: counter(step);
+    font-family: var(--f-mono);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+    border-radius: 6px;
+    width: 2.1rem;
+    height: 2.1rem;
+    display: grid;
+    place-items: center;
+  }
+  .flow h3 { margin: 0.15rem 0 0.35rem; font-size: 0.98rem; }
+  .flow p { margin: 0 0 0.5rem; max-width: 62ch; }
+  .flow ul { margin: 0.25rem 0 0; }
+  .flow li li { max-width: 60ch; }
+
+  /* ---- callouts ---- */
+  .note {
+    border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--warn);
+    border-radius: 8px;
+    padding: 0.9rem 1.1rem;
+    margin: 1.25rem 0;
+    background: var(--surface);
+  }
+  .note p { margin: 0; max-width: none; }
+  .note .tag {
+    font-family: var(--f-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--warn);
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+  .note.q { border-left-color: var(--accent); }
+  .note.q .tag { color: var(--accent-ink); }
+
+  /* ---- code / ddl ---- */
+  pre.ddl {
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    padding: 1.15rem 1.25rem;
+    overflow-x: auto;
+    font-family: var(--f-mono);
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: var(--ink);
+    tab-size: 2;
+  }
+  pre.ddl .c { color: var(--muted); }
+  pre.ddl .k { color: var(--accent-ink); font-weight: 600; }
+
+  .foot {
+    grid-column: 1 / -1;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 2px solid var(--ink);
+    font-family: var(--f-mono);
+    font-size: 0.74rem;
+    color: var(--muted);
+  }
+
+  .hr-tight { border: 0; border-top: 1px solid var(--line); margin: 1.75rem 0; }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="kicker">tinkurikuna S.R.L. · propuesta de modelo · v1 para revisión</p>
+    <h1>Kardex y Caja de Flujo</h1>
+    <p>Modelo de datos para la parte contable de la empresa: caja de flujo de ingresos y egresos, kardex de anticipos por actor productivo minero, kardex del personal interno, bancos habilitados y recibos con correlativo propio.</p>
+    <div class="meta">
+      <span>Postgres 17 · tinkuriquna_db</span>
+      <span>datasource: ci</span>
+      <span>esquema nuevo: contabilidad</span>
+      <span>base: caja de flujo y kardex.xlsx</span>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Secciones">
+    <ol>
+      <li><a href="#decision">Decisión de fondo</a></li>
+      <li><a href="#er">Diagrama ER</a></li>
+      <li><a href="#catalogo">Catálogo de tablas</a></li>
+      <li><a href="#correlativos">Correlativos y secuencias</a></li>
+      <li><a href="#cierre">Cierre y apertura de kardex</a></li>
+      <li><a href="#transaccion">Transacción y doble afectación</a></li>
+      <li><a href="#flujos">Flujos automáticos</a></li>
+      <li><a href="#existentes">Cambios en tablas existentes</a></li>
+      <li><a href="#ddl">DDL borrador</a></li>
+      <li><a href="#pendientes">Decisiones abiertas</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="decision">
+      <p class="eyebrow">Resumen</p>
+      <h2>No se rediseñan los maestros. Se agrega un esquema contable.</h2>
+      <p class="lede">Las cuatro tablas revisadas &mdash; <code>persona_ci</code>, <code>persona_persona_tipo</code>, <code>persona_tipo</code> y <code>actor_productivo_minero</code> &mdash; son maestros de <em>partes</em> (quién) y no necesitan cambios estructurales. Lo que falta es un módulo que registre <em>cuánto, cuándo, contra qué cuenta y con qué fondo</em>.</p>
+      <ul>
+        <li><strong>Esquema nuevo:</strong> <code>contabilidad</code>, junto a <code>parametrica</code>, <code>comercio_interno</code> y <code>seguridad</code>. Datasource <code>ci</code>, sin nueva conexión.</li>
+        <li><strong>Catálogos</strong> (<code>plan_cuenta</code>, <code>banco</code>, <code>forma_pago</code>, <code>kardex_subcuenta</code>, <code>tipo_movimiento_kardex</code>) &rarr; en <code>parametrica</code>.</li>
+        <li><strong>El saldo de un actor no vive en <code>actor_productivo_minero</code>.</strong> Se mantiene en su kardex. Maestro y libro mayor quedan separados.</li>
+        <li><strong>Enganche con lo ya construido:</strong> tranzar / entregar una valorización dispara la contabilización. Es lo que debe orquestar el flujo <code>valorizacion-entregado</code> que ya se empezó.</li>
+      </ul>
+    </section>
+
+    <section id="er">
+      <p class="eyebrow">Vista general</p>
+      <h2>Diagrama entidad-relación</h2>
+      <p>Entidades marcadas <span class="m">existente</span> ya están en la base; el resto son nuevas. Atributos abreviados a lo esencial.</p>
+      <div class="er">
+        <pre class="mermaid">
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"IBM Plex Mono, monospace","fontSize":"13px","primaryColor":"#ffffff","primaryBorderColor":"#2e6e68","primaryTextColor":"#23262b","lineColor":"#8a8f96","secondaryColor":"#f0efe9","tertiaryColor":"#f6f5f2"}}}%%
+erDiagram
+  PERSONA_CI ||--o{ KARDEX_PERSONAL : "titular"
+  PERSONA_CI ||--o{ FONDO : "responsable"
+  PERSONA_CI ||--o{ MOV_KARDEX_ACTOR : "cobrador"
+  PERSONA_CI ||--o{ PLANILLA_DETALLE : "trabajador"
+  PERSONA_CI ||--o{ ANTICIPO_SUELDO : "recibe"
+  PERSONA_CI ||--o{ RECIBO : "parte"
+
+  ACTOR_PRODUCTIVO_MINERO ||--o{ KARDEX_ACTOR : "cuenta corriente"
+
+  KARDEX_ACTOR ||--o{ MOV_KARDEX_ACTOR : "contiene"
+  KARDEX_ACTOR |o--o| KARDEX_ACTOR : "arrastre N-1"
+  KARDEX_PERSONAL ||--o{ MOV_KARDEX_PERSONAL : "contiene"
+
+  PLAN_CUENTA ||--o{ MOVIMIENTO_FONDO : "clasifica"
+  PLAN_CUENTA ||--o{ KARDEX_ACTOR : "tipo de cuenta"
+
+  FONDO ||--o{ PERIODO_FONDO : "cierra mensual"
+  FONDO ||--o{ MOVIMIENTO_FONDO : "libro"
+  PERIODO_FONDO ||--o{ MOVIMIENTO_FONDO : "bloquea al cerrar"
+
+  TRANSACCION_CONTABLE ||--o{ MOVIMIENTO_FONDO : "asienta"
+  TRANSACCION_CONTABLE ||--o{ MOV_KARDEX_ACTOR : "asienta"
+  TRANSACCION_CONTABLE ||--o{ MOV_KARDEX_PERSONAL : "asienta"
+
+  RECIBO ||--o| TRANSACCION_CONTABLE : "genera"
+  VALORIZACION_MINERAL ||--o| TRANSACCION_CONTABLE : "tranzado"
+  PLANILLA_SUELDO ||--o| TRANSACCION_CONTABLE : "pago"
+  PLANILLA_SUELDO ||--o{ PLANILLA_DETALLE : "detalle"
+  ANTICIPO_SUELDO ||--o| MOV_KARDEX_PERSONAL : "descuenta"
+
+  PERSONA_CI {
+    bigint id PK
+    string nombres
+    string numero_documento
+  }
+  ACTOR_PRODUCTIVO_MINERO {
+    bigint id PK
+    string nombre
+  }
+  KARDEX_ACTOR {
+    bigint id PK
+    bigint id_actor_productivo_minero FK
+    int numero "libro 1,2,3"
+    int gestion
+    numeric saldo_apertura
+    numeric saldo_actual
+    numeric saldo_cierre
+    bigint id_kardex_anterior FK
+    string estado "ABIERTO|CERRADO"
+  }
+  MOV_KARDEX_ACTOR {
+    bigint id PK
+    bigint id_kardex_actor FK
+    int numero_linea "reinicia por kardex"
+    date fecha
+    bigint id_subcuenta FK
+    string nro_documento
+    numeric debe
+    numeric haber
+    numeric saldo_resultante
+    bigint id_forma_pago FK
+    bigint id_tipo_movimiento FK
+    bigint id_cobrador FK
+    bigint id_transaccion FK
+    bigint id_valorizacion FK
+  }
+  KARDEX_PERSONAL {
+    bigint id PK
+    bigint id_persona FK
+    int numero
+    int gestion
+    numeric saldo_apertura
+    numeric saldo_actual
+    string estado
+  }
+  MOV_KARDEX_PERSONAL {
+    bigint id PK
+    bigint id_kardex_personal FK
+    int numero_linea
+    numeric debe
+    numeric haber
+    numeric saldo_resultante
+    bigint id_transaccion FK
+    bigint id_recibo FK
+  }
+  FONDO {
+    bigint id PK
+    string tipo "CAJA|BANCO"
+    bigint id_banco FK
+    string nro_cuenta
+    string moneda
+    bigint id_responsable FK
+  }
+  PERIODO_FONDO {
+    bigint id PK
+    bigint id_fondo FK
+    int gestion
+    int mes
+    numeric saldo_apertura
+    numeric saldo_cierre
+    string estado
+  }
+  MOVIMIENTO_FONDO {
+    bigint id PK
+    bigint id_fondo FK
+    bigint id_periodo_fondo FK
+    bigint id_transaccion FK
+    date fecha
+    bigint id_plan_cuenta FK
+    string tipo "INGRESO|EGRESO"
+    numeric ingreso_bs
+    numeric egreso_bs
+    numeric ingreso_usd
+    numeric egreso_usd
+    numeric saldo_bs
+    numeric saldo_usd
+    string nro_documento
+    string beneficiario_texto
+    bigint id_beneficiario FK
+  }
+  TRANSACCION_CONTABLE {
+    bigint id PK
+    int numero
+    date fecha
+    string glosa
+    string tipo "INGRESO|EGRESO|TRANSFERENCIA|AJUSTE"
+    string origen_tipo
+    bigint origen_id
+    string estado
+  }
+  RECIBO {
+    bigint id PK
+    string serie "C|R"
+    int numero "seq_recibo"
+    date fecha
+    string tipo "INGRESO|EGRESO"
+    bigint id_persona FK
+    bigint id_plan_cuenta FK
+    numeric monto
+    string moneda
+    bigint id_forma_pago FK
+    bigint id_transaccion FK
+    string estado "EMITIDO|ANULADO"
+    int impresiones
+  }
+  PLAN_CUENTA {
+    bigint id PK
+    string codigo
+    string nombre
+    string tipo "INGRESO|EGRESO|AMBOS"
+    string categoria_sistema
+    string origen "SEED|USUARIO"
+  }
+  PLANILLA_SUELDO {
+    bigint id PK
+    int gestion
+    int mes
+    string estado
+    bigint id_transaccion FK
+  }
+  PLANILLA_DETALLE {
+    bigint id PK
+    bigint id_planilla FK
+    bigint id_persona FK
+    numeric sueldo_base
+    numeric anticipos_desc
+    numeric descuentos
+    numeric liquido_pagar
+  }
+  ANTICIPO_SUELDO {
+    bigint id PK
+    bigint id_persona FK
+    int gestion
+    numeric monto
+    numeric saldo_pendiente
+  }
+  VALORIZACION_MINERAL {
+    bigint id PK
+    string codigo_operacion
+  }
+        </pre>
+      </div>
+      <p class="er-cap">Panel de esquema &mdash; siempre en claro para legibilidad del diagrama.</p>
+    </section>
+
+    <section id="catalogo">
+      <p class="eyebrow">Detalle</p>
+      <h2>Catálogo de tablas</h2>
+      <p>Columnas de auditoría (<code>activo</code>, <code>usuario_registro</code>, <code>fecha_registro</code>, <code>usuario_ultima_modificacion</code>, <code>fecha_ultima_modificacion</code>) se heredan de la clase base <code>Auditoria</code> y se omiten abajo.</p>
+
+      <div class="catalog">
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">parametrica.plan_cuenta</h3>
+            <span class="pill">catálogo</span>
+          </div>
+          <p class="tbl__purpose">Plan de cuentas híbrido. Se precarga con los conceptos más usados del Excel; el usuario puede guardar uno nuevo al registrar. La columna <em>DESTINO DEL GASTO</em> de la caja de flujo.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td>identity</td></tr>
+              <tr><td>codigo</td><td>varchar(20)</td><td>opcional; ej. 5.1.01</td></tr>
+              <tr><td>nombre</td><td>varchar(120)</td><td>único (normalizado: trim + upper)</td></tr>
+              <tr><td>tipo</td><td>varchar(10)</td><td>INGRESO · EGRESO · AMBOS</td></tr>
+              <tr><td>categoria_sistema</td><td>varchar(30)</td><td>null · COMPRA_MINERAL · ANTICIPO_ACTOR · SUELDOS · ANTICIPO_SUELDO — enlaza flujos automáticos</td></tr>
+              <tr><td>origen</td><td>varchar(10)</td><td>SEED · USUARIO</td></tr>
+              <tr><td>id_padre</td><td>bigint FK</td><td>opcional, para agrupar</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">parametrica.banco</h3>
+            <span class="pill">catálogo</span>
+          </div>
+          <p class="tbl__purpose">Entidades financieras: Unión, BCP, Sol, Ganadero, BNB. Tabla de referencia.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>nombre</td><td>varchar(80)</td><td>"Banco Unión"</td></tr>
+              <tr><td>sigla</td><td>varchar(20)</td><td>"UNION S.A." — como aparece en el comprobante</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">parametrica.forma_pago</h3>
+            <span class="pill">catálogo</span>
+          </div>
+          <p class="tbl__purpose">EFECTIVO, QR, TRANSFERENCIA, CHEQUE, DSCT_LEY, DSCT_ANTICIPO, TRANZADO. Columna <em>FORMA DE PAGO</em> del kardex de anticipos.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>codigo</td><td>varchar(20)</td><td>único</td></tr>
+              <tr><td>nombre</td><td>varchar(40)</td><td></td></tr>
+              <tr><td>afecta_fondo</td><td>boolean</td><td>false para DSCT_LEY / DSCT_ANTICIPO / TRANZADO</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">parametrica.kardex_subcuenta</h3>
+            <span class="pill">catálogo</span>
+          </div>
+          <p class="tbl__purpose">Subcuentas del kardex por actor: "Principal", "Compresora", etc. Lista poblada; si el front envía una nueva, se inserta y se reutiliza.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>nombre</td><td>varchar(60)</td><td>único (normalizado)</td></tr>
+              <tr><td>origen</td><td>varchar(10)</td><td>SEED · USUARIO</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">parametrica.tipo_movimiento_kardex</h3>
+            <span class="pill">catálogo</span>
+          </div>
+          <p class="tbl__purpose">Clase de asiento en un kardex: ANTICIPO, PAGO, DESCUENTO_LEY, DESCUENTO_ANTICIPO, TRANZADO_VALORIZACION, RECONOCIMIENTO, DEVOLUCION.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>codigo</td><td>varchar(30)</td><td>único</td></tr>
+              <tr><td>nombre</td><td>varchar(60)</td><td></td></tr>
+              <tr><td>signo</td><td>char(1)</td><td>D (debe) · H (haber)</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.fondo</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Una fila por caja de efectivo y por cuenta bancaria. El desglose "BANCO UNIÓN / BCP / SOL" de la hoja 1 son fondos individuales; la caja de flujo es su consolidación.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>tipo</td><td>varchar(10)</td><td>CAJA · BANCO</td></tr>
+              <tr><td>nombre</td><td>varchar(80)</td><td>"Caja Principal", "Banco Unión Cta 100-…"</td></tr>
+              <tr><td>id_banco</td><td>bigint FK</td><td>null si tipo = CAJA</td></tr>
+              <tr><td>nro_cuenta</td><td>varchar(40)</td><td>null si tipo = CAJA</td></tr>
+              <tr><td>moneda</td><td>varchar(3)</td><td>BOB · USD</td></tr>
+              <tr><td>id_responsable</td><td>bigint FK</td><td>&rarr; persona_ci (interno)</td></tr>
+              <tr><td>saldo_actual</td><td>numeric(16,2)</td><td>denormalizado, recalculado por trigger/servicio</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.periodo_fondo</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Periodo <strong>mensual</strong> por fondo. Al cerrar, <code>saldo_cierre</code> se copia como <code>saldo_apertura</code> del mes siguiente. El primero se carga manual (migración del Excel).</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>id_fondo</td><td>bigint FK</td><td></td></tr>
+              <tr><td>gestion</td><td>int</td><td>año</td></tr>
+              <tr><td>mes</td><td>int</td><td>1&ndash;12</td></tr>
+              <tr><td>saldo_apertura</td><td>numeric(16,2)</td><td></td></tr>
+              <tr><td>saldo_cierre</td><td>numeric(16,2)</td><td>null mientras ABIERTO</td></tr>
+              <tr><td>estado</td><td>varchar(10)</td><td>ABIERTO · CERRADO</td></tr>
+              <tr><td>id_responsable</td><td>bigint FK</td><td>&rarr; persona_ci</td></tr>
+              <tr><td colspan="3" style="color:var(--muted)">UNIQUE (id_fondo, gestion, mes)</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.transaccion_contable</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Comprobante que agrupa todos los asientos de un mismo hecho económico. Permite que un pago afecte dos fondos (transferencia) o un fondo y un kardex a la vez.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>numero</td><td>int</td><td>correlativo anual (comprobante)</td></tr>
+              <tr><td>fecha</td><td>date</td><td></td></tr>
+              <tr><td>glosa</td><td>varchar(255)</td><td>"CONCEPTO" de la hoja 1</td></tr>
+              <tr><td>tipo</td><td>varchar(15)</td><td>INGRESO · EGRESO · TRANSFERENCIA · AJUSTE</td></tr>
+              <tr><td>origen_tipo</td><td>varchar(20)</td><td>MANUAL · RECIBO · VALORIZACION · PLANILLA</td></tr>
+              <tr><td>origen_id</td><td>bigint</td><td>id del documento origen</td></tr>
+              <tr><td>estado</td><td>varchar(12)</td><td>REGISTRADO · ANULADO</td></tr>
+              <tr><td>id_usuario</td><td>bigint FK</td><td>&rarr; seguridad.usuario</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.movimiento_fondo</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Cada fila de la hoja 1 (caja de flujo). Multi-moneda replicando el Excel: cuatro columnas de importe, dos de saldo corriente. Sin tipo de cambio por ahora.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>id_fondo</td><td>bigint FK</td><td></td></tr>
+              <tr><td>id_periodo_fondo</td><td>bigint FK</td><td>bloqueo si el periodo está CERRADO</td></tr>
+              <tr><td>id_transaccion</td><td>bigint FK</td><td></td></tr>
+              <tr><td>fecha</td><td>date</td><td></td></tr>
+              <tr><td>concepto</td><td>varchar(255)</td><td></td></tr>
+              <tr><td>id_plan_cuenta</td><td>bigint FK</td><td>DESTINO DEL GASTO</td></tr>
+              <tr><td>tipo</td><td>varchar(8)</td><td>INGRESO · EGRESO</td></tr>
+              <tr><td>ingreso_bs / egreso_bs</td><td>numeric(16,2)</td><td></td></tr>
+              <tr><td>ingreso_usd / egreso_usd</td><td>numeric(16,2)</td><td></td></tr>
+              <tr><td>saldo_bs / saldo_usd</td><td>numeric(16,2)</td><td>saldo corriente del fondo tras el movimiento</td></tr>
+              <tr><td>tipo_cambio</td><td>numeric(10,5)</td><td>nullable — reservado</td></tr>
+              <tr><td>id_forma_pago</td><td>bigint FK</td><td></td></tr>
+              <tr><td>id_beneficiario</td><td>bigint FK</td><td>&rarr; persona_ci · nullable</td></tr>
+              <tr><td>beneficiario_texto</td><td>varchar(150)</td><td>"ENTREGA DE FONDOS A" si no está en persona_ci</td></tr>
+              <tr><td>nro_recibo</td><td>varchar(30)</td><td>FACTURA Y/O RECIBO</td></tr>
+              <tr><td>nro_comprobante</td><td>varchar(30)</td><td>Nº CPTE — "COMP:4585846275"</td></tr>
+              <tr><td>nro_cheque</td><td>varchar(30)</td><td></td></tr>
+              <tr><td>id_recibo</td><td>bigint FK</td><td>&rarr; recibo · nullable</td></tr>
+              <tr><td>id_valorizacion</td><td>bigint FK</td><td>&rarr; valorizacion_mineral · nullable</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.kardex_actor</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">La cuenta corriente de un actor. <strong>Es</strong> el periodo: se abre a demanda, se cierra a pedido del cliente y se genera el siguiente arrastrando el saldo. <code>numero</code> = el "N°" de la cabecera de la hoja 2 (1, 2, 3…), <em>no</em> el <code>id</code>.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td>identity global</td></tr>
+              <tr><td>id_actor_productivo_minero</td><td>bigint FK</td><td></td></tr>
+              <tr><td>id_plan_cuenta</td><td>bigint FK</td><td>"CUENTA: Anticipos a cta Sacos de Mineral"</td></tr>
+              <tr><td>numero</td><td>int</td><td>correlativo del libro por actor; +1 en cada cierre</td></tr>
+              <tr><td>gestion</td><td>int</td><td>año de apertura</td></tr>
+              <tr><td>saldo_apertura</td><td>numeric(16,2)</td><td>arrastre del kardex anterior; manual la 1.ª vez</td></tr>
+              <tr><td>saldo_actual</td><td>numeric(16,2)</td><td>recalculado en cada movimiento</td></tr>
+              <tr><td>saldo_cierre</td><td>numeric(16,2)</td><td>se fija al cerrar</td></tr>
+              <tr><td>id_kardex_anterior</td><td>bigint FK</td><td>self-FK — traza N-1 &rarr; N</td></tr>
+              <tr><td>estado</td><td>varchar(10)</td><td>ABIERTO · CERRADO</td></tr>
+              <tr><td>fecha_apertura / fecha_cierre</td><td>date</td><td></td></tr>
+              <tr><td colspan="3" style="color:var(--muted)">UNIQUE (id_actor_productivo_minero, id_plan_cuenta, numero) · parcial UNIQUE estado = ABIERTO</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.movimiento_kardex_actor</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Cada fila de la hoja 2. <code>numero_linea</code> reinicia en 1 dentro de cada <code>kardex_actor</code>. El saldo corriente es del libro entero, sin importar la subcuenta de la línea.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td>identity global</td></tr>
+              <tr><td>id_kardex_actor</td><td>bigint FK</td><td></td></tr>
+              <tr><td>numero_linea</td><td>int</td><td>1&hellip;N — reinicia por kardex</td></tr>
+              <tr><td>fecha</td><td>date</td><td></td></tr>
+              <tr><td>id_subcuenta</td><td>bigint FK</td><td>&rarr; kardex_subcuenta — varía por línea ("Principal" / "Compresora")</td></tr>
+              <tr><td>detalle</td><td>varchar(255)</td><td></td></tr>
+              <tr><td>nro_documento</td><td>varchar(40)</td><td>"REC:C-0535", "ICC-1810", "DET. ADJ."</td></tr>
+              <tr><td>debe</td><td>numeric(16,2)</td><td>anticipo entregado</td></tr>
+              <tr><td>haber</td><td>numeric(16,2)</td><td>pago / descuento</td></tr>
+              <tr><td>saldo_resultante</td><td>numeric(16,2)</td><td>saldo anterior + debe &minus; haber</td></tr>
+              <tr><td>id_forma_pago</td><td>bigint FK</td><td>EFECTIVO · QR · TRANZADO · DSCT_LEY · DSCT_ANTICIPO</td></tr>
+              <tr><td>id_tipo_movimiento</td><td>bigint FK</td><td></td></tr>
+              <tr><td>id_cobrador</td><td>bigint FK</td><td>&rarr; persona_ci — quién recibió físicamente</td></tr>
+              <tr><td>id_transaccion</td><td>bigint FK</td><td>nullable — presente si nació de un asiento de fondo</td></tr>
+              <tr><td>id_valorizacion</td><td>bigint FK</td><td>nullable — presente en filas TRANZADO</td></tr>
+              <tr><td>id_recibo</td><td>bigint FK</td><td>nullable</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.kardex_personal</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Igual que <code>kardex_actor</code> pero por <code>persona_ci</code> interna (sueldos, anticipos, préstamos, "Kardex Personal" del Excel). Cierre a demanda con arrastre de saldo (asunción — ver decisiones abiertas).</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>id_persona</td><td>bigint FK</td><td>&rarr; persona_ci</td></tr>
+              <tr><td>id_plan_cuenta</td><td>bigint FK</td><td></td></tr>
+              <tr><td>numero</td><td>int</td><td>correlativo por persona</td></tr>
+              <tr><td>gestion</td><td>int</td><td></td></tr>
+              <tr><td>saldo_apertura / saldo_actual / saldo_cierre</td><td>numeric(16,2)</td><td></td></tr>
+              <tr><td>id_kardex_anterior</td><td>bigint FK</td><td>self-FK</td></tr>
+              <tr><td>estado</td><td>varchar(10)</td><td>ABIERTO · CERRADO</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.movimiento_kardex_personal</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Líneas del kardex personal. Misma forma que <code>movimiento_kardex_actor</code>; <code>numero_linea</code> reinicia por kardex.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id / id_kardex_personal / numero_linea</td><td>&mdash;</td><td>análogo</td></tr>
+              <tr><td>fecha · detalle · nro_documento</td><td>&mdash;</td><td></td></tr>
+              <tr><td>debe · haber · saldo_resultante</td><td>numeric(16,2)</td><td></td></tr>
+              <tr><td>id_forma_pago · id_tipo_movimiento</td><td>bigint FK</td><td></td></tr>
+              <tr><td>id_transaccion · id_recibo · id_anticipo_sueldo</td><td>bigint FK</td><td>nullables</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.recibo</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Recibo con correlativo propio para impresión. Al emitirse alimenta la caja de flujo y el kardex (personal o de actor) mediante una <code>transaccion_contable</code>.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>serie</td><td>varchar(4)</td><td>"C", "R" (ver decisiones abiertas)</td></tr>
+              <tr><td>numero</td><td>bigint</td><td>de <code>contabilidad.seq_recibo</code>, formateado con padding</td></tr>
+              <tr><td>codigo</td><td>varchar(20)</td><td>serie + numero, materializado: "REC:C-0535"</td></tr>
+              <tr><td>fecha</td><td>date</td><td></td></tr>
+              <tr><td>tipo</td><td>varchar(8)</td><td>INGRESO · EGRESO</td></tr>
+              <tr><td>id_persona</td><td>bigint FK</td><td>&rarr; persona_ci — a quién se entrega / de quién se recibe</td></tr>
+              <tr><td>id_actor_productivo_minero</td><td>bigint FK</td><td>nullable — si el recibo es a nombre de un actor</td></tr>
+              <tr><td>concepto</td><td>varchar(255)</td><td></td></tr>
+              <tr><td>monto</td><td>numeric(16,2)</td><td></td></tr>
+              <tr><td>moneda</td><td>varchar(3)</td><td></td></tr>
+              <tr><td>monto_literal</td><td>varchar(255)</td><td>importe en letras para el impreso</td></tr>
+              <tr><td>id_plan_cuenta</td><td>bigint FK</td><td></td></tr>
+              <tr><td>id_forma_pago</td><td>bigint FK</td><td></td></tr>
+              <tr><td>id_fondo</td><td>bigint FK</td><td>fondo afectado</td></tr>
+              <tr><td>id_transaccion</td><td>bigint FK</td><td>el asiento generado</td></tr>
+              <tr><td>estado</td><td>varchar(10)</td><td>EMITIDO · ANULADO</td></tr>
+              <tr><td>impresiones</td><td>int</td><td>contador de reimpresiones</td></tr>
+              <tr><td colspan="3" style="color:var(--muted)">UNIQUE (serie, numero)</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.planilla_sueldo · planilla_detalle</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">Corrida mensual de sueldos del personal interno. La cabecera fija gestión/mes/estado; el detalle es una fila por trabajador. Al pagar genera el asiento de fondo y salda los anticipos aplicados.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>planilla_sueldo.id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>gestion · mes</td><td>int</td><td>UNIQUE (gestion, mes)</td></tr>
+              <tr><td>estado</td><td>varchar(12)</td><td>BORRADOR · APROBADA · PAGADA</td></tr>
+              <tr><td>id_transaccion</td><td>bigint FK</td><td>al pasar a PAGADA</td></tr>
+              <tr><td>detalle.id_persona</td><td>bigint FK</td><td>&rarr; persona_ci (interno)</td></tr>
+              <tr><td>detalle.sueldo_base</td><td>numeric(14,2)</td><td></td></tr>
+              <tr><td>detalle.dias_trabajados</td><td>numeric(5,2)</td><td></td></tr>
+              <tr><td>detalle.bonos · descuentos</td><td>numeric(14,2)</td><td></td></tr>
+              <tr><td>detalle.anticipos_descontados</td><td>numeric(14,2)</td><td>suma de anticipo_sueldo aplicados</td></tr>
+              <tr><td>detalle.liquido_pagar</td><td>numeric(14,2)</td><td></td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+        <article class="tbl">
+          <div class="tbl__head">
+            <h3 class="tbl__name">contabilidad.anticipo_sueldo</h3>
+            <span class="pill new">transaccional</span>
+          </div>
+          <p class="tbl__purpose">"Anticipo a cta sueldo" del Excel. Se entrega contra un fondo, se descuenta luego en la planilla. Mantiene su propio saldo pendiente.</p>
+          <div class="scroll"><table class="cols">
+            <thead><tr><th>columna</th><th>tipo</th><th>nota</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>bigint PK</td><td></td></tr>
+              <tr><td>id_persona</td><td>bigint FK</td><td>&rarr; persona_ci</td></tr>
+              <tr><td>fecha</td><td>date</td><td></td></tr>
+              <tr><td>periodo_texto</td><td>varchar(60)</td><td>"2 Julio a 2 Agosto 2025"</td></tr>
+              <tr><td>monto</td><td>numeric(14,2)</td><td></td></tr>
+              <tr><td>saldo_pendiente</td><td>numeric(14,2)</td><td></td></tr>
+              <tr><td>id_transaccion</td><td>bigint FK</td><td>asiento de entrega</td></tr>
+              <tr><td>id_planilla_detalle</td><td>bigint FK</td><td>nullable — dónde se descontó</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+
+      </div>
+    </section>
+
+    <section id="correlativos">
+      <p class="eyebrow">Mecánica</p>
+      <h2>Correlativos y secuencias</h2>
+      <p>Cinco numeraciones distintas, cada una con su alcance. Ninguna es el <code>id</code> de la tabla.</p>
+      <div class="scroll"><table class="grid">
+        <thead><tr><th>numeración</th><th>alcance</th><th>reinicia</th><th>implementación</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>recibo.numero</td>
+            <td>global por serie</td>
+            <td>nunca</td>
+            <td>secuencia Postgres <code>contabilidad.seq_recibo</code>, con padding tipo <code>CORRELATIVO_LONGITUD</code> (mismo patrón que <code>comercio_interno.seq_recepcion_mineral</code>)</td>
+          </tr>
+          <tr>
+            <td>kardex_actor.numero</td>
+            <td>por actor + tipo de cuenta</td>
+            <td>&mdash;</td>
+            <td>arranca en 1; <code>+1</code> en cada cierre. Es el "N°" de la cabecera del kardex</td>
+          </tr>
+          <tr>
+            <td>movimiento_kardex_actor.numero_linea</td>
+            <td>por kardex_actor</td>
+            <td><strong>sí</strong>, vuelve a 1 en cada kardex nuevo</td>
+            <td><code>MAX(numero_linea)+1</code> dentro del kardex, dentro de la transacción de inserción</td>
+          </tr>
+          <tr>
+            <td>kardex_personal.numero / …numero_linea</td>
+            <td>por persona / por kardex</td>
+            <td>línea: sí</td>
+            <td>análogo al de actor</td>
+          </tr>
+          <tr>
+            <td>transaccion_contable.numero</td>
+            <td>global anual</td>
+            <td>por gestión</td>
+            <td>comprobante contable; opcional, se puede activar después</td>
+          </tr>
+        </tbody>
+      </table></div>
+      <div class="note">
+        <span class="tag">Concurrencia</span>
+        <p><code>numero_linea</code> y <code>kardex_actor.numero</code> se calculan con <code>MAX()+1</code>: hay que tomarlos bajo <code>SELECT … FOR UPDATE</code> sobre la fila del kardex (o del actor) para evitar dos líneas con el mismo número si entran dos peticiones a la vez. Los servicios de valorización ya usan <code>queryRunner</code> con transacción; se reutiliza ese patrón.</p>
+      </div>
+    </section>
+
+    <section id="cierre">
+      <p class="eyebrow">Mecánica</p>
+      <h2>Cierre y apertura de kardex</h2>
+      <p>El kardex por actor se cierra <strong>a pedido del cliente</strong> (no en fecha fija). Los fondos (caja / banco) se cierran <strong>cada mes</strong>. Ambos comparten el mismo mecanismo de arrastre.</p>
+      <ol class="flow">
+        <li>
+          <div>
+            <h3>Cerrar</h3>
+            <p>Se valida que no haya movimientos en borrador. <code>estado = CERRADO</code>, <code>saldo_cierre = saldo_actual</code>, <code>fecha_cierre</code> y <code>cerrado_por</code> quedan registrados.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Abrir el siguiente</h3>
+            <p>Se crea automáticamente el nuevo kardex: <code>numero = anterior.numero + 1</code>, <code>saldo_apertura = anterior.saldo_cierre</code> (la deuda que arrastra el actor, si la hubiese), <code>id_kardex_anterior</code> apunta al que se cerró.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Reiniciar la numeración de líneas</h3>
+            <p>El primer <code>movimiento_kardex_actor</code> del nuevo kardex es <code>numero_linea = 1</code>. Su <code>saldo_resultante</code> parte de <code>saldo_apertura</code>.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Inmutabilidad</h3>
+            <p>Un kardex <code>CERRADO</code> y sus movimientos no admiten <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> (guard en el servicio + opcional trigger). Toda operación nueva del actor cae en el kardex <code>ABIERTO</code>. Solo puede haber uno abierto por actor + tipo de cuenta.</p>
+          </div>
+        </li>
+      </ol>
+      <div class="note q">
+        <span class="tag">Traza</span>
+        <p>La cadena <code>id_kardex_anterior</code> reconstruye el histórico completo N°1 &rarr; N°2 &rarr; N°3 de un actor, y el <code>TOTAL ANTICIPOS POR COBRAR</code> del pie de la hoja 2 es simplemente el <code>saldo_actual</code> del kardex abierto.</p>
+      </div>
+    </section>
+
+    <section id="transaccion">
+      <p class="eyebrow">Mecánica</p>
+      <h2>Transacción contable y doble afectación</h2>
+      <p>Un hecho económico puede tocar más de un libro. Todo se agrupa bajo una <code>transaccion_contable</code>; cada efecto es una fila hija (<code>movimiento_fondo</code>, <code>movimiento_kardex_actor</code> o <code>movimiento_kardex_personal</code>). Se inserta todo dentro de una única transacción de base de datos.</p>
+
+      <h3>Ejemplo A &mdash; anticipo a un actor pagado por QR</h3>
+      <p>Bs 5.000 de anticipo a "Cristian Sandoval - Mayer Olguin", pagado por QR desde el Banco Unión:</p>
+      <div class="scroll"><table class="grid">
+        <thead><tr><th>fila hija</th><th>libro</th><th>efecto</th></tr></thead>
+        <tbody>
+          <tr><td>movimiento_fondo</td><td>Fondo "Banco Unión"</td><td>EGRESO · egreso_bs 5.000 · forma_pago QR · plan_cuenta ANTICIPO_ACTOR</td></tr>
+          <tr><td>movimiento_kardex_actor</td><td>Kardex del actor (abierto)</td><td>DEBE 5.000 · tipo_movimiento ANTICIPO · id_transaccion = ↑</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Ejemplo B &mdash; transferencia entre fondos propios</h3>
+      <p>Traslado de Bs 20.000 del Banco Unión a la Caja Principal: una sola <code>transaccion_contable</code> tipo <code>TRANSFERENCIA</code> con dos <code>movimiento_fondo</code> &mdash; EGRESO en el banco, INGRESO en la caja.</p>
+
+      <div class="note q">
+        <span class="tag">A decidir</span>
+        <p>¿La <code>transaccion_contable</code> valida partida doble estricta (&Sigma; ingresos = &Sigma; egresos) o queda libre? Recomendación: libre por ahora, con un flag para exigirlo más adelante.</p>
+      </div>
+    </section>
+
+    <section id="flujos">
+      <p class="eyebrow">Integración</p>
+      <h2>Flujos automáticos de contabilización</h2>
+      <p>Tres hechos generan asientos sin que nadie los teclee en la caja de flujo.</p>
+
+      <ol class="flow">
+        <li>
+          <div>
+            <h3>Valorización tranzada / entregada</h3>
+            <p>Al marcar la valorización como entregada (flujo <code>valorizacion-entregado</code>), en una transacción DB:</p>
+            <ul>
+              <li><code>movimiento_kardex_actor</code>: HABER por el bruto de la valorización (<code>nro_documento</code> = ICC/BCL), más líneas <code>DESCUENTO_LEY</code> y <code>DESCUENTO_ANTICIPO</code> según los aportes/descuentos ya calculados, más "cancelado en efectivo".</li>
+              <li><code>movimiento_fondo</code>: EGRESO en el fondo pagador, cuenta <code>COMPRA_MINERAL</code>, por el líquido efectivamente pagado.</li>
+              <li>Recalcula <code>kardex_actor.saldo_actual</code>.</li>
+              <li><code>transaccion_contable.origen_tipo = VALORIZACION</code>, <code>origen_id = valorizacion.id</code>.</li>
+            </ul>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Emisión de recibo</h3>
+            <p>El usuario emite un recibo (INGRESO o EGRESO), elige fondo, plan de cuenta, persona/actor y forma de pago:</p>
+            <ul>
+              <li>Se toma <code>numero</code> de <code>seq_recibo</code>, se arma <code>codigo</code> ("REC:C-0536").</li>
+              <li>Se crea <code>transaccion_contable.origen_tipo = RECIBO</code>.</li>
+              <li><code>movimiento_fondo</code> en el fondo elegido + (si aplica) <code>movimiento_kardex_personal</code> o <code>movimiento_kardex_actor</code>.</li>
+              <li>Recibo queda <code>EMITIDO</code> y disponible para impresión; cada impresión incrementa <code>impresiones</code>.</li>
+            </ul>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Pago de planilla</h3>
+            <p>La planilla mensual pasa a <code>PAGADA</code>:</p>
+            <ul>
+              <li>Por trabajador: <code>liquido_pagar = sueldo_base + bonos &minus; descuentos &minus; anticipos_descontados</code>.</li>
+              <li><code>transaccion_contable.origen_tipo = PLANILLA</code> con <code>movimiento_fondo</code> EGRESO cuenta <code>SUELDOS</code> (consolidado o uno por persona — ver decisiones abiertas).</li>
+              <li>Los <code>anticipo_sueldo</code> aplicados bajan su <code>saldo_pendiente</code> a 0 y quedan ligados al <code>planilla_detalle</code>.</li>
+            </ul>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="existentes">
+      <p class="eyebrow">Impacto</p>
+      <h2>Cambios en tablas existentes</h2>
+      <div class="scroll"><table class="grid">
+        <thead><tr><th>tabla</th><th>cambio</th><th>motivo</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>persona_tipo</td>
+            <td>Agregar códigos <code>INT</code> (personal interno) y <code>COBRADOR</code>. Centralizar los códigos en un enum/constante compartida.</td>
+            <td>El kardex tipa "responsable de fondo" y "cobrador"; hoy <code>'PROV'</code> está hardcodeado en <code>comercio-interno.service.ts</code>.</td>
+          </tr>
+          <tr>
+            <td>persona_persona_tipo</td>
+            <td>Pasar el <code>delete</code> + <code>save</code> del <code>update</code> a baja lógica; conservar auditoría.</td>
+            <td>Un cobrador histórico no debe desaparecer al reeditar la persona.</td>
+          </tr>
+          <tr>
+            <td>actor_productivo_minero</td>
+            <td><strong>Sin cambios de columnas.</strong> Las subcuentas ("Principal" / "Compresora") van en <code>kardex_subcuenta</code> + <code>movimiento_kardex_actor</code>, no en el jsonb <code>secciones_mina</code>.</td>
+            <td>Separar maestro de saldos y de estructura contable.</td>
+          </tr>
+          <tr>
+            <td>persona_ci</td>
+            <td>Sin cambios. Se referencia desde <code>fondo.id_responsable</code>, <code>movimiento_*.id_cobrador</code>/<code>id_beneficiario</code>, <code>recibo</code>, <code>planilla_detalle</code>, <code>anticipo_sueldo</code>.</td>
+            <td>&mdash;</td>
+          </tr>
+          <tr>
+            <td>valorizacion_mineral</td>
+            <td>Ninguna estructural. El flujo <code>valorizacion-entregado</code> pasa a crear la <code>transaccion_contable</code> asociada.</td>
+            <td>Es el disparador del asiento de compra de mineral.</td>
+          </tr>
+        </tbody>
+      </table></div>
+      <p>Prerrequisito ya identificado: <strong>recuperar / regenerar las migraciones SQL borradas</strong> (columnas de <code>actor_productivo_minero</code>, tabla <code>municipio</code>, etc.) antes de montar el esquema nuevo encima.</p>
+    </section>
+
+    <section id="ddl">
+      <p class="eyebrow">Referencia</p>
+      <h2>DDL borrador &mdash; núcleo</h2>
+      <p>Postgres 17. Se muestran las siete tablas centrales; catálogos, <code>recibo</code>, <code>kardex_personal</code>, <code>planilla_*</code> y <code>anticipo_sueldo</code> siguen los mismos patrones. El orden real de creación pone los catálogos y <code>recibo</code> antes de <code>movimiento_fondo</code>. Columnas de auditoría abreviadas como <code>&hellip;auditoria</code>.</p>
+      <pre class="ddl"><span class="c">-- ============ esquema y secuencias ============</span>
+<span class="k">CREATE SCHEMA IF NOT EXISTS</span> contabilidad;
+<span class="k">CREATE SEQUENCE</span> contabilidad.seq_recibo <span class="k">START</span> 1;
+
+<span class="c">-- ============ fondo ============</span>
+<span class="k">CREATE TABLE</span> contabilidad.fondo (
+  id               bigint <span class="k">GENERATED ALWAYS AS IDENTITY PRIMARY KEY</span>,
+  tipo             varchar(10)  <span class="k">NOT NULL CHECK</span> (tipo <span class="k">IN</span> ('CAJA','BANCO')),
+  nombre           varchar(80)  <span class="k">NOT NULL</span>,
+  id_banco         bigint       <span class="k">REFERENCES</span> parametrica.banco(id) <span class="k">ON DELETE RESTRICT</span>,
+  nro_cuenta       varchar(40),
+  moneda           varchar(3)   <span class="k">NOT NULL CHECK</span> (moneda <span class="k">IN</span> ('BOB','USD')),
+  id_responsable   bigint       <span class="k">REFERENCES</span> comercio_interno.persona_ci(id) <span class="k">ON DELETE RESTRICT</span>,
+  saldo_actual     numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0
+  <span class="c">-- …auditoria</span>
+);
+
+<span class="c">-- ============ periodo_fondo (cierre mensual) ============</span>
+<span class="k">CREATE TABLE</span> contabilidad.periodo_fondo (
+  id               bigint <span class="k">GENERATED ALWAYS AS IDENTITY PRIMARY KEY</span>,
+  id_fondo         bigint <span class="k">NOT NULL REFERENCES</span> contabilidad.fondo(id) <span class="k">ON DELETE RESTRICT</span>,
+  gestion          int    <span class="k">NOT NULL</span>,
+  mes              int    <span class="k">NOT NULL CHECK</span> (mes <span class="k">BETWEEN</span> 1 <span class="k">AND</span> 12),
+  saldo_apertura   numeric(16,2) <span class="k">NOT NULL</span>,
+  saldo_cierre     numeric(16,2),
+  estado           varchar(10) <span class="k">NOT NULL DEFAULT</span> 'ABIERTO'
+                   <span class="k">CHECK</span> (estado <span class="k">IN</span> ('ABIERTO','CERRADO')),
+  id_responsable   bigint <span class="k">REFERENCES</span> comercio_interno.persona_ci(id),
+  <span class="c">-- …auditoria</span>
+  <span class="k">UNIQUE</span> (id_fondo, gestion, mes)
+);
+
+<span class="c">-- ============ transaccion_contable (comprobante) ============</span>
+<span class="k">CREATE TABLE</span> contabilidad.transaccion_contable (
+  id           bigint <span class="k">GENERATED ALWAYS AS IDENTITY PRIMARY KEY</span>,
+  numero       int,
+  fecha        date <span class="k">NOT NULL</span>,
+  glosa        varchar(255),
+  tipo         varchar(15) <span class="k">NOT NULL</span>
+               <span class="k">CHECK</span> (tipo <span class="k">IN</span> ('INGRESO','EGRESO','TRANSFERENCIA','AJUSTE')),
+  origen_tipo  varchar(20) <span class="k">NOT NULL DEFAULT</span> 'MANUAL',
+  origen_id    bigint,
+  estado       varchar(12) <span class="k">NOT NULL DEFAULT</span> 'REGISTRADO',
+  id_usuario   bigint <span class="k">REFERENCES</span> seguridad.usuario(id)
+  <span class="c">-- …auditoria</span>
+);
+
+<span class="c">-- ============ movimiento_fondo (caja de flujo) ============</span>
+<span class="k">CREATE TABLE</span> contabilidad.movimiento_fondo (
+  id                 bigint <span class="k">GENERATED ALWAYS AS IDENTITY PRIMARY KEY</span>,
+  id_fondo           bigint <span class="k">NOT NULL REFERENCES</span> contabilidad.fondo(id) <span class="k">ON DELETE RESTRICT</span>,
+  id_periodo_fondo   bigint <span class="k">NOT NULL REFERENCES</span> contabilidad.periodo_fondo(id) <span class="k">ON DELETE RESTRICT</span>,
+  id_transaccion     bigint <span class="k">NOT NULL REFERENCES</span> contabilidad.transaccion_contable(id) <span class="k">ON DELETE RESTRICT</span>,
+  fecha              date <span class="k">NOT NULL</span>,
+  concepto           varchar(255),
+  id_plan_cuenta     bigint <span class="k">NOT NULL REFERENCES</span> parametrica.plan_cuenta(id) <span class="k">ON DELETE RESTRICT</span>,
+  tipo               varchar(8) <span class="k">NOT NULL CHECK</span> (tipo <span class="k">IN</span> ('INGRESO','EGRESO')),
+  ingreso_bs         numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  egreso_bs          numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  ingreso_usd        numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  egreso_usd         numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  saldo_bs           numeric(16,2) <span class="k">NOT NULL</span>,
+  saldo_usd          numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  tipo_cambio        numeric(10,5),
+  id_forma_pago      bigint <span class="k">REFERENCES</span> parametrica.forma_pago(id),
+  id_beneficiario    bigint <span class="k">REFERENCES</span> comercio_interno.persona_ci(id),
+  beneficiario_texto varchar(150),
+  nro_recibo         varchar(30),
+  nro_comprobante    varchar(30),
+  nro_cheque         varchar(30),
+  id_recibo          bigint <span class="k">REFERENCES</span> contabilidad.recibo(id),
+  id_valorizacion    bigint <span class="k">REFERENCES</span> comercio_interno.valorizacion_mineral(id)
+  <span class="c">-- …auditoria</span>
+);
+
+<span class="c">-- ============ kardex_actor (periodo a demanda) ============</span>
+<span class="k">CREATE TABLE</span> contabilidad.kardex_actor (
+  id                          bigint <span class="k">GENERATED ALWAYS AS IDENTITY PRIMARY KEY</span>,
+  id_actor_productivo_minero  bigint <span class="k">NOT NULL REFERENCES</span> parametrica.actor_productivo_minero(id) <span class="k">ON DELETE RESTRICT</span>,
+  id_plan_cuenta              bigint <span class="k">NOT NULL REFERENCES</span> parametrica.plan_cuenta(id) <span class="k">ON DELETE RESTRICT</span>,
+  numero                      int  <span class="k">NOT NULL</span>,
+  gestion                     int  <span class="k">NOT NULL</span>,
+  saldo_apertura              numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  saldo_actual                numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  saldo_cierre                numeric(16,2),
+  id_kardex_anterior          bigint <span class="k">REFERENCES</span> contabilidad.kardex_actor(id),
+  estado                      varchar(10) <span class="k">NOT NULL DEFAULT</span> 'ABIERTO'
+                              <span class="k">CHECK</span> (estado <span class="k">IN</span> ('ABIERTO','CERRADO')),
+  fecha_apertura              date <span class="k">NOT NULL DEFAULT CURRENT_DATE</span>,
+  fecha_cierre                date,
+  <span class="c">-- …auditoria</span>
+  <span class="k">UNIQUE</span> (id_actor_productivo_minero, id_plan_cuenta, numero)
+);
+<span class="c">-- un solo kardex abierto por actor + tipo de cuenta</span>
+<span class="k">CREATE UNIQUE INDEX</span> ux_kardex_actor_abierto
+  <span class="k">ON</span> contabilidad.kardex_actor (id_actor_productivo_minero, id_plan_cuenta)
+  <span class="k">WHERE</span> estado = 'ABIERTO';
+
+<span class="c">-- ============ movimiento_kardex_actor ============</span>
+<span class="k">CREATE TABLE</span> contabilidad.movimiento_kardex_actor (
+  id                  bigint <span class="k">GENERATED ALWAYS AS IDENTITY PRIMARY KEY</span>,
+  id_kardex_actor     bigint <span class="k">NOT NULL REFERENCES</span> contabilidad.kardex_actor(id) <span class="k">ON DELETE RESTRICT</span>,
+  numero_linea        int <span class="k">NOT NULL</span>,
+  fecha               date <span class="k">NOT NULL</span>,
+  id_subcuenta        bigint <span class="k">REFERENCES</span> parametrica.kardex_subcuenta(id),
+  detalle             varchar(255),
+  nro_documento       varchar(40),
+  debe                numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  haber               numeric(16,2) <span class="k">NOT NULL DEFAULT</span> 0,
+  saldo_resultante    numeric(16,2) <span class="k">NOT NULL</span>,
+  id_forma_pago       bigint <span class="k">REFERENCES</span> parametrica.forma_pago(id),
+  id_tipo_movimiento  bigint <span class="k">REFERENCES</span> parametrica.tipo_movimiento_kardex(id),
+  id_cobrador         bigint <span class="k">REFERENCES</span> comercio_interno.persona_ci(id),
+  id_transaccion      bigint <span class="k">REFERENCES</span> contabilidad.transaccion_contable(id),
+  id_valorizacion     bigint <span class="k">REFERENCES</span> comercio_interno.valorizacion_mineral(id),
+  id_recibo           bigint <span class="k">REFERENCES</span> contabilidad.recibo(id),
+  <span class="c">-- …auditoria</span>
+  <span class="k">UNIQUE</span> (id_kardex_actor, numero_linea)
+);</pre>
+    </section>
+
+    <section id="pendientes">
+      <p class="eyebrow">Antes del DDL final</p>
+      <h2>Decisiones abiertas</h2>
+      <div class="scroll"><table class="grid">
+        <thead><tr><th>#</th><th>pregunta</th><th>recomendación por defecto</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Alcance de <code>kardex_actor.numero</code>: ¿por actor, o por actor + subcuenta, o por actor + tipo de cuenta?</td><td>Por actor + tipo de cuenta (<code>id_plan_cuenta</code>); la subcuenta vive en la línea.</td></tr>
+          <tr><td>2</td><td>¿El <code>kardex_personal</code> se cierra a demanda (N°1/N°2, como el de actor) o es mensual como los fondos?</td><td>A demanda, simétrico al de actor.</td></tr>
+          <tr><td>3</td><td>Series de recibo: ¿qué son "C" y "R"? ¿lista fija de series o abierta?</td><td>Catálogo <code>serie_recibo</code> corto y fijo.</td></tr>
+          <tr><td>4</td><td>Pago de planilla: ¿un <code>movimiento_fondo</code> consolidado o uno por trabajador?</td><td>Uno por trabajador (rastreable), agrupados en una transacción.</td></tr>
+          <tr><td>5</td><td><code>transaccion_contable</code>: ¿partida doble estricta (&Sigma; debe = &Sigma; haber) o libre?</td><td>Libre, con flag para exigirla luego.</td></tr>
+          <tr><td>6</td><td><code>plan_cuenta</code>: ¿plano con <code>categoria_sistema</code>, o jerárquico grupo &rarr; cuenta?</td><td>Plano + <code>id_padre</code> opcional; jerarquía solo para reportes.</td></tr>
+          <tr><td>7</td><td>¿Quién puede cerrar un kardex / un periodo de fondo? ¿Rol dedicado?</td><td>Rol <code>CONTABILIDAD</code>; el registrador de caja no cierra.</td></tr>
+          <tr><td>8</td><td>Un <code>fondo</code> por cuenta bancaria, o uno por banco (si un banco tiene varias cuentas / monedas)?</td><td>Uno por cuenta bancaria.</td></tr>
+        </tbody>
+      </table></div>
+      <p>Con estas ocho respuestas cierro el DDL completo + las entidades TypeORM (datasource <code>ci</code>) + los servicios de contabilización.</p>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    Propuesta v1 · basada en <span class="m">caja de flujo y kardex.xlsx</span> (hoja «CAJA DE FLUJO JUL-2025» y hoja «CRISTIAN S. - MAYER O.») y en las entidades actuales de los esquemas parametrica / comercio_interno.
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  if (window.mermaid) {
+    mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+  }
+</script>
+</body>
+</html>

@@ -36,6 +36,32 @@ export class ReciboPdfService {
    * separadas por una línea punteada, replicando el talonario físico.
    */
   async generar(recibo: Recibo, usuarioActual: Usuario): Promise<Buffer> {
+    return this.generarPdf(recibo, usuarioActual, recibo.concepto, false);
+  }
+
+  /**
+   * Mismo formato de 3 copias que `generar()` (el talonario físico). La
+   * única diferencia es el contenido de "Por concepto (de)": si el recibo
+   * tiene `detalles` (está PROCESADO), en vez de solo el concepto libre
+   * muestra el desglose de a qué se aplicó cada porción (ej. "Bs 200,00 a
+   * kardex personal, Bs 200,00 a kardex de actor y Bs 100,00 en efectivo").
+   * Si no tiene detalles (BORRADOR/ANULADO), es idéntico a `generar()`.
+   */
+  async generarProcesado(recibo: Recibo, usuarioActual: Usuario): Promise<Buffer> {
+    return this.generarPdf(
+      recibo,
+      usuarioActual,
+      this.textoConDesglose(recibo),
+      true,
+    );
+  }
+
+  private async generarPdf(
+    recibo: Recibo,
+    usuarioActual: Usuario,
+    textoConcepto: string,
+    conDesglose: boolean,
+  ): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const margen = 20;
       const doc = new PDFDocument({
@@ -68,6 +94,8 @@ export class ReciboPdfService {
           alturaCopia,
           entregadoPor,
           recibidoPor,
+          textoConcepto,
+          conDesglose,
         );
 
         if (i < 2) {
@@ -90,6 +118,8 @@ export class ReciboPdfService {
     alto: number,
     entregadoPor: { nombre: string; ci: string },
     recibidoPor: { nombre: string; ci: string },
+    textoConcepto: string,
+    conDesglose: boolean,
   ) {
     const pad = 10;
     const xi = x + pad;
@@ -168,9 +198,23 @@ export class ReciboPdfService {
     // --- Por concepto (INGRESO) / Por concepto de (EGRESO) ---
     const etiquetaConcepto = esEgreso ? 'Por concepto de' : 'Por concepto';
     doc.font('Helvetica-Bold').fontSize(8).text(etiquetaConcepto, xi, y, { width: 85 });
-    this.lineaPuntosConTexto(doc, xi + 85, y, anchoInterno - 85, recibo.concepto);
+    const anchoValorConcepto = anchoInterno - 85;
 
-    y += 18;
+    if (conDesglose) {
+      // Recibo PROCESADO: el texto puede ocupar varias líneas (desglose de
+      // detalles), así que se imprime sin la línea punteada de "llenar a
+      // mano" y se calcula su altura real para correr el resto del layout.
+      doc.font('Helvetica').fontSize(8).text(textoConcepto, xi + 85, y, {
+        width: anchoValorConcepto,
+      });
+      const alturaConcepto = doc.heightOfString(textoConcepto, {
+        width: anchoValorConcepto,
+      });
+      y += Math.max(18, alturaConcepto + 6);
+    } else {
+      this.lineaPuntosConTexto(doc, xi + 85, y, anchoValorConcepto, textoConcepto);
+      y += 18;
+    }
 
     // --- Efectivo / Cheque / Banco + Fecha ---
     const codigoFormaPago = recibo.formaPago?.codigo ?? null;
@@ -338,5 +382,33 @@ export class ReciboPdfService {
     const [anio, mes, dia] = fecha.split('-').map(Number);
     if (!anio || !mes || !dia) return fecha;
     return `${dia} de ${MESES[mes - 1]} de ${anio}`;
+  }
+
+  /**
+   * Concepto + desglose de a qué se aplicó cada línea del recibo (ej.
+   * "PAGO POR MINERAL ENTREGADO: Bs 200,00 a kardex personal, Bs 200,00 a
+   * kardex de actor y Bs 100,00 en efectivo"). Si el recibo no tiene
+   * `detalles` (BORRADOR/ANULADO), devuelve solo el concepto tal cual.
+   */
+  private textoConDesglose(recibo: Recibo): string {
+    const detalles = recibo.detalles ?? [];
+    if (detalles.length === 0) {
+      return recibo.concepto;
+    }
+
+    const partes = detalles.map((detalle) => {
+      const monto = `Bs ${this.formatearMonto(detalle.monto)}`;
+      if (detalle.destino === 'PERSONAL') return `${monto} a kardex personal`;
+      if (detalle.destino === 'ACTOR') return `${monto} a kardex de actor`;
+      return `${monto} en efectivo`;
+    });
+
+    return `${recibo.concepto}: ${this.unirConY(partes)}`;
+  }
+
+  private unirConY(items: string[]): string {
+    if (items.length === 0) return '';
+    if (items.length === 1) return items[0];
+    return `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
   }
 }

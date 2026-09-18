@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -25,14 +26,17 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 
 import { Auth, GetUser } from 'src/security/decorators';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { MovimientoCajaService } from '../services/movimiento-caja.service';
+import { CajaFlujoExcelService } from '../services/caja-flujo-excel.service';
 import { MovimientoCaja } from '../entities/movimiento-caja.entity';
 import { PeriodoCaja } from '../entities/periodo-caja.entity';
 import { CreateMovimientoCajaDto } from '../dto/movimiento-caja/create-movimiento-caja.dto';
 import { FiltroMovimientoCajaDto } from '../dto/movimiento-caja/filtro-movimiento-caja.dto';
+import { FiltroCajaFlujoExcelDto } from '../dto/movimiento-caja/filtro-caja-flujo-excel.dto';
 import { CerrarPeriodoCajaDto } from '../dto/movimiento-caja/cerrar-periodo-caja.dto';
 import { CerrarGestionCajaDto } from '../dto/movimiento-caja/cerrar-gestion-caja.dto';
 
@@ -40,7 +44,10 @@ import { CerrarGestionCajaDto } from '../dto/movimiento-caja/cerrar-gestion-caja
 @Controller('contabilidad')
 @ApiBearerAuth()
 export class CajaController {
-  constructor(private readonly movimientoCajaService: MovimientoCajaService) {}
+  constructor(
+    private readonly movimientoCajaService: MovimientoCajaService,
+    private readonly cajaFlujoExcelService: CajaFlujoExcelService,
+  ) {}
 
   //--------------------------- Caja de flujo --------------------------------
 
@@ -61,8 +68,8 @@ export class CajaController {
           idCaja: 1,
           moneda: 'BOB',
           fecha: '2025-07-01',
-          nroComprobante: 'REC:R-0084',
-          nombresApellidos: 'IVAR CALLAHUANCA',
+          facturaRecibo: 'REC:R-0084',
+          entregaFondosA: 'IVAR CALLAHUANCA',
           concepto: 'COMPRA DE DIESEL',
           idDestinoGasto: 21,
           tipo: 'EGRESO',
@@ -75,8 +82,8 @@ export class CajaController {
           idCaja: 1,
           moneda: 'BOB',
           fecha: '2025-07-01',
-          nroComprobante: 'REC:R-0009',
-          nombresApellidos: 'RAFAEL DOUCHEN',
+          facturaRecibo: 'REC:R-0009',
+          entregaFondosA: 'RAFAEL DOUCHEN',
           concepto: 'VENTA DE DIESEL DE 400 LTRS. A 7.-BS DEL GALPON DE ARRIBA',
           idDestinoGasto: 2,
           tipo: 'INGRESO',
@@ -84,12 +91,13 @@ export class CajaController {
         },
       },
       beneficiarioRegistrado: {
-        summary: 'Beneficiario ya registrado (persona_ci)',
+        summary: 'Beneficiario ya registrado (persona_ci), pagado por transferencia',
         value: {
           idCaja: 1,
           moneda: 'BOB',
           fecha: '2025-07-01',
-          nroComprobante: 'REC:C-0535',
+          facturaRecibo: 'REC:C-0535',
+          nroComprobante: '4613159797',
           idPersona: '15',
           concepto: 'ANTICIPO A CTA SACO MINERAL',
           idDestinoGasto: 13,
@@ -171,6 +179,39 @@ export class CajaController {
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async listarCaja(@Query() filtro: FiltroMovimientoCajaDto) {
     return await this.movimientoCajaService.listar(filtro);
+  }
+
+  @Get('movimiento-caja/excel')
+  @Auth()
+  @ApiOperation({
+    summary: 'Exportar la caja de flujo a Excel (provisional, sin bancos)',
+    description:
+      'Genera el .xlsx de la caja de flujo con el mismo formato del libro físico (fecha, concepto, entrega de fondos a, factura y/o recibo, N° cpte., destino del gasto, ingreso, egreso, saldo), para una caja, moneda, gestión y mes puntuales: a diferencia del listado, acá gestión y mes son obligatorios porque el Excel imprime un único período mensual del libro. Por ahora no incluye las columnas de bancos (Banco Unión, BCP, Sol, etc.), solo los registros de efectivo.',
+  })
+  @ApiQuery({ name: 'idCaja', required: true, type: Number, example: 1 })
+  @ApiQuery({ name: 'moneda', required: true, enum: ['BOB', 'USD'], example: 'BOB' })
+  @ApiQuery({ name: 'gestion', required: true, type: Number, example: 2026 })
+  @ApiQuery({ name: 'mes', required: true, type: Number, example: 7 })
+  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiBadRequestResponse({ description: 'Caja inactiva o filtros inválidos.' })
+  @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async exportarExcel(
+    @Query() filtro: FiltroCajaFlujoExcelDto,
+    @GetUser() user: Usuario,
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.cajaFlujoExcelService.generar(filtro, user);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=caja-flujo-${filtro.idCaja}-${filtro.moneda}-${filtro.gestion}-${String(filtro.mes).padStart(2, '0')}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
   }
 
   //--------------------------- Períodos y cierres --------------------------

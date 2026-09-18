@@ -8,11 +8,11 @@ import {
 } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { MovimientoCaja } from './movimiento-caja.entity';
+import { LibretaBanco } from './libreta-banco.entity';
 import { ReciboDetalle } from './recibo-detalle.entity';
 
 export type TipoRecibo = 'INGRESO' | 'EGRESO';
@@ -24,12 +24,13 @@ export type EstadoRecibo = 'BORRADOR' | 'PROCESADO' | 'ANULADO';
  * al kardex de anticipos y a la caja de flujo (Caja id=1, "CAJA PRINCIPAL",
  * el registro maestro de la empresa). El monto se subdivide (ver
  * ReciboDetalle) entre kardex PERSONAL / kardex de un ACTOR / EFECTIVO
- * directo. La porción aplicada a kardex (PERSONAL + ACTOR) siempre postea
- * HABER en ese kardex (salda deuda) y, además, un INGRESO por esa misma
- * suma en la caja de flujo (valor recuperado por la empresa); la porción
- * EFECTIVO no toca ningún kardex, pero genera un EGRESO en la caja de flujo
- * por ese monto (dinero que realmente sale). Un mismo recibo puede generar
- * los dos movimientos de caja a la vez (ver MovimientoCaja.idRecibo).
+ * directo, y cada línea genera su propio movimiento en la caja de flujo con
+ * su propio destino_gasto (ver ReciboDetalle.idDestinoGasto). Las líneas
+ * PERSONAL/ACTOR postean HABER en ese kardex (salda deuda) y un INGRESO en
+ * caja (valor recuperado por la empresa); las líneas EFECTIVO no tocan
+ * ningún kardex, pero generan un EGRESO en caja (dinero que realmente
+ * sale). Un mismo recibo puede generar tantos movimientos de caja como
+ * líneas de detalle tenga (ver MovimientoCaja.idRecibo).
  *
  * `estado`: BORRADOR = solo la cabecera, alcanza para imprimir el recibo
  * pero todavía no generó ningún movimiento (se puede ANULAR desde acá);
@@ -110,8 +111,10 @@ export class Recibo extends Auditoria {
 
   // Cuando idFormaPago es un medio bancario (QR, TRANSFERENCIA, CHEQUE,
   // DEPOSITO): cuenta bancaria involucrada + número de comprobante de esa
-  // transacción. Es solo informativo del recibo (para la impresión), no
-  // genera un movimiento en libreta_banco.
+  // transacción. Si viene seteada, la línea EFECTIVO de este recibo (la
+  // única que representa plata que realmente se mueve) también postea un
+  // movimiento en libreta_banco (ver LibretaBanco.idRecibo); las líneas
+  // PERSONAL/ACTOR nunca la tocan (solo saldan kardex).
   @Column({
     name: 'id_cuenta_bancaria',
     type: 'int',
@@ -185,25 +188,6 @@ export class Recibo extends Auditoria {
   })
   nombresApellidos?: string | null;
 
-  // Clasificador (parametrica.destino_gasto) aplicado a todas las líneas de
-  // kardex y movimientos de caja que genera este recibo.
-  @Column({
-    name: 'id_destino_gasto',
-    type: 'int',
-    nullable: true,
-  })
-  idDestinoGasto?: number | null;
-
-  @ManyToOne(() => DestinoGasto, {
-    nullable: true,
-    onDelete: 'RESTRICT',
-  })
-  @JoinColumn({
-    name: 'id_destino_gasto',
-    referencedColumnName: 'id',
-  })
-  destinoGasto?: DestinoGasto;
-
   @Column({
     name: 'estado',
     type: 'varchar',
@@ -212,10 +196,15 @@ export class Recibo extends Auditoria {
   })
   estado: EstadoRecibo;
 
-  // Movimientos generados en la caja de flujo (hasta 2: INGRESO por lo
-  // aplicado a kardex, EGRESO por la porción en efectivo).
+  // Movimientos generados en la caja de flujo (uno por línea de detalle).
   @OneToMany(() => MovimientoCaja, (mov) => mov.recibo)
   movimientosCaja?: MovimientoCaja[];
+
+  // Movimiento generado en la libreta de bancos (uno solo, por la línea
+  // EFECTIVO, cuando el recibo tiene idCuentaBancaria). Vacío si el recibo
+  // no tiene línea EFECTIVO o no se pagó por un medio bancario.
+  @OneToMany(() => LibretaBanco, (mov) => mov.recibo)
+  movimientosBanco?: LibretaBanco[];
 
   @OneToMany(() => ReciboDetalle, (detalle) => detalle.recibo)
   detalles?: ReciboDetalle[];

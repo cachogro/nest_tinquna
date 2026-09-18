@@ -37,11 +37,11 @@ export class CuentaBancariaDto {
   numeroCuenta: string;
 
   @ApiProperty({
-    example: 'BOB',
-    enum: ['BOB', 'USD'],
+    example: 'BS',
+    enum: ['BS', 'USD'],
     description: 'Moneda de la cuenta.',
   })
-  @IsIn(['BOB', 'USD'], { message: 'La moneda debe ser BOB o USD.' })
+  @IsIn(['BS', 'USD'], { message: 'La moneda debe ser BS o USD.' })
   moneda: string;
 
   @ApiPropertyOptional({

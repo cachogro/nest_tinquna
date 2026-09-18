@@ -3,6 +3,7 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
@@ -11,8 +12,10 @@ import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
 import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { ValorizacionMineral } from 'src/cluster/comercio-interno/entities/valorizacion/valorizacion-mineral.entity';
+import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
 import { Kardex } from './kardex.entity';
 import { Recibo } from './recibo.entity';
+import { MovimientoCaja } from './movimiento-caja.entity';
 
 /**
  * Línea de un kardex de anticipos (hoja 2 del Excel).
@@ -60,7 +63,8 @@ export class MovimientoKardex extends Auditoria {
   })
   fecha: string;
 
-  // N° de comprobante / documento ("REC:C-203", "DET. ADJ.", "QR", "ICC-1810"...).
+  // N° de comprobante real de la transacción bancaria (ej. n° de
+  // transferencia/QR), cuando se pagó por un medio bancario.
   @Column({
     name: 'nro_comprobante',
     type: 'varchar',
@@ -68,6 +72,35 @@ export class MovimientoKardex extends Auditoria {
     nullable: true,
   })
   nroComprobante?: string;
+
+  // Documento que respalda la línea (ej. "REC:C-0933", "DET. ADJ.", "ICC-1810"...).
+  @Column({
+    name: 'factura_recibo',
+    type: 'varchar',
+    length: 30,
+    nullable: true,
+  })
+  facturaRecibo?: string | null;
+
+  // Cuenta bancaria usada, cuando idFormaPago es un medio bancario (QR,
+  // Transferencia, Cheque, Depósito). Si viene seteada, la línea también
+  // postea un movimiento en libreta_banco (ver LibretaBanco.idMovimientoKardex).
+  @Column({
+    name: 'id_cuenta_bancaria',
+    type: 'int',
+    nullable: true,
+  })
+  idCuentaBancaria?: number | null;
+
+  @ManyToOne(() => CuentaBancaria, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_cuenta_bancaria',
+    referencedColumnName: 'id',
+  })
+  cuentaBancaria?: CuentaBancaria;
 
   @Column({
     name: 'detalle',
@@ -206,4 +239,9 @@ export class MovimientoKardex extends Auditoria {
     scale: 2,
   })
   saldo: number;
+
+  // Movimiento generado en la caja de flujo cuando esta línea se cargó
+  // directamente (no vía recibo): DEBE -> EGRESO, HABER -> INGRESO.
+  @OneToMany(() => MovimientoCaja, (mov) => mov.movimientoKardex)
+  movimientosCaja?: MovimientoCaja[];
 }

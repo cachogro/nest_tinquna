@@ -125,24 +125,13 @@ export class CreateReciboDto {
   nombresApellidos?: string;
 
   @ApiPropertyOptional({
-    example: 8,
-    description:
-      'Id del destino del gasto (parametrica.destino_gasto), clasificador único aplicado tanto a las líneas de kardex como a los movimientos de caja de flujo que genera este recibo.',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
-
-  @ApiPropertyOptional({
     type: [ReciboDetalleDto],
     description:
-      'Cómo se subdivide el monto total entre kardex personal, kardex de actor productivo minero, y efectivo directo. La suma debe ser igual a `montoTotal`. Si se omite, el recibo queda como BORRADOR (solo cabecera) y se procesa después con `PATCH /contabilidad/recibo/:id/procesar`.',
+      'Cómo se subdivide el monto total entre kardex personal, kardex de actor productivo minero, y efectivo directo. La suma debe ser igual a `montoTotal`. Cada línea puede tener su propio `idDestinoGasto` y genera su propio movimiento de caja de flujo. Si se omite, el recibo queda como BORRADOR (solo cabecera) y se procesa después con `PATCH /contabilidad/recibo/:id/procesar`.',
     example: [
-      { destino: 'PERSONAL', idPersona: '18', monto: 150000 },
-      { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 100000 },
-      { destino: 'EFECTIVO', monto: 50000 },
+      { destino: 'PERSONAL', idPersona: '18', monto: 150000, idDestinoGasto: 8 },
+      { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 100000, idDestinoGasto: 12 },
+      { destino: 'EFECTIVO', monto: 50000, idDestinoGasto: 3 },
     ],
   })
   @IsOptional()
