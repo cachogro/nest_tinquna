@@ -13,6 +13,7 @@ import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.enti
 import { PeriodoCaja, MonedaCaja } from './periodo-caja.entity';
 import { Recibo } from './recibo.entity';
 import { MovimientoKardex } from './movimiento-kardex.entity';
+import { Traspaso } from './traspaso.entity';
 
 /**
  * Caja de flujo: una fila por ingreso o egreso físico de efectivo (hoja
@@ -214,6 +215,26 @@ export class MovimientoCaja extends Auditoria {
     referencedColumnName: 'id',
   })
   movimientoKardex?: MovimientoKardex;
+
+  // Presente cuando el movimiento nace de un traspaso interno entre la caja
+  // de flujo y una cuenta bancaria (depósito/retiro): no es un ingreso/
+  // egreso real del negocio, es la misma plata cambiando de custodia.
+  @Column({
+    name: 'id_traspaso',
+    type: 'bigint',
+    nullable: true,
+  })
+  idTraspaso?: string | null;
+
+  @ManyToOne(() => Traspaso, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_traspaso',
+    referencedColumnName: 'id',
+  })
+  traspaso?: Traspaso;
 
   @Column({
     name: 'ingreso',

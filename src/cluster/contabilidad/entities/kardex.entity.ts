@@ -8,19 +8,41 @@ import {
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
+import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
 
-export type TipoKardex = 'ACTOR' | 'PERSONAL';
+/** Estado de actividad de un kardex ABIERTO (ver KardexActividadService). */
+export interface ActividadKardex {
+  estado: 'ACTIVO' | 'INACTIVO';
+  /** Referencia del conteo: último movimiento, apertura o reactivación (YYYY-MM-DD). */
+  ultimaActividad: string;
+  /** Día en que pasa (o pasó) a INACTIVO: ultimaActividad + diasInactividad. */
+  inactivoDesde: string;
+  diasSinActividad: number;
+  /** Umbral vigente (KARDEX_DIAS_INACTIVIDAD del .env). */
+  diasInactividad: number;
+}
+
+export type TipoKardex = 'ACTOR' | 'ASOCIADO' | 'PERSONAL' | 'CLIENTE';
 export type EstadoKardex = 'ABIERTO' | 'CERRADO';
 
 /**
- * Cabecera del kardex de anticipos (cuenta corriente).
- *   - tipo ACTOR: se abre para un actor productivo minero; cubre a todas sus
- *     personas relacionadas.
- *   - tipo PERSONAL: cuenta individual de una persona (persona_ci).
+ * Cabecera del kardex de anticipos / cuenta corriente.
+ *   - tipo ACTOR: se abre para un actor productivo minero (proveedor); cubre
+ *     a todas sus personas relacionadas. `saldoActual` = anticipos por
+ *     cobrar (deuda del actor con la empresa).
+ *   - tipo ASOCIADO: cuenta individual (persona_ci) de alguien relacionado a
+ *     un actor productivo minero que NO sea la propia empresa (id !== '1'),
+ *     o de una persona suelta sin actor. Misma FK `id_persona` que PERSONAL,
+ *     se distinguen solo por `tipo`.
+ *   - tipo PERSONAL: cuenta individual (persona_ci), pero exclusiva del
+ *     personal interno de la empresa (persona.idActorProductivoMinero='1'):
+ *     lleva otro trato (datos laborales, etc.).
+ *   - tipo CLIENTE: se abre para un cliente/comprador; `saldoActual` = deuda
+ *     del cliente con la empresa por mineral vendido a crédito (cuenta por
+ *     cobrar de ventas). Mismo mecanismo DEBE/HABER que los demás.
  *
  * Se cierra a pedido y se abre el siguiente (numero + 1) arrastrando el saldo:
  * `saldoCierre` del kardex N = `saldoInicial` del kardex N+1.
- * `saldoActual` = "TOTAL ANTICIPOS POR COBRAR".
  */
 @Entity({
   name: 'kardex',
@@ -72,6 +94,23 @@ export class Kardex extends Auditoria {
     referencedColumnName: 'id',
   })
   persona?: PersonaCi;
+
+  @Column({
+    name: 'id_cliente',
+    type: 'bigint',
+    nullable: true,
+  })
+  idCliente?: string | null;
+
+  @ManyToOne(() => Cliente, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_cliente',
+    referencedColumnName: 'id',
+  })
+  cliente?: Cliente;
 
   // N° del libro (1, 2, 3...), correlativo por destinatario. NO es el id.
   @Column({
@@ -166,4 +205,27 @@ export class Kardex extends Auditoria {
     nullable: true,
   })
   cerradoPor?: string | null;
+
+  // Última reactivación manual tras quedar INACTIVO por falta de movimientos
+  // (ver KardexActividadService): reinicia el conteo de días de inactividad.
+  @Column({
+    name: 'fecha_reactivacion',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  fechaReactivacion?: Date | null;
+
+  @Column({
+    name: 'reactivado_por',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  reactivadoPor?: string | null;
+
+  /**
+   * Estado de actividad calculado (no es columna): lo completan los
+   * listados con KardexActividadService. Null en kardex cerrados o anulados.
+   */
+  actividad?: ActividadKardex | null;
 }

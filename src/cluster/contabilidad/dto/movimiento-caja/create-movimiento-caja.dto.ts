@@ -35,12 +35,12 @@ export class CreateMovimientoCajaDto {
   idCaja: number;
 
   @ApiProperty({
-    enum: ['BOB', 'USD'],
-    example: 'BOB',
+    enum: ['BS', 'USD'],
+    example: 'BS',
     description: 'Moneda del movimiento.',
   })
-  @IsIn(['BOB', 'USD'], { message: 'La moneda debe ser BOB o USD.' })
-  moneda: 'BOB' | 'USD';
+  @IsIn(['BS', 'USD'], { message: 'La moneda debe ser BS o USD.' })
+  moneda: 'BS' | 'USD';
 
   @ApiProperty({ example: '2025-07-01', description: 'Fecha del movimiento (YYYY-MM-DD).' })
   @IsDateString({}, { message: 'La fecha debe tener el formato YYYY-MM-DD.' })

@@ -10,12 +10,12 @@ export class FiltroMovimientoCajaDto {
   idCaja: number;
 
   @ApiProperty({
-    enum: ['BOB', 'USD'],
-    example: 'BOB',
+    enum: ['BS', 'USD'],
+    example: 'BS',
     description: 'Moneda a listar (obligatorio: el saldo corriente se calcula por moneda).',
   })
-  @IsIn(['BOB', 'USD'], { message: 'La moneda debe ser BOB o USD.' })
-  moneda: 'BOB' | 'USD';
+  @IsIn(['BS', 'USD'], { message: 'La moneda debe ser BS o USD.' })
+  moneda: 'BS' | 'USD';
 
   @ApiPropertyOptional({ example: 2025, description: 'Año / gestión.' })
   @IsOptional()

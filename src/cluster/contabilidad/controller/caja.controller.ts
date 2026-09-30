@@ -32,6 +32,8 @@ import { Auth, GetUser } from 'src/security/decorators';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { MovimientoCajaService } from '../services/movimiento-caja.service';
 import { CajaFlujoExcelService } from '../services/caja-flujo-excel.service';
+import { CajaFlujoConsolidadoExcelService } from '../services/caja-flujo-consolidado-excel.service';
+import { FiltroCajaConsolidadoExcelDto } from '../dto/movimiento-caja/filtro-caja-consolidado-excel.dto';
 import { MovimientoCaja } from '../entities/movimiento-caja.entity';
 import { PeriodoCaja } from '../entities/periodo-caja.entity';
 import { CreateMovimientoCajaDto } from '../dto/movimiento-caja/create-movimiento-caja.dto';
@@ -47,6 +49,7 @@ export class CajaController {
   constructor(
     private readonly movimientoCajaService: MovimientoCajaService,
     private readonly cajaFlujoExcelService: CajaFlujoExcelService,
+    private readonly cajaFlujoConsolidadoExcelService: CajaFlujoConsolidadoExcelService,
   ) {}
 
   //--------------------------- Caja de flujo --------------------------------
@@ -66,7 +69,7 @@ export class CajaController {
         summary: 'Egreso (EGRESO)',
         value: {
           idCaja: 1,
-          moneda: 'BOB',
+          moneda: 'BS',
           fecha: '2025-07-01',
           facturaRecibo: 'REC:R-0084',
           entregaFondosA: 'IVAR CALLAHUANCA',
@@ -80,7 +83,7 @@ export class CajaController {
         summary: 'Ingreso (INGRESO)',
         value: {
           idCaja: 1,
-          moneda: 'BOB',
+          moneda: 'BS',
           fecha: '2025-07-01',
           facturaRecibo: 'REC:R-0009',
           entregaFondosA: 'RAFAEL DOUCHEN',
@@ -91,10 +94,11 @@ export class CajaController {
         },
       },
       beneficiarioRegistrado: {
-        summary: 'Beneficiario ya registrado (persona_ci), pagado por transferencia',
+        summary:
+          'Beneficiario ya registrado (persona_ci), pagado por transferencia',
         value: {
           idCaja: 1,
-          moneda: 'BOB',
+          moneda: 'BS',
           fecha: '2025-07-01',
           facturaRecibo: 'REC:C-0535',
           nroComprobante: '4613159797',
@@ -116,12 +120,15 @@ export class CajaController {
       'Datos inválidos, caja inactiva, o el período de la fecha/moneda está cerrado.',
   })
   @ApiNotFoundResponse({
-    description: 'No se encontró la caja, la persona, la forma de pago, el destino del gasto, o el movimiento a actualizar.',
+    description:
+      'No se encontró la caja, la persona, la forma de pago, el destino del gasto, o el movimiento a actualizar.',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
   })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async guardarMovimiento(
     @Body() body: CreateMovimientoCajaDto,
     @GetUser() user: Usuario,
@@ -152,7 +159,9 @@ export class CajaController {
   })
   @ApiNotFoundResponse({ description: 'No se encontró el movimiento.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async cambiarEstadoMovimiento(
     @Param('id', ParseIntPipe) id: number,
     @Body('activo', ParseBoolPipe) activo: boolean,
@@ -169,14 +178,21 @@ export class CajaController {
       'Devuelve los movimientos de una caja en una moneda (filtrables por gestión y mes), los períodos correspondientes y los datos de la caja (incluido su saldo inicial en esa moneda). Sin paginación.',
   })
   @ApiQuery({ name: 'idCaja', required: true, type: Number, example: 1 })
-  @ApiQuery({ name: 'moneda', required: true, enum: ['BOB', 'USD'], example: 'BOB' })
+  @ApiQuery({
+    name: 'moneda',
+    required: true,
+    enum: ['BS', 'USD'],
+    example: 'BS',
+  })
   @ApiQuery({ name: 'gestion', required: false, type: Number, example: 2025 })
   @ApiQuery({ name: 'mes', required: false, type: Number, example: 7 })
   @ApiOkResponse({ description: 'Caja de flujo obtenida correctamente.' })
   @ApiBadRequestResponse({ description: 'Caja inactiva o filtros inválidos.' })
   @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async listarCaja(@Query() filtro: FiltroMovimientoCajaDto) {
     return await this.movimientoCajaService.listar(filtro);
   }
@@ -189,14 +205,21 @@ export class CajaController {
       'Genera el .xlsx de la caja de flujo con el mismo formato del libro físico (fecha, concepto, entrega de fondos a, factura y/o recibo, N° cpte., destino del gasto, ingreso, egreso, saldo), para una caja, moneda, gestión y mes puntuales: a diferencia del listado, acá gestión y mes son obligatorios porque el Excel imprime un único período mensual del libro. Por ahora no incluye las columnas de bancos (Banco Unión, BCP, Sol, etc.), solo los registros de efectivo.',
   })
   @ApiQuery({ name: 'idCaja', required: true, type: Number, example: 1 })
-  @ApiQuery({ name: 'moneda', required: true, enum: ['BOB', 'USD'], example: 'BOB' })
+  @ApiQuery({
+    name: 'moneda',
+    required: true,
+    enum: ['BS', 'USD'],
+    example: 'BS',
+  })
   @ApiQuery({ name: 'gestion', required: true, type: Number, example: 2026 })
   @ApiQuery({ name: 'mes', required: true, type: Number, example: 7 })
   @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
   @ApiBadRequestResponse({ description: 'Caja inactiva o filtros inválidos.' })
   @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async exportarExcel(
     @Query() filtro: FiltroCajaFlujoExcelDto,
     @GetUser() user: Usuario,
@@ -214,6 +237,40 @@ export class CajaController {
     res.end(buffer);
   }
 
+  @Get('movimiento-caja/excel-completo')
+  @Auth()
+  @ApiOperation({
+    summary: 'Exportar la caja de flujo completa a Excel (caja + todas las cuentas bancarias)',
+    description:
+      'Libro completo del mes como la hoja "CAJA DE FLUJO" del modelo físico: en una sola lista ordenada por fecha y hora de registro, todos los movimientos vigentes de la caja en Bs., de la caja en $us. y de cada cuenta bancaria (aperturadas o con movimientos en el mes). Cada una tiene su grupo INGRESO / EGRESO / SALDO; los saldos se arrastran en todas las filas desde el saldo inicial del mes. Cierra con sumas totales, un resumen por cuenta (saldo inicial, ingresos, egresos, saldo final) y firmas. Más pesado que `GET movimiento-caja/excel`, que se mantiene para consultar una sola caja/moneda.',
+  })
+  @ApiQuery({ name: 'idCaja', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'gestion', required: true, type: Number, example: 2026 })
+  @ApiQuery({ name: 'mes', required: true, type: Number, example: 9 })
+  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiBadRequestResponse({ description: 'Filtros inválidos.' })
+  @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async exportarExcelCompleto(
+    @Query() filtro: FiltroCajaConsolidadoExcelDto,
+    @GetUser() user: Usuario,
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.cajaFlujoConsolidadoExcelService.generar(filtro, user);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=caja-flujo-completa-${filtro.gestion}-${String(filtro.mes).padStart(2, '0')}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
   //--------------------------- Períodos y cierres --------------------------
 
   @Get('movimiento-caja/periodo')
@@ -224,7 +281,12 @@ export class CajaController {
       'Devuelve todos los períodos (mensuales y de gestión) de una caja en una moneda, con sus totales, saldo inicial y saldo final.',
   })
   @ApiQuery({ name: 'idCaja', required: true, type: Number, example: 1 })
-  @ApiQuery({ name: 'moneda', required: true, enum: ['BOB', 'USD'], example: 'BOB' })
+  @ApiQuery({
+    name: 'moneda',
+    required: true,
+    enum: ['BS', 'USD'],
+    example: 'BS',
+  })
   @ApiOkResponse({
     description: 'Períodos obtenidos correctamente.',
     type: PeriodoCaja,
@@ -232,10 +294,12 @@ export class CajaController {
   })
   @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async listarPeriodos(
     @Query('idCaja', ParseIntPipe) idCaja: number,
-    @Query('moneda') moneda: 'BOB' | 'USD',
+    @Query('moneda') moneda: 'BS' | 'USD',
   ): Promise<PeriodoCaja[]> {
     return await this.movimientoCajaService.listarPeriodos(idCaja, moneda);
   }
@@ -260,7 +324,9 @@ export class CajaController {
     description: 'No hay movimientos registrados en ese mes para la caja.',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async cerrarPeriodo(
     @Body() body: CerrarPeriodoCajaDto,
     @GetUser() user: Usuario,
@@ -286,7 +352,9 @@ export class CajaController {
   })
   @ApiNotFoundResponse({ description: 'No existe el período indicado.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async reabrirPeriodo(
     @Body() body: CerrarPeriodoCajaDto,
     @GetUser() user: Usuario,
@@ -311,7 +379,9 @@ export class CajaController {
   })
   @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async cerrarGestion(
     @Body() body: CerrarGestionCajaDto,
     @GetUser() user: Usuario,
@@ -336,7 +406,9 @@ export class CajaController {
     description: 'No existe un cierre de gestión para esa caja/moneda.',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async reabrirGestion(
     @Body() body: CerrarGestionCajaDto,
     @GetUser() user: Usuario,

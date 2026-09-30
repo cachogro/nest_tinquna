@@ -146,6 +146,19 @@ export class CreateRecepcionMineralDto {
   fechaRecepcion: string;
 
   @ApiPropertyOptional({
+    description:
+      'Lugar de acopio donde se recibió el mineral (texto). Se sugiere tomarlo de GET /parametricas/lugar-acopio.',
+    example: 'GALPON',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100, {
+    message: 'El lugar de acopio no puede superar los 100 caracteres.',
+  })
+  lugarAcopio?: string;
+
+  @ApiPropertyOptional({
     description: 'Observaciones adicionales.',
     example: 'Recepción sin novedades.',
   })

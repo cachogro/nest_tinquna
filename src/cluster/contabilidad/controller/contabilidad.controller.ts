@@ -10,7 +10,9 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -30,6 +32,7 @@ import {
 import { Auth, GetUser } from 'src/security/decorators';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { LibretaBancoService } from '../services/libreta-banco.service';
+import { LibretaBancoExcelService } from '../services/libreta-banco-excel.service';
 import { LibretaBanco } from '../entities/libreta-banco.entity';
 import { PeriodoBanco } from '../entities/periodo-banco.entity';
 import { CreateLibretaBancoDto } from '../dto/libreta-banco/create-libreta-banco.dto';
@@ -41,7 +44,10 @@ import { CerrarGestionBancoDto } from '../dto/libreta-banco/cerrar-gestion-banco
 @Controller('contabilidad')
 @ApiBearerAuth()
 export class ContabilidadController {
-  constructor(private readonly libretaBancoService: LibretaBancoService) {}
+  constructor(
+    private readonly libretaBancoService: LibretaBancoService,
+    private readonly libretaBancoExcelService: LibretaBancoExcelService,
+  ) {}
 
   //--------------------------- Libreta de bancos ----------------------------
 
@@ -62,6 +68,7 @@ export class ContabilidadController {
           idCuentaBancaria: 1,
           fecha: '2025-05-14',
           nroTransaccion: '4478708896',
+          tipoTransaccion: 'TRANSFERENCIA',
           nombresApellidos: 'RENE MISQUE - ANDIA ROMAN PERALTA',
           concepto: 'ANTICIPO A CTA SACO MINERAL',
           tipo: 'DEBE',
@@ -74,6 +81,7 @@ export class ContabilidadController {
           idCuentaBancaria: 1,
           fecha: '2025-06-23',
           nroTransaccion: '32632109',
+          tipoTransaccion: 'DEPOSITO',
           nombresApellidos: 'ANDREA JHYMALIA CALLAHUANCA CHACON',
           concepto: 'DEPOSITO DE EFECTIVO',
           tipo: 'HABER',
@@ -86,6 +94,7 @@ export class ContabilidadController {
           idCuentaBancaria: 1,
           fecha: '2025-07-14',
           nroTransaccion: '4613649398',
+          tipoTransaccion: 'QR',
           idPersona: '15',
           concepto: 'ANTICIPO A CTA SUELDO',
           tipo: 'DEBE',
@@ -165,6 +174,57 @@ export class ContabilidadController {
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async listarLibreta(@Query() filtro: FiltroLibretaBancoDto) {
     return await this.libretaBancoService.listar(filtro);
+  }
+
+  @Get('libreta-banco/excel')
+  @Auth()
+  @ApiOperation({
+    summary: 'Exportar la libreta de bancos de una cuenta a Excel',
+    description:
+      'Genera el .xlsx con el formato del libro físico "LIBRETA DE BANCOS": FECHA, N° DE TRANSACCIÓN, NOMBRES Y APELLIDOS, CONCEPTO y SALDOS (DEBE / HABER / SALDOS). La primera fila es el saldo inicial de la cuenta (o el saldo anterior al rango si se filtra por gestión/mes) y el pie "TOTAL DE SALDO" = suma HABER (incluido el saldo inicial) - suma DEBE. Sin gestión ni mes imprime toda la historia de la cuenta; `mes` requiere `gestion`. Solo movimientos vigentes (activo = true).',
+  })
+  @ApiQuery({ name: 'idCuentaBancaria', required: true, type: Number, example: 1 })
+  @ApiQuery({ name: 'gestion', required: false, type: Number, example: 2026 })
+  @ApiQuery({ name: 'mes', required: false, type: Number, example: 8 })
+  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiBadRequestResponse({
+    description: 'Cuenta inactiva, filtros inválidos o `mes` sin `gestion`.',
+  })
+  @ApiNotFoundResponse({ description: 'No se encontró la cuenta bancaria.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async exportarLibretaExcel(
+    @Query() filtro: FiltroLibretaBancoDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.libretaBancoExcelService.generar(filtro);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=${this.libretaBancoExcelService.nombreArchivo(filtro)}`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  @Get('libreta-banco/detalle/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Detalle de un movimiento de la libreta',
+    description:
+      'Movimiento completo para el visor de la bandeja: cuenta, período, beneficiario, destino del gasto, quién y cuándo lo registró, y el origen (recibo, traspaso o línea de kardex) si lo tiene.',
+  })
+  @ApiParam({ name: 'id', description: 'Id del movimiento.', example: '15' })
+  @ApiOkResponse({ description: 'Movimiento obtenido.', type: LibretaBanco })
+  @ApiNotFoundResponse({ description: 'No se encontró el movimiento.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async detalleMovimiento(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<LibretaBanco> {
+    return await this.libretaBancoService.buscarPorId(String(id));
   }
 
   //--------------------------- Períodos y cierres --------------------------

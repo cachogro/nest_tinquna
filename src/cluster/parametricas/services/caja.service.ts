@@ -52,8 +52,8 @@ export class CajaService {
 
     const caja = this.cajaRepository.create({
       nombre,
-      saldoInicialBob: createDto.saldoInicialBob ?? 0,
-      fechaSaldoInicialBob: createDto.fechaSaldoInicialBob,
+      saldoInicialBs: createDto.saldoInicialBs ?? 0,
+      fechaSaldoInicialBs: createDto.fechaSaldoInicialBs,
       saldoInicialUsd: createDto.saldoInicialUsd ?? 0,
       fechaSaldoInicialUsd: createDto.fechaSaldoInicialUsd,
       usuarioRegistro: user.usuario,
@@ -78,9 +78,9 @@ export class CajaService {
     }
 
     caja.nombre = nombre;
-    caja.saldoInicialBob = updateDto.saldoInicialBob ?? caja.saldoInicialBob;
-    caja.fechaSaldoInicialBob =
-      updateDto.fechaSaldoInicialBob ?? caja.fechaSaldoInicialBob;
+    caja.saldoInicialBs = updateDto.saldoInicialBs ?? caja.saldoInicialBs;
+    caja.fechaSaldoInicialBs =
+      updateDto.fechaSaldoInicialBs ?? caja.fechaSaldoInicialBs;
     caja.saldoInicialUsd = updateDto.saldoInicialUsd ?? caja.saldoInicialUsd;
     caja.fechaSaldoInicialUsd =
       updateDto.fechaSaldoInicialUsd ?? caja.fechaSaldoInicialUsd;

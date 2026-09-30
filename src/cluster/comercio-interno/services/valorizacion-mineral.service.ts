@@ -14,6 +14,7 @@ import {
 } from 'typeorm';
 
 import { Laboratorio } from 'src/cluster/parametricas/entities/laboratorio.entity';
+import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
 import { EntidadAporte } from 'src/cluster/parametricas/entities/entidad-aporte.entity';
 import { EstadoValorizacion } from 'src/cluster/parametricas/entities/estado-valorizacion.entity';
 import { TipoCalculoValorizacion } from 'src/cluster/parametricas/entities/tipo-calculo-valorizacion.entity';
@@ -142,6 +143,46 @@ export class ValorizacionMineralService {
         'Existen minerales repetidos en el detalle de la valorización.',
       );
     }
+  }
+
+  /**
+   * Resuelve la codificación de valorización a guardar: null si no se
+   * cambia respecto a la recepción (así la recepción sigue mandando).
+   * No se permite cambiarla si la valorización ya forma parte de un
+   * promedio, porque ese promedio se armó con la codificación anterior.
+   */
+  private async resolverCodificacionValorizacion(
+    valorizacion: ValorizacionMineral,
+    idCodificacion: string | null,
+  ): Promise<string | null> {
+    const nueva =
+      idCodificacion &&
+      idCodificacion.toString() !==
+        valorizacion.recepcionMineral.idCodificacion?.toString()
+        ? idCodificacion.toString()
+        : null;
+
+    if (nueva !== (valorizacion.idCodificacionValorizacion ?? null)) {
+      if (valorizacion.idPromedioMineral) {
+        throw new BadRequestException(
+          'No se puede cambiar la codificación de valorización: la valorización ya forma parte de un promedio.',
+        );
+      }
+    }
+
+    if (nueva) {
+      const existe = await this.dataSource.getRepository(Codificacion).exists({
+        where: { id: nueva, activo: true },
+      });
+
+      if (!existe) {
+        throw new NotFoundException(
+          'La codificación de valorización seleccionada no existe.',
+        );
+      }
+    }
+
+    return nueva;
   }
 
   private async validarEstadoValorizacion(
@@ -522,6 +563,10 @@ export class ValorizacionMineralService {
       )
       .leftJoinAndSelect('actorProductivoMinero.municipio', 'municipio')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
+      .leftJoinAndSelect(
+        'valorizacion.codificacionValorizacion',
+        'codificacionValorizacion',
+      )
       .leftJoinAndSelect('recepcion.estado', 'estadoRecepcion')
       .leftJoinAndSelect('valorizacion.laboratorio', 'laboratorio')
       .leftJoinAndSelect(
@@ -549,6 +594,11 @@ export class ValorizacionMineralService {
       .leftJoinAndSelect(
         'calculo.tipoCalculoValorizacion',
         'tipoCalculoValorizacion',
+      )
+      .leftJoinAndSelect(
+        'valorizacion.recibos',
+        'recibo',
+        "recibo.estado <> 'ANULADO'",
       )
       .where('valorizacion.id = :id', { id })
       .getOne();
@@ -718,6 +768,15 @@ export class ValorizacionMineralService {
       await this.validarEstadoValorizacion(dto.idEstadoValorizacion);
     }
 
+    // undefined = no se toca; null o un id = se resuelve y se guarda.
+    const idCodificacionValorizacion =
+      dto.idCodificacionValorizacion !== undefined
+        ? await this.resolverCodificacionValorizacion(
+            valorizacion,
+            dto.idCodificacionValorizacion,
+          )
+        : undefined;
+
     if (dto.detalles?.length) {
       this.validarDetalleValorizacion(dto.detalles);
     }
@@ -758,6 +817,7 @@ export class ValorizacionMineralService {
     try {
       await queryRunner.manager.update(ValorizacionMineral, id, {
         idLaboratorio: dto.idLaboratorio,
+        idCodificacionValorizacion,
         // idEstadoValorizacion: dto.idEstadoValorizacion,
 
         pesoBrutoHumedoKilogramos: dto.pesoBrutoHumedoKilogramos,
@@ -989,8 +1049,20 @@ export class ValorizacionMineralService {
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
 
       .leftJoinAndSelect(
+        'valorizacion.codificacionValorizacion',
+        'codificacionValorizacion',
+      )
+
+      .leftJoinAndSelect(
         'valorizacion.estadoValorizacion',
         'estadoValorizacion',
+      )
+
+      // Solo el recibo vigente del pago del saldo: vacío = falta generarlo.
+      .leftJoinAndSelect(
+        'valorizacion.recibos',
+        'recibo',
+        "recibo.estado <> 'ANULADO'",
       );
 
     //---------------------------------------------------------

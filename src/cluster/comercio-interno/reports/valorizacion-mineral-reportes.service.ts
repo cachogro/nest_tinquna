@@ -90,6 +90,10 @@ export class ValorizacionMineralReportesService {
       .leftJoinAndSelect('valorizacion.recepcionMineral', 'recepcion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
+      .leftJoinAndSelect(
+        'valorizacion.codificacionValorizacion',
+        'codificacionValorizacion',
+      )
       .leftJoinAndSelect('valorizacion.estadoValorizacion', 'estadoValorizacion')
       .leftJoinAndSelect(
         'valorizacion.detalles',
@@ -108,10 +112,13 @@ export class ValorizacionMineralReportesService {
       query.andWhere('valorizacion.entregado = false');
     }
 
+    // Codificación con la que se valorizó (ej. recepción ICC valorizada
+    // como BCL cuenta como BCL).
     if (idCodificacion) {
-      query.andWhere('recepcion.idCodificacion = :idCodificacion', {
-        idCodificacion,
-      });
+      query.andWhere(
+        'COALESCE(valorizacion.idCodificacionValorizacion, recepcion.idCodificacion) = :idCodificacion',
+        { idCodificacion },
+      );
     }
 
     if (desde) {
@@ -131,7 +138,7 @@ export class ValorizacionMineralReportesService {
     const filas: FilaReporteValorizacion[] = valorizaciones.map((v) => ({
       idValorizacion: v.id,
       codigoOperacion: v.recepcionMineral?.codigoOperacion ?? null,
-      codificacion: v.recepcionMineral?.codificacion?.codigo ?? null,
+      codificacion: v.codificacionEfectiva()?.codigo ?? null,
       proveedor: this.nombreCompleto(v.recepcionMineral?.persona),
       numeroDocumento: v.recepcionMineral?.persona?.numeroDocumento ?? null,
       numeroSacos: v.recepcionMineral?.numeroSacos ?? null,

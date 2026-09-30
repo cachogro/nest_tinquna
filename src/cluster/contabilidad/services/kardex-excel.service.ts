@@ -1,188 +1,183 @@
 import { Injectable } from '@nestjs/common';
-import { Workbook, Worksheet } from 'exceljs';
-import { ExcelService } from 'src/common/excel/excel.service';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { Kardex } from '../entities/kardex.entity';
+import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
+import {
+  ColumnaContable,
+  ContabilidadExcelService,
+  PALETAS,
+} from './contabilidad-excel.service';
 import { KardexService } from './kardex.service';
 import { MovimientoKardexService } from './movimiento-kardex.service';
 
-const TOTAL_COLUMNAS = 9;
+const COLUMNAS: ColumnaContable[] = [
+  { titulo: 'N°', ancho: 6, alineacion: 'center' },
+  { titulo: 'FECHA', ancho: 12, fecha: true },
+  { titulo: 'N° DE COMP.', ancho: 16, alineacion: 'center' },
+  { titulo: 'DETALLE', ancho: 45 },
+  // Quién aprobó el recibo que originó la línea (primer nombre y apellido).
+  { titulo: 'APROBADO POR', ancho: 28 },
+  // Medio de pago con banco y comprobante: "QR - UNION - 123578955".
+  { titulo: 'TIPO DE PAGO', ancho: 32 },
+  { titulo: 'LOTE', ancho: 16, alineacion: 'center' },
+  // Importe original de los movimientos en dólares (remesas, etc.).
+  { titulo: 'DEBE $us', ancho: 14, importe: true },
+  { titulo: 'HABER $us', ancho: 14, importe: true },
+  { titulo: 'T.C.', ancho: 9, alineacion: 'center' },
+  // El kardex lleva su saldo en Bs.: un movimiento en USD entra convertido.
+  { titulo: 'DEBE Bs.', ancho: 16, importe: true },
+  { titulo: 'HABER Bs.', ancho: 16, importe: true },
+  { titulo: 'SALDO Bs.', ancho: 17, importe: true },
+  { titulo: 'COBRADOR', ancho: 28 },
+];
+const TOTAL_COLUMNAS = COLUMNAS.length;
+const COL_SALDO = COLUMNAS.findIndex((c) => c.titulo === 'SALDO Bs.') + 1;
 
 /**
- * Genera el Excel del kardex de anticipos actual de un actor o una persona,
- * con el mismo formato del modelo "caja de flujo y kardex.xlsx" (hoja de
- * kardex): cabecera con destinatario/cuenta/gestión, detalle de movimientos
- * y el total de anticipos por cobrar.
+ * Genera el Excel del kardex actual (actor, persona o cliente), con el mismo
+ * formato del modelo "caja de flujo y kardex.xlsx" (hoja de kardex):
+ * cabecera con proveedor/cuenta/gestión, detalle de movimientos y el total
+ * de anticipos por cobrar.
  */
 @Injectable()
 export class KardexExcelService {
   constructor(
-    private readonly excelService: ExcelService,
+    private readonly contabilidadExcel: ContabilidadExcelService,
     private readonly kardexService: KardexService,
     private readonly movimientoKardexService: MovimientoKardexService,
   ) {}
 
   async generar(idKardex: string): Promise<Buffer> {
     const kardex = await this.kardexService.buscarPorId(idKardex);
-    const { movimientos: todosLosMovimientos } =
-      await this.movimientoKardexService.listar(idKardex);
+    const todosLosMovimientos =
+      await this.movimientoKardexService.listarParaExcel(idKardex);
     // El listado general incluye líneas dadas de baja; el reporte impreso
     // solo debe reflejar las vigentes, igual que `saldoActual` del kardex.
     const movimientos = todosLosMovimientos.filter((m) => m.activo !== false);
 
-    const workbook: Workbook = this.excelService.createWorkbook();
-    const worksheet = workbook.addWorksheet('KARDEX', {
-      properties: { defaultRowHeight: 20 },
-      pageSetup: { orientation: 'landscape', fitToPage: true },
-      views: [{ state: 'frozen', ySplit: 7 }],
+    const paleta = PALETAS.kardex;
+    const excel = this.contabilidadExcel;
+    const workbook = excel.crearLibro();
+    const worksheet = excel.crearHoja(workbook, `KARDEX N° ${kardex.numero}`, COLUMNAS);
+
+    const hoy = new Date();
+    const practicadoAl = [
+      String(hoy.getDate()).padStart(2, '0'),
+      String(hoy.getMonth() + 1).padStart(2, '0'),
+      hoy.getFullYear(),
+    ].join('/');
+    excel.agregarTitulos(worksheet, TOTAL_COLUMNAS, 'KARDEX DE ANTICIPOS', `PRACTICADO AL ${practicadoAl}`);
+    excel.agregarDatoCabecera(worksheet, 5, 1, 6, {
+      etiqueta: 'PROVEEDOR',
+      valor: this.nombreTitular(kardex),
+    });
+    excel.agregarDatoCabecera(
+      worksheet,
+      5,
+      7,
+      TOTAL_COLUMNAS,
+      { etiqueta: `KARDEX N° ${kardex.numero}  -  GESTIÓN`, valor: String(kardex.gestion) },
+      'center',
+    );
+    excel.agregarDatoCabecera(worksheet, 6, 1, TOTAL_COLUMNAS, {
+      etiqueta: 'CUENTA',
+      valor: this.descripcionCuenta(kardex),
     });
 
-    worksheet.columns = [
-      { width: 6 },
-      { width: 13 },
-      { width: 16 },
-      { width: 45 },
-      { width: 14 },
-      { width: 14 },
-      { width: 14 },
-      { width: 18 },
-      { width: 28 },
-    ];
+    const filaEncabezado = 8;
+    excel.agregarEncabezado(worksheet, filaEncabezado, COLUMNAS, paleta);
 
-    this.excelService.addTitle(worksheet, 'KARDEX DE ANTICIPOS', TOTAL_COLUMNAS);
-    this.agregarSubtitulo(worksheet, `PRACTICADO AL ${this.formatearFecha(new Date().toISOString())}`);
-    this.agregarCabeceraKardex(worksheet, kardex);
+    let fila = filaEncabezado + 1;
+    movimientos.forEach((mov) => {
+      excel.agregarFila(worksheet, fila++, COLUMNAS, [
+        mov.numeroLinea,
+        excel.fecha(mov.fecha),
+        mov.facturaRecibo || mov.nroComprobante || '',
+        mov.detalle,
+        this.nombreCorto(mov.recibo?.personaAutorizo),
+        this.tipoPago(mov),
+        mov.lote || mov.recibo?.ventaLote?.codigoLote || '',
+        Number(mov.debeUsd) > 0 ? Number(mov.debeUsd) : null,
+        Number(mov.haberUsd) > 0 ? Number(mov.haberUsd) : null,
+        mov.moneda === 'USD' && mov.tipoCambio ? Number(mov.tipoCambio) : null,
+        Number(mov.debe) > 0 ? Number(mov.debe) : null,
+        Number(mov.haber) > 0 ? Number(mov.haber) : null,
+        Number(mov.saldo),
+        this.nombreCompleto(mov.cobrador),
+      ]);
+    });
 
-    const filaEncabezado = 7;
-    this.excelService.addHeader(
+    excel.agregarTotal(
       worksheet,
-      [
-        'N°',
-        'FECHA',
-        'N° DE COMP.',
-        'DETALLE',
-        'DEBE',
-        'HABER',
-        'SALDO',
-        'FORMA DE PAGO',
-        'COBRADOR',
-      ],
-      filaEncabezado,
+      fila,
+      TOTAL_COLUMNAS,
+      COL_SALDO - 1,
+      'TOTAL ANTICIPOS POR COBRAR (Bs.)',
+      { [COL_SALDO]: Number(kardex.saldoActual) },
+      paleta,
     );
 
-    let ultimaFila = filaEncabezado;
-    movimientos.forEach((mov) => {
-      this.excelService.addRow(
-        worksheet,
-        [
-          mov.numeroLinea,
-          this.formatearFecha(mov.fecha),
-          mov.facturaRecibo || mov.nroComprobante || '',
-          mov.detalle,
-          Number(mov.debe) > 0 ? Number(mov.debe) : null,
-          Number(mov.haber) > 0 ? Number(mov.haber) : null,
-          Number(mov.saldo),
-          mov.formaPago?.nombre ?? '',
-          this.nombreCompleto(mov.cobrador),
-        ],
-        [
-          'center',
-          'center',
-          'center',
-          undefined,
-          'right',
-          'right',
-          'right',
-          undefined,
-          undefined,
-        ],
-      );
-      ultimaFila++;
-    });
-
-    ['E', 'F', 'G'].forEach((col) => {
-      worksheet.getColumn(col).numFmt = '#,##0.00';
-    });
-
-    this.agregarTotal(worksheet, kardex, ultimaFila);
-
-    this.excelService.autoFitColumns(worksheet, 12, { 1: 6, 2: 13 }, filaEncabezado);
-
-    return this.excelService.generate(workbook);
+    return excel.generar(workbook);
   }
 
-  private agregarSubtitulo(worksheet: Worksheet, texto: string): void {
-    worksheet.mergeCells(2, 1, 2, TOTAL_COLUMNAS);
-
-    const cell = worksheet.getCell(2, 1);
-    cell.value = texto;
-    cell.font = { italic: true, size: 11 };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  /**
+   * "EFECTIVO" tal cual; un medio bancario lleva la sigla del banco y el N°
+   * de comprobante: "QR - UNION - 123578955".
+   */
+  private tipoPago(mov: MovimientoKardex): string {
+    const forma = mov.formaPago?.nombre?.toUpperCase() ?? '';
+    if (!mov.cuentaBancaria) {
+      return forma;
+    }
+    const entidad = mov.cuentaBancaria.entidadFinanciera;
+    const banco = (entidad?.sigla || entidad?.nombre || '').toUpperCase();
+    return [forma, banco, mov.nroComprobante?.trim()].filter(Boolean).join(' - ');
   }
 
-  private agregarCabeceraKardex(worksheet: Worksheet, kardex: Kardex): void {
-    worksheet.mergeCells(4, 1, 4, 6);
-    const celdaSenor = worksheet.getCell(4, 1);
-    celdaSenor.value = `SEÑOR: ${this.nombreTitular(kardex)}`;
-    celdaSenor.font = { bold: true, italic: true, size: 13 };
-
-    worksheet.mergeCells(4, 7, 4, TOTAL_COLUMNAS);
-    const celdaNumero = worksheet.getCell(4, 7);
-    celdaNumero.value = `KARDEX N° ${kardex.numero}   -   GESTIÓN ${kardex.gestion}`;
-    celdaNumero.font = { bold: true, size: 12 };
-    celdaNumero.alignment = { horizontal: 'right', vertical: 'middle' };
-
-    worksheet.mergeCells(5, 1, 5, TOTAL_COLUMNAS);
-    const celdaCuenta = worksheet.getCell(5, 1);
-    celdaCuenta.value = `CUENTA: ${
-      kardex.descripcion ??
-      (kardex.tipo === 'ACTOR'
-        ? 'Anticipos - Actor Productivo Minero'
-        : 'Anticipos - Cuenta Personal')
-    }`;
-    celdaCuenta.font = { italic: true, size: 12 };
-
-    worksheet.mergeCells(6, 1, 6, TOTAL_COLUMNAS);
-  }
-
-  private agregarTotal(
-    worksheet: Worksheet,
-    kardex: Kardex,
-    ultimaFila: number,
-  ): void {
-    const filaTotal = ultimaFila + 1;
-
-    worksheet.mergeCells(filaTotal, 1, filaTotal, 6);
-    const celdaLabel = worksheet.getCell(filaTotal, 1);
-    celdaLabel.value = 'TOTAL ANTICIPOS POR COBRAR';
-    celdaLabel.font = { bold: true, size: 12 };
-    celdaLabel.alignment = { horizontal: 'right', vertical: 'middle' };
-
-    const celdaSaldo = worksheet.getCell(filaTotal, 7);
-    celdaSaldo.value = Number(kardex.saldoActual);
-    celdaSaldo.font = { bold: true, size: 12 };
-    celdaSaldo.numFmt = '#,##0.00';
-    celdaSaldo.alignment = { horizontal: 'right', vertical: 'middle' };
-
-    [celdaLabel, celdaSaldo].forEach((cell) => {
-      cell.border = {
-        top: { style: 'double' },
-        bottom: { style: 'double' },
-      };
-    });
+  private descripcionCuenta(kardex: Kardex): string {
+    if (kardex.descripcion) {
+      return kardex.descripcion;
+    }
+    switch (kardex.tipo) {
+      case 'ACTOR':
+        return 'Anticipos - Actor Productivo Minero';
+      case 'CLIENTE':
+        return 'Cuenta por Cobrar - Cliente';
+      case 'ASOCIADO':
+        return 'Anticipos - Persona Asociada';
+      default:
+        return 'Anticipos - Cuenta Personal';
+    }
   }
 
   private nombreTitular(kardex: Kardex): string {
-    if (kardex.tipo === 'PERSONAL' && kardex.persona) {
+    if ((kardex.tipo === 'PERSONAL' || kardex.tipo === 'ASOCIADO') && kardex.persona) {
       return this.nombreCompleto(kardex.persona) || 'S/N';
     }
     if (kardex.tipo === 'ACTOR' && kardex.actorProductivoMinero) {
       return kardex.actorProductivoMinero.nombre?.toUpperCase() ?? 'S/N';
     }
+    if (kardex.tipo === 'CLIENTE' && kardex.cliente) {
+      return kardex.cliente.nombre?.toUpperCase() ?? 'S/N';
+    }
     return 'S/N';
   }
 
-  private nombreCompleto(persona?: PersonaCi | null): string {
+  /** Primer nombre y primer apellido: "JUAN CARLOS PEREZ LOPEZ" -> "JUAN PEREZ". */
+  private nombreCorto(
+    persona?: Pick<PersonaCi, 'nombres' | 'apellidoPaterno' | 'apellidoMaterno'> | null,
+  ): string {
+    if (!persona) {
+      return '';
+    }
+    const primerNombre = persona.nombres?.trim().split(/\s+/)[0];
+    const primerApellido = persona.apellidoPaterno?.trim() || persona.apellidoMaterno?.trim();
+    return [primerNombre, primerApellido].filter(Boolean).join(' ');
+  }
+
+  private nombreCompleto(
+    persona?: Pick<PersonaCi, 'nombres' | 'apellidoPaterno' | 'apellidoMaterno'> | null,
+  ): string {
     if (!persona) {
       return '';
     }
@@ -190,17 +185,5 @@ export class KardexExcelService {
       .filter(Boolean)
       .join(' ')
       .trim();
-  }
-
-  private formatearFecha(fecha?: string): string {
-    if (!fecha) {
-      return '';
-    }
-    const match = fecha.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!match) {
-      return fecha;
-    }
-    const [, anio, mes, dia] = match;
-    return `${dia}-${mes}-${anio}`;
   }
 }

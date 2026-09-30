@@ -11,6 +11,7 @@ import {
 import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
 import { EstadoRegistro } from 'src/cluster/parametricas/entities/estado-registro.entity';
 import { PersonaCi } from '../persona-ci.entity';
+import { Recibo } from 'src/cluster/contabilidad/entities/recibo.entity';
 //import { RecepcionMineralDetalle } from './recepcion-mineral-detalle.entity';
 import { ValorizacionMineral } from '../valorizacion/valorizacion-mineral.entity';
 
@@ -117,6 +118,12 @@ export class RecepcionMineral extends Auditoria {
   })
   anticipo?: number;
 
+  // Recibos (serie C) generados para el anticipo desde el diálogo de recibo
+  // (contabilidad.recibo.id_recepcion_mineral). Solo puede haber uno
+  // vigente (BORRADOR/PROCESADO); los ANULADOS quedan como historial.
+  @OneToMany(() => Recibo, (recibo) => recibo.recepcionMineral)
+  recibos?: Recibo[];
+
   @Column({
     name: 'humedad',
     type: 'numeric',
@@ -158,6 +165,17 @@ export class RecepcionMineral extends Auditoria {
     nullable: false,
   })
   fechaRecepcion: string;
+
+  // Lugar donde se recibió el mineral (galpón, ingenio, etc.). Texto libre:
+  // los valores sugeridos vienen de GET /parametricas/lugar-acopio, pero no
+  // hay relación con esa tabla.
+  @Column({
+    name: 'lugar_acopio',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  lugarAcopio?: string;
 
   @Column({
     name: 'observaciones',

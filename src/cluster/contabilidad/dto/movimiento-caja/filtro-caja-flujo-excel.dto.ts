@@ -14,12 +14,12 @@ export class FiltroCajaFlujoExcelDto {
   idCaja: number;
 
   @ApiProperty({
-    enum: ['BOB', 'USD'],
-    example: 'BOB',
+    enum: ['BS', 'USD'],
+    example: 'BS',
     description: 'Moneda a exportar (obligatorio: el saldo corriente se calcula por moneda).',
   })
-  @IsIn(['BOB', 'USD'], { message: 'La moneda debe ser BOB o USD.' })
-  moneda: 'BOB' | 'USD';
+  @IsIn(['BS', 'USD'], { message: 'La moneda debe ser BS o USD.' })
+  moneda: 'BS' | 'USD';
 
   @ApiProperty({
     example: 2026,

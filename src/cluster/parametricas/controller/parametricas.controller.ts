@@ -52,6 +52,12 @@ import { FiltrosActorProductivoMineroDto } from '../dto/actor-productivo-minero/
 import { ActoresProductivosMinerosPaginadosDto } from '../dto/actor-productivo-minero/actor-productivo-minero-paginacion.dto';
 import { ActorProdMineroService } from '../services/actor-productivo-minero.service';
 import { ActorProductivoMinero } from '../entities/actor-productivo-minero.entity';
+import { Cliente } from '../entities/cliente.entity';
+import { ClienteService } from '../services/cliente.service';
+import { CreateClienteDto } from '../dto/cliente/create-cliente.dto';
+import { UpdateClienteDto } from '../dto/cliente/update-cliente.dto';
+import { FiltrosClienteDto } from '../dto/cliente/filtros-cliente.dto';
+import { ClientesPaginadosDto } from '../dto/cliente/cliente-paginacion.dto';
 import { UpdateActorProductivoMineroDto } from '../dto/actor-productivo-minero/update-actor-productivo-minero.dto';
 import { TipoActorProductivoMinero } from '../entities/tipo-actor-productivo-minero.entity';
 import { Laboratorio } from '../entities/laboratorio.entity';
@@ -89,6 +95,14 @@ import { CuentaBancaria } from '../entities/cuenta-bancaria.entity';
 import { FormaPago } from '../entities/forma-pago.entity';
 import { KardexSubcuenta } from '../entities/kardex-subcuenta.entity';
 import { DestinoGasto } from '../entities/destino-gasto.entity';
+import { LugarAcopio } from '../entities/lugar-acopio.entity';
+import { CodificacionLote } from '../entities/codificacion-lote.entity';
+import { CreateDestinoGastoDto } from '../dto/destino-gasto/create-destino-gasto.dto';
+import { UpdateDestinoGastoDto } from '../dto/destino-gasto/update-destino-gasto.dto';
+import { DestinoGastoService } from '../services/destino-gasto.service';
+import { CreateCodificacionLoteDto } from '../dto/codificacion-lote/create-codificacion-lote.dto';
+import { UpdateCodificacionLoteDto } from '../dto/codificacion-lote/update-codificacion-lote.dto';
+import { CodificacionLoteService } from '../services/codificacion-lote.service';
 import { CajaService } from '../services/caja.service';
 import { UpdateCajaDto } from '../dto/caja/update-caja.dto';
 import { Caja } from '../entities/caja.entity';
@@ -112,6 +126,9 @@ export class ParametricasController {
     private readonly personaTipoService: PersonaTipoService,
     private readonly entidadFinancieraService: EntidadFinancieraService,
     private readonly cajaService: CajaService,
+    private readonly clienteService: ClienteService,
+    private readonly destinoGastoService: DestinoGastoService,
+    private readonly codificacionLoteService: CodificacionLoteService,
   ) {}
 
   @Post('codificacion')
@@ -1041,6 +1058,171 @@ export class ParametricasController {
     return await this.actorProdMineroService.findAllActorPrdcMinero();
   }
 
+  //--------------------------------Cliente (comprador) ------------------------------------
+  //---------------------------------------------------------------------------
+  // Contraparte del flujo de VENTAS: a quién le vendemos el mineral ya
+  // comprado a los actores productivos mineros (comercializadora, ingenio
+  // comprador, exportadora, etc.). Separado de actor-productivo-minero
+  // (contraparte de COMPRAS) para no mezclar ambos roles de negocio.
+
+  @Post('cliente')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar un cliente',
+    description:
+      'Si no se envía el campo id se registra un nuevo cliente. Si se envía el id, se actualiza el registro correspondiente.',
+  })
+  @ApiBody({
+    type: UpdateClienteDto,
+    description: 'Datos del cliente.',
+    examples: {
+      crear: {
+        summary: 'Registrar Cliente',
+        description:
+          'idTipoActorProductivoMinero es opcional: reutiliza el mismo catálogo de GET /parametricas/actor-productivo-minero/allTipoActor (Empresa, Cooperativa, etc.), solo como etiqueta descriptiva.',
+        value: {
+          idTipoActorProductivoMinero: 1,
+          nombre: 'Comercializadora Minera del Sur',
+          direccion: 'Zona Industrial, Potosí',
+          telefono: '72460000',
+          nit: '1234567890',
+          fechaInicioOperaciones: '2026-01-15',
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar Cliente',
+        value: {
+          id: 1,
+          nombre: 'Comercializadora Minera del Sur',
+          direccion: 'Av. Industrial N° 456',
+          telefono: '72460001',
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Cliente registrado o actualizado correctamente.',
+    type: Cliente,
+  })
+  @ApiBadRequestResponse({
+    description: 'Los datos enviados no son válidos.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el cliente o el municipio seleccionado.',
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe un cliente registrado con ese nombre.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createCliente(
+    @Body() body: UpdateClienteDto,
+    @GetUser() user: Usuario,
+  ): Promise<Cliente> {
+    if (body.id) {
+      return await this.clienteService.update(body, user);
+    }
+    return await this.clienteService.create(body, user);
+  }
+
+  @Patch('cliente/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de un cliente',
+    description: 'Permite activar o desactivar un cliente mediante baja lógica.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del cliente.',
+    example: '1',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: { type: 'boolean', example: false },
+      },
+    },
+    description: 'Nuevo estado del cliente.',
+  })
+  @ApiOkResponse({
+    description: 'Estado del cliente actualizado correctamente.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el cliente solicitado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async cambiarEstadoCliente(
+    @Param('id') id: string,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ) {
+    return this.clienteService.cambiarEstado(id, activo, user);
+  }
+
+  @Get('cliente')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listado paginado de clientes',
+    description:
+      'Obtiene un listado paginado de clientes con filtros por nombre, estado y ordenamiento.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  @ApiQuery({ name: 'busqueda', required: false, type: String })
+  @ApiQuery({ name: 'activo', required: false, type: Boolean })
+  @ApiQuery({ name: 'idTipoActorProductivoMinero', required: false, type: Number })
+  @ApiQuery({
+    name: 'orderBy',
+    required: false,
+    enum: ['id', 'nombre', 'direccion', 'telefono'],
+  })
+  @ApiQuery({ name: 'orderDirection', required: false, enum: ['ASC', 'DESC'] })
+  @ApiOkResponse({
+    description: 'Listado paginado obtenido correctamente.',
+    type: ClientesPaginadosDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllClientes(@Query() filtros: FiltrosClienteDto) {
+    return await this.clienteService.findAll(filtros);
+  }
+
+  @Get('cliente/allClientes')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los clientes',
+    description: 'Retorna una lista completa de los clientes activos registrados en el sistema.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de clientes obtenida exitosamente.',
+    type: [Cliente],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllClientesSimple(): Promise<Cliente[]> {
+    return await this.clienteService.findAllClientes();
+  }
+
   //---------------------------------------------------------------------------
   //                        Municipios (solo lectura)
   //---------------------------------------------------------------------------
@@ -1093,6 +1275,28 @@ export class ParametricasController {
     return await this.parametricaService.findAllFormaPago();
   }
 
+  @Get('lugar-acopio')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener todos los lugares de acopio',
+    description:
+      'Catálogo de lugares donde se recibe el mineral (GALPON, INGENIO VILLA...). Solo lectura de los valores activos, ordenados por descripción. En la recepción de mineral se guarda como texto (campo lugarAcopio), no como relación.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de lugares de acopio obtenida exitosamente.',
+    type: [LugarAcopio],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllLugarAcopio(): Promise<LugarAcopio[]> {
+    return await this.parametricaService.findAllLugarAcopio();
+  }
+
   @Get('kardex-subcuenta')
   @Auth()
   @ApiOperation({
@@ -1115,26 +1319,153 @@ export class ParametricasController {
     return await this.parametricaService.findAllKardexSubcuenta();
   }
 
+  //---------------------------------------------------------------------------
+  //                        Destinos de gasto
+  //---------------------------------------------------------------------------
+
+  @Post('destino-gasto')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar un destino de gasto',
+    description:
+      'Si no se envía el campo id se registra uno nuevo. Si se envía el id, se actualiza. `esEgreso`: TRUE = egreso, FALSE = ingreso.',
+  })
+  @ApiBody({
+    description: 'Datos del destino de gasto.',
+    examples: {
+      crear: {
+        summary: 'Registrar',
+        value: { nombre: 'COMBUSTIBLE GASOLINA', esEgreso: true },
+      },
+      actualizar: {
+        summary: 'Actualizar',
+        value: { id: 1, nombre: 'COMBUSTIBLE GASOLINA', esEgreso: true },
+      },
+    },
+  })
+  @ApiCreatedResponse({ type: DestinoGasto })
+  @ApiBadRequestResponse({ description: 'Los datos enviados no son válidos.' })
+  @ApiConflictResponse({ description: 'Ya existe un destino de gasto con ese nombre.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async createDestinoGasto(
+    @Body() body: CreateDestinoGastoDto | UpdateDestinoGastoDto,
+    @GetUser() user: Usuario,
+  ): Promise<DestinoGasto> {
+    if ('id' in body && body.id) {
+      return await this.destinoGastoService.update(body, user);
+    }
+    return await this.destinoGastoService.create(body, user);
+  }
+
+  @Patch('destino-gasto/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de un destino de gasto',
+    description: 'Activa o desactiva (baja lógica) un destino de gasto.',
+  })
+  @ApiParam({ name: 'id', example: '1' })
+  @ApiBody({
+    schema: { type: 'object', properties: { activo: { type: 'boolean', example: false } } },
+  })
+  @ApiOkResponse({ type: DestinoGasto })
+  @ApiNotFoundResponse({ description: 'No se encontró el destino de gasto.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  async changeStateDestinoGasto(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<DestinoGasto> {
+    return await this.destinoGastoService.cambiarEstado(id, activo, user);
+  }
+
   @Get('destino-gasto')
   @Auth()
   @ApiOperation({
-    summary: 'Obtener todos los destinos de gasto',
+    summary: 'Obtener los destinos de gasto',
     description:
-      'Catálogo de categorías de ingreso/egreso de la caja de flujo ("DESTINO DEL GASTO" del Excel), cada una marcada como ingreso o egreso (`esEgreso`). Sin CRUD por ahora: solo lectura de los valores activos.',
+      'Catálogo de categorías de ingreso/egreso de la caja de flujo ("DESTINO DEL GASTO" del Excel), cada una marcada como ingreso o egreso (`esEgreso`). Por defecto solo los activos; con `todos=true` incluye los inactivos (para la pantalla de administración).',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Lista de destinos de gasto obtenida exitosamente.',
-    type: [DestinoGasto],
+  @ApiQuery({ name: 'todos', required: false, type: Boolean })
+  @ApiResponse({ status: 200, type: [DestinoGasto] })
+  @ApiUnauthorizedResponse({ description: 'No autorizado. Token no proporcionado o inválido.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async findAllDestinoGasto(
+    @Query('todos') todos?: string,
+  ): Promise<DestinoGasto[]> {
+    return await this.destinoGastoService.findAll(todos === 'true');
+  }
+
+  //---------------------------------------------------------------------------
+  //                        Codificaciones de lote
+  //---------------------------------------------------------------------------
+
+  @Post('codificacion-lote')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar una codificación de lote',
+    description:
+      'Si no se envía el campo id se registra una nueva (su correlativo arranca en 0). Si se envía el id, se actualiza código y nombre; el correlativo no se modifica.',
   })
-  @ApiUnauthorizedResponse({
-    description: 'No autorizado. Token no proporcionado o inválido.',
+  @ApiBody({
+    description: 'Datos de la codificación de lote.',
+    examples: {
+      crear: { summary: 'Registrar', value: { codigo: 'MC', nombre: 'EXPORTACION' } },
+      actualizar: { summary: 'Actualizar', value: { id: 1, codigo: 'MC', nombre: 'EXPORTACION' } },
+    },
   })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
+  @ApiCreatedResponse({ type: CodificacionLote })
+  @ApiBadRequestResponse({ description: 'Los datos enviados no son válidos.' })
+  @ApiConflictResponse({ description: 'Ya existe una codificación de lote con ese código.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async createCodificacionLote(
+    @Body() body: CreateCodificacionLoteDto | UpdateCodificacionLoteDto,
+    @GetUser() user: Usuario,
+  ): Promise<CodificacionLote> {
+    if ('id' in body && body.id) {
+      return await this.codificacionLoteService.update(body, user);
+    }
+    return await this.codificacionLoteService.create(body, user);
+  }
+
+  @Patch('codificacion-lote/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de una codificación de lote',
+    description: 'Activa o desactiva (baja lógica). Una codificación inactiva no puede elegirse en nuevos promedios.',
   })
-  async findAllDestinoGasto(): Promise<DestinoGasto[]> {
-    return await this.parametricaService.findAllDestinoGasto();
+  @ApiParam({ name: 'id', example: '1' })
+  @ApiBody({
+    schema: { type: 'object', properties: { activo: { type: 'boolean', example: false } } },
+  })
+  @ApiOkResponse({ type: CodificacionLote })
+  @ApiNotFoundResponse({ description: 'No se encontró la codificación de lote.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  async changeStateCodificacionLote(
+    @Param('id') id: string,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<CodificacionLote> {
+    return await this.codificacionLoteService.cambiarEstado(id, activo, user);
+  }
+
+  @Get('codificacion-lote')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar codificaciones de lote (MC, TM, C, RV...)',
+    description:
+      'Por defecto solo las activas; con `todos=true` incluye las inactivas. Incluye el último correlativo usado de cada una.',
+  })
+  @ApiQuery({ name: 'todos', required: false, type: Boolean })
+  @ApiOkResponse({ type: CodificacionLote, isArray: true })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  async findAllCodificacionLote(
+    @Query('todos') todos?: string,
+  ): Promise<CodificacionLote[]> {
+    return await this.codificacionLoteService.findAll(todos === 'true');
   }
 
   //---------------------------------------------------------------------------
@@ -1156,8 +1487,8 @@ export class ParametricasController {
         summary: 'Registrar caja',
         value: {
           nombre: 'CAJA PRINCIPAL',
-          saldoInicialBob: 1587523,
-          fechaSaldoInicialBob: '2025-06-30',
+          saldoInicialBs: 1587523,
+          fechaSaldoInicialBs: '2025-06-30',
           saldoInicialUsd: 0,
         },
       },
@@ -1166,8 +1497,8 @@ export class ParametricasController {
         value: {
           id: 1,
           nombre: 'CAJA PRINCIPAL',
-          saldoInicialBob: 1587523,
-          fechaSaldoInicialBob: '2025-06-30',
+          saldoInicialBs: 1587523,
+          fechaSaldoInicialBs: '2025-06-30',
           saldoInicialUsd: 0,
         },
       },

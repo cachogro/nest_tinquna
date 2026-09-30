@@ -47,8 +47,8 @@ export class PersonaCiService {
 
   /**
    * Cuando la persona es personal de la empresa (idActorProductivoMinero =
-   * ID_ACTOR_EMPRESA) exige fecha de nacimiento, fecha de inicio laboral y
-   * dirección. `fechaFinLabores` queda opcional (se llena al desvincular).
+   * ID_ACTOR_EMPRESA) exige fecha de nacimiento, fecha de inicio laboral,
+   * dirección y salario mensual (base de su boleta de pago). `fechaFinLabores` queda opcional (se llena al desvincular).
    */
   private validarDatosLaborales(
     dto: CreatePersonaCiDto | UpdatePersonaCiDto,
@@ -66,6 +66,7 @@ export class PersonaCiService {
     if (!dto.fechaNacimiento) faltantes.push('fecha de nacimiento');
     if (!dto.fechaInicioLaboral) faltantes.push('fecha de inicio laboral');
     if (!dto.direccion) faltantes.push('dirección');
+    if (!dto.salarioMensual) faltantes.push('salario mensual');
 
     if (faltantes.length > 0) {
       throw new BadRequestException(
@@ -308,6 +309,18 @@ export class PersonaCiService {
       },
     });
     return allpersonaCi;
+  }
+
+  /**
+   * Solo personas con `autorizado = true` y activas. `autorizado` se
+   * administra manualmente en la base de datos (no hay endpoint para
+   * setearlo), así que este listado es de solo lectura.
+   */
+  async findAllAutorizadas(): Promise<PersonaCi[]> {
+    return await this.personaCiRepository.find({
+      where: { autorizado: true, activo: true },
+      order: { id: 'ASC' },
+    });
   }
 
   /**

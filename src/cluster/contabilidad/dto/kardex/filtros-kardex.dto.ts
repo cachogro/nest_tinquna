@@ -4,10 +4,12 @@ import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { PaginacionQueryDto } from 'src/common/dto/paginacion-query.dto';
 
 export class FiltrosKardexDto extends PaginacionQueryDto {
-  @ApiPropertyOptional({ enum: ['ACTOR', 'PERSONAL'] })
+  @ApiPropertyOptional({ enum: ['ACTOR', 'ASOCIADO', 'PERSONAL', 'CLIENTE'] })
   @IsOptional()
-  @IsIn(['ACTOR', 'PERSONAL'], { message: 'El tipo debe ser ACTOR o PERSONAL.' })
-  tipo?: 'ACTOR' | 'PERSONAL';
+  @IsIn(['ACTOR', 'ASOCIADO', 'PERSONAL', 'CLIENTE'], {
+    message: 'El tipo debe ser ACTOR, ASOCIADO, PERSONAL o CLIENTE.',
+  })
+  tipo?: 'ACTOR' | 'ASOCIADO' | 'PERSONAL' | 'CLIENTE';
 
   @ApiPropertyOptional({ enum: ['ABIERTO', 'CERRADO'] })
   @IsOptional()
@@ -39,6 +41,14 @@ export class FiltrosKardexDto extends PaginacionQueryDto {
   @IsOptional()
   @IsString()
   idPersona?: string;
+
+  @ApiPropertyOptional({
+    example: '3',
+    description: 'Acota el listado al kardex (todos los N°) de un cliente puntual.',
+  })
+  @IsOptional()
+  @IsString()
+  idCliente?: string;
 
   // `busqueda` se hereda de PaginacionQueryDto: busca por nombre del actor,
   // nombre/apellidos de la persona o descripción del kardex.

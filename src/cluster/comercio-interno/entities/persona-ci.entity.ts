@@ -93,7 +93,7 @@ export class PersonaCi extends Auditoria {
   @ManyToOne(() => ActorProductivoMinero, {
     nullable: true,
     // eager: true,
-    // onDelete: 'SET NULL', // Opcional, según el comportamiento deseado
+    onDelete: 'SET NULL',
   })
   @JoinColumn({
     name: 'id_actor_productivo_minero',
@@ -131,6 +131,29 @@ export class PersonaCi extends Auditoria {
     nullable: true,
   })
   direccion?: string;
+
+  // Salario vigente (Bs.). Cada boleta de pago guarda su propia copia.
+  @Column({
+    name: 'salario_mensual',
+    type: 'numeric',
+    precision: 16,
+    scale: 2,
+    nullable: true,
+  })
+  salarioMensual?: number | null;
+
+  /**
+   * Bandera de autorización manual (se administra directo en la base de
+   * datos, nunca vía API: no aparece en ningún DTO de create/update). Sirve
+   * de base para otras autorizaciones futuras. Solo lectura acá.
+   */
+  @Column({
+    name: 'autorizado',
+    type: 'boolean',
+    nullable: false,
+    default: false,
+  })
+  autorizado: boolean;
 
   // Relaciones existentes
   @OneToMany(() => PersonaPersonaTipo, (personaTipo) => personaTipo.persona, {

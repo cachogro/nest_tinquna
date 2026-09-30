@@ -17,13 +17,15 @@ import {
  */
 export class AbrirKardexDto {
   @ApiProperty({
-    enum: ['ACTOR', 'PERSONAL'],
+    enum: ['ACTOR', 'ASOCIADO', 'PERSONAL', 'CLIENTE'],
     example: 'ACTOR',
     description:
-      'ACTOR: kardex del actor productivo (cubre a todas sus personas). PERSONAL: kardex individual de una persona.',
+      'ACTOR: kardex del actor productivo/proveedor (cubre a todas sus personas). ASOCIADO: kardex individual de una persona relacionada a otro actor (no la empresa) o suelta. PERSONAL: kardex individual, exclusivo del personal interno de la empresa (persona con idActorProductivoMinero=1). CLIENTE: kardex del comprador (cuenta por cobrar de ventas).',
   })
-  @IsIn(['ACTOR', 'PERSONAL'], { message: 'El tipo debe ser ACTOR o PERSONAL.' })
-  tipo: 'ACTOR' | 'PERSONAL';
+  @IsIn(['ACTOR', 'ASOCIADO', 'PERSONAL', 'CLIENTE'], {
+    message: 'El tipo debe ser ACTOR, ASOCIADO, PERSONAL o CLIENTE.',
+  })
+  tipo: 'ACTOR' | 'ASOCIADO' | 'PERSONAL' | 'CLIENTE';
 
   @ApiPropertyOptional({
     example: '5',
@@ -35,11 +37,20 @@ export class AbrirKardexDto {
 
   @ApiPropertyOptional({
     example: '15',
-    description: 'Id de la persona (persona_ci). Obligatorio si tipo = PERSONAL.',
+    description:
+      'Id de la persona (persona_ci). Obligatorio si tipo = PERSONAL o ASOCIADO. Debe tener idActorProductivoMinero=1 para PERSONAL, y distinto de 1 (o vacío) para ASOCIADO.',
   })
   @IsOptional()
   @IsString({ message: 'El id de la persona debe ser una cadena de texto.' })
   idPersona?: string;
+
+  @ApiPropertyOptional({
+    example: '3',
+    description: 'Id del cliente (parametrica.cliente). Obligatorio si tipo = CLIENTE.',
+  })
+  @IsOptional()
+  @IsString({ message: 'El id del cliente debe ser una cadena de texto.' })
+  idCliente?: string;
 
   @ApiPropertyOptional({
     example: 'ANTICIPOS A CTA SACOS DE MINERAL',

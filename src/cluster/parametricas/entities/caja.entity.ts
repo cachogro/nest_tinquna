@@ -23,20 +23,20 @@ export class Caja extends Auditoria {
   nombre: string;
 
   @Column({
-    name: 'saldo_inicial_bob',
+    name: 'saldo_inicial_bs',
     type: 'numeric',
     precision: 16,
     scale: 2,
     default: 0,
   })
-  saldoInicialBob: number;
+  saldoInicialBs: number;
 
   @Column({
-    name: 'fecha_saldo_inicial_bob',
+    name: 'fecha_saldo_inicial_bs',
     type: 'date',
     nullable: true,
   })
-  fechaSaldoInicialBob?: string;
+  fechaSaldoInicialBs?: string;
 
   @Column({
     name: 'saldo_inicial_usd',

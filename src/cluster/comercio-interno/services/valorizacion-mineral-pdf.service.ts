@@ -37,8 +37,9 @@ export class ValorizacionMineralPdfService {
   ): Promise<Buffer> {
     const anchoPagina = 612; // LETTER (8.5in)
 
-    const codigoCodificacion =
-      valorizacion.recepcionMineral?.codificacion?.codigo;
+    // El formato lo define la codificación con la que se valorizó (puede
+    // diferir de la de la recepción, ej. recepción ICC valorizada como BCL).
+    const codigoCodificacion = valorizacion.codificacionEfectiva()?.codigo;
 
     const esBCLoBZL =
       CODIFICACIONES_LIQUIDACION_PROVISIONAL.includes(codigoCodificacion);

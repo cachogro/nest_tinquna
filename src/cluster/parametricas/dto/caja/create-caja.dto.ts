@@ -31,7 +31,7 @@ export class CreateCajaDto {
     { message: 'El saldo inicial en Bs. debe ser numérico con hasta 2 decimales.' },
   )
   @Min(0, { message: 'El saldo inicial en Bs. no puede ser negativo.' })
-  saldoInicialBob?: number;
+  saldoInicialBs?: number;
 
   @ApiPropertyOptional({
     example: '2025-06-30',
@@ -39,7 +39,7 @@ export class CreateCajaDto {
   })
   @IsOptional()
   @IsDateString({}, { message: 'La fecha debe tener el formato YYYY-MM-DD.' })
-  fechaSaldoInicialBob?: string;
+  fechaSaldoInicialBs?: string;
 
   @ApiPropertyOptional({
     example: 0,

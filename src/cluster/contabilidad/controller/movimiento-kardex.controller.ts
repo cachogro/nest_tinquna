@@ -20,7 +20,6 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
-  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -46,7 +45,7 @@ export class MovimientoKardexController {
   @ApiOperation({
     summary: 'Registrar o actualizar una línea del kardex',
     description:
-      'Sin `id` registra un movimiento; con `id` lo actualiza. El kardex debe estar ABIERTO. DEBE = anticipo entregado (sube la deuda); HABER = pago/descuento (la baja). El `saldo` corriente y el `numeroLinea` (reinicia en 1 por kardex) los asigna el servicio, que también recalcula `kardex.saldoActual`. Al REGISTRAR (sin `id`), la línea también se refleja automáticamente en la caja de flujo (Caja id=1, "CAJA PRINCIPAL"): DEBE -> EGRESO (plata que sale como anticipo), HABER -> INGRESO (valor recuperado al saldar la deuda); el beneficiario que queda guardado en ese movimiento de caja es el titular del kardex (la persona o el actor productivo minero), y requiere que la Caja id=1 ya esté aperturada en BOB. Si `idFormaPago` es un medio bancario (QR, Transferencia, Cheque, Depósito), se puede indicar `idCuentaBancaria`: en ese caso, además del movimiento de caja, también postea en la libreta de bancos de esa cuenta (misma dirección: DEBE=sale, HABER=entra), y requiere que esa cuenta ya esté aperturada. `nroComprobante` pasa a ser el N° de comprobante real de la transacción bancaria; `facturaRecibo` es el documento que respalda la línea (ej. "REC:C-273", "DET. ADJ."). Al ACTUALIZAR (con `id`) no se sincronizan los movimientos de caja/banco ya generados: si hace falta corregir el monto o el tipo, se ajustan también a mano en `/contabilidad/movimiento-caja` y en la libreta de bancos.',
+      'Sin `id` registra un movimiento; con `id` lo actualiza. El kardex debe estar ABIERTO. DEBE = anticipo entregado (sube la deuda); HABER = pago/descuento (la baja). El `saldo` corriente y el `numeroLinea` (reinicia en 1 por kardex) los asigna el servicio, que también recalcula `kardex.saldoActual`. Al REGISTRAR (sin `id`), la línea afecta un solo registro según el medio de pago, nunca ambos: sin `idCuentaBancaria` (efectivo) se refleja en la caja de flujo (Caja id=1, "CAJA PRINCIPAL"): DEBE -> EGRESO (plata que sale como anticipo), HABER -> INGRESO (valor recuperado al saldar la deuda); requiere que la Caja id=1 ya esté aperturada en BS. Con `idCuentaBancaria` (medio bancario: QR, Transferencia, Cheque, Depósito, y requiere indicar también `idFormaPago`) postea en la libreta de bancos de esa cuenta (misma dirección: DEBE=sale, HABER=entra) y NO afecta la caja de flujo; requiere que esa cuenta ya esté aperturada. En ambos casos el beneficiario que queda guardado es el titular del kardex (la persona o el actor productivo minero). `nroComprobante` pasa a ser el N° de comprobante real de la transacción bancaria; `facturaRecibo` es el documento que respalda la línea (ej. "REC:C-273", "DET. ADJ."). Al ACTUALIZAR (con `id`) no se sincroniza el movimiento de caja/banco ya generado: si hace falta corregir el monto o el tipo, se ajusta también a mano en `/contabilidad/movimiento-caja` o en la libreta de bancos, según cuál se haya generado.',
   })
   @ApiBody({
     type: CreateMovimientoKardexDto,
@@ -93,12 +92,12 @@ export class MovimientoKardexController {
   })
   @ApiCreatedResponse({
     description:
-      'Movimiento registrado o actualizado correctamente. Al registrar, incluye el movimiento de caja de flujo que generó (`movimientosCaja`).',
+      'Movimiento registrado o actualizado correctamente. Al registrar sin `idCuentaBancaria`, incluye el movimiento de caja de flujo que generó (`movimientosCaja`).',
     type: MovimientoKardex,
   })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos, el kardex está cerrado, la Caja id=1 todavía no fue aperturada en BOB, o (si se indicó idCuentaBancaria) esa cuenta todavía no fue aperturada.',
+      'Datos inválidos, el kardex está cerrado, la Caja id=1 todavía no fue aperturada en BS, o (si se indicó idCuentaBancaria) esa cuenta todavía no fue aperturada.',
   })
   @ApiNotFoundResponse({
     description:
@@ -146,15 +145,15 @@ export class MovimientoKardexController {
   @Get('movimiento-kardex')
   @Auth()
   @ApiOperation({
-    summary: 'Listar las líneas de un kardex',
-    description: 'Devuelve el kardex y todas sus líneas activas, en orden. Sin paginación.',
+    summary: 'Listar las líneas de un kardex (paginado)',
+    description:
+      'Devuelve la cabecera del kardex (persona, actor o cliente) y sus líneas paginadas (`page`, `limit`), la última registrada primero. Solo paginación, sin filtros. Respuesta: `{ kardex, data, total, page, limit, totalPages }`.',
   })
-  @ApiQuery({ name: 'idKardex', required: true, type: String, example: '1' })
-  @ApiOkResponse({ description: 'Kardex y sus movimientos.' })
+  @ApiOkResponse({ description: 'Kardex y sus movimientos paginados.' })
   @ApiNotFoundResponse({ description: 'No se encontró el kardex.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async listar(@Query() filtro: FiltroMovimientoKardexDto) {
-    return await this.movimientoKardexService.listar(filtro.idKardex);
+    return await this.movimientoKardexService.listarPaginado(filtro);
   }
 }

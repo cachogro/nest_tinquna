@@ -113,13 +113,25 @@ export function numeroALetras(valor: number): string {
  * "Trescientos mil bolivianos con 00/100".
  */
 export function montoEnLetrasBolivianos(monto: number): string {
+  return montoEnLetras(monto, 'BS');
+}
+
+/**
+ * Monto en letras en bolivianos o en dólares:
+ * "Mil dólares americanos con 00/100".
+ */
+export function montoEnLetras(monto: number, moneda: 'BS' | 'USD'): string {
+  monto = Number(monto);
   const entero = Math.floor(Math.abs(monto));
   const centavos = Math.round((Math.abs(monto) - entero) * 100);
 
   const letras = numeroALetras(entero);
-  const moneda = entero === 1 ? 'boliviano' : 'bolivianos';
+  const nombreMoneda =
+    moneda === 'USD'
+      ? entero === 1 ? 'dólar americano' : 'dólares americanos'
+      : entero === 1 ? 'boliviano' : 'bolivianos';
   const centavosTxt = String(centavos).padStart(2, '0');
 
-  const texto = `${letras} ${moneda} con ${centavosTxt}/100`;
+  const texto = `${letras} ${nombreMoneda} con ${centavosTxt}/100`;
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }

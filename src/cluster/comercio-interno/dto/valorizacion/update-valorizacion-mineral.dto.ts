@@ -42,6 +42,20 @@ export class UpdateValorizacionMineralDto {
 
   @ApiPropertyOptional({
     description:
+      'Id de la codificación con la que se valoriza cuando difiere de la de la ' +
+      'recepción (ej. recepción ICC que conviene valorizar como BCL). No cambia ' +
+      'el código de operación ni el correlativo; solo define el formato de ' +
+      'valorización y en qué lista de promedios aparece. Enviar null (o el id ' +
+      'de la codificación de la recepción) para volver a la original.',
+    example: '3',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  idCodificacionValorizacion?: string | null;
+
+  @ApiPropertyOptional({
+    description:
       'Id del nuevo estado de la valorización (parametrica.estado_valorizacion). ' +
       '1 = BORRADOR, 2 = PRE-VALORIZADO, 3 = VALORIZADO.',
     example: 2,

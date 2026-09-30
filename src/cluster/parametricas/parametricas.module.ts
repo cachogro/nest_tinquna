@@ -39,8 +39,14 @@ import { EntidadFinancieraService } from './services/entidad-financiera.service'
 import { FormaPago } from './entities/forma-pago.entity';
 import { KardexSubcuenta } from './entities/kardex-subcuenta.entity';
 import { DestinoGasto } from './entities/destino-gasto.entity';
+import { CodificacionLote } from './entities/codificacion-lote.entity';
+import { DestinoGastoService } from './services/destino-gasto.service';
+import { CodificacionLoteService } from './services/codificacion-lote.service';
+import { LugarAcopio } from './entities/lugar-acopio.entity';
 import { Caja } from './entities/caja.entity';
 import { CajaService } from './services/caja.service';
+import { Cliente } from './entities/cliente.entity';
+import { ClienteService } from './services/cliente.service';
 
 @Module({
   controllers: [ParametricasController],
@@ -58,6 +64,9 @@ import { CajaService } from './services/caja.service';
     PersonaTipoService,
     EntidadFinancieraService,
     CajaService,
+    ClienteService,
+    DestinoGastoService,
+    CodificacionLoteService,
   ],
   imports: [
     ConfigModule,
@@ -85,7 +94,10 @@ import { CajaService } from './services/caja.service';
         FormaPago,
         KardexSubcuenta,
         DestinoGasto,
+        CodificacionLote,
+        LugarAcopio,
         Caja,
+        Cliente,
       ],
       'ci',
     ),

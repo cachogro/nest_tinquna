@@ -1,10 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
   IsDateString,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   MaxLength,
   MinLength,
@@ -16,7 +19,7 @@ export class CreatePersonaCiDto {
     example: 'JUAN',
   })
   @IsString()
-  @IsOptional({ message: 'El nombre es obligatorio.' })
+  @IsNotEmpty({ message: 'El nombre es obligatorio.' })
   @MinLength(2, {
     message: 'El nombre debe tener al menos 2 caracteres.',
   })
@@ -146,4 +149,18 @@ export class CreatePersonaCiDto {
   @IsString()
   @MaxLength(255)
   direccion?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Salario mensual en Bs. Obligatorio para personal de la empresa: es la base de su boleta de pago.',
+    example: 3500,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: 'El salario mensual debe ser numérico con hasta 2 decimales.' },
+  )
+  @IsPositive({ message: 'El salario mensual debe ser mayor a 0.' })
+  salarioMensual?: number;
 }

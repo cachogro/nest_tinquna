@@ -10,10 +10,16 @@ import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
+import { RecepcionMineral } from 'src/cluster/comercio-interno/entities/recepcion-mineral/recepcion-mineral.entity';
+import { ValorizacionMineral } from 'src/cluster/comercio-interno/entities/valorizacion/valorizacion-mineral.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
+import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
 import { MovimientoCaja } from './movimiento-caja.entity';
 import { LibretaBanco } from './libreta-banco.entity';
 import { ReciboDetalle } from './recibo-detalle.entity';
+import { MonedaCaja } from './periodo-caja.entity';
+import { PersonaAutorizo } from '../persona-autorizo.util';
+import { VentaLote } from './venta-lote.entity';
 
 export type TipoRecibo = 'INGRESO' | 'EGRESO';
 export type SerieRecibo = 'R' | 'C';
@@ -71,11 +77,30 @@ export class Recibo extends Auditoria {
   })
   numero: number;
 
+  // Fecha contable del recibo (puede no ser "hoy": el usuario la elige para
+  // cuadrar el kardex/caja/libreta_banco, que solo usan esta fecha, sin hora).
   @Column({
     name: 'fecha',
     type: 'date',
   })
   fecha: string;
+
+  // Fecha y hora reales en que se generó el recibo (a diferencia de `fecha`,
+  // esta la pone el servidor siempre, no se puede elegir).
+  @Column({
+    name: 'fecha_hora_generacion',
+    type: 'timestamptz',
+  })
+  fechaHoraGeneracion: Date;
+
+  // Fecha y hora de la PRIMERA vez que se pidió el PDF de este recibo. NULL
+  // hasta la primera impresión; no se actualiza en impresiones posteriores.
+  @Column({
+    name: 'fecha_primera_impresion',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  fechaPrimeraImpresion?: Date | null;
 
   @Column({
     name: 'monto_total',
@@ -84,6 +109,28 @@ export class Recibo extends Auditoria {
     scale: 2,
   })
   montoTotal: number;
+
+  // Moneda del recibo: `montoTotal` y los montos de `detalles` están en
+  // esta moneda. En USD, las líneas de kardex se postean convertidas a Bs.
+  // con `tipoCambio` (el kardex lleva su saldo en Bs.), y la caja / cuenta
+  // bancaria reciben el monto en USD.
+  @Column({
+    name: 'moneda',
+    type: 'varchar',
+    length: 3,
+    default: 'BS',
+  })
+  moneda: MonedaCaja;
+
+  // Bs. por 1 USD. Obligatorio si moneda = USD; null en BS.
+  @Column({
+    name: 'tipo_cambio',
+    type: 'numeric',
+    precision: 12,
+    scale: 4,
+    nullable: true,
+  })
+  tipoCambio?: number | null;
 
   @Column({
     name: 'concepto',
@@ -141,11 +188,11 @@ export class Recibo extends Auditoria {
   nroComprobante?: string | null;
 
   // Contraparte física del recibo ("Recibí de" / "Entregué a"): UNA de
-  // estas tres — persona registrada (idPersona), actor productivo minero
-  // (idActorProductivoMinero), o texto libre (nombresApellidos, cuando el
-  // recibo se entrega a dos personas o a alguien no registrado). El destino
-  // real de cada porción (a quién se le salda la deuda) vive en
-  // ReciboDetalle, no acá.
+  // estas cuatro — persona registrada (idPersona), actor productivo minero
+  // (idActorProductivoMinero), cliente/comprador (idCliente), o texto libre
+  // (nombresApellidos, cuando el recibo se entrega a dos personas o a
+  // alguien no registrado). El destino real de cada porción (a quién se le
+  // salda la deuda) vive en ReciboDetalle, no acá.
   @Column({
     name: 'id_persona',
     type: 'bigint',
@@ -181,12 +228,101 @@ export class Recibo extends Auditoria {
   actorProductivoMinero?: ActorProductivoMinero;
 
   @Column({
+    name: 'id_cliente',
+    type: 'bigint',
+    nullable: true,
+  })
+  idCliente?: string | null;
+
+  @ManyToOne(() => Cliente, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_cliente',
+    referencedColumnName: 'id',
+  })
+  cliente?: Cliente;
+
+  @Column({
     name: 'nombres_apellidos',
     type: 'varchar',
     length: 255,
     nullable: true,
   })
   nombresApellidos?: string | null;
+
+  // Persona interna que AUTORIZÓ generar este recibo (distinto de la
+  // contraparte `persona` de arriba). Solo puede ser una persona con
+  // persona_ci.autorizado = true y activo = true (se valida en el
+  // servicio al generar). Se guarda como snapshot jsonb (id + nombres al
+  // momento de generar), sin FK: el recibo conserva quién autorizó aunque
+  // la persona cambie después.
+  @Column({
+    name: 'persona_autorizo',
+    type: 'jsonb',
+    nullable: true,
+  })
+  personaAutorizo?: PersonaAutorizo | null;
+
+  // Recepción de mineral de la que proviene este recibo (anticipo entregado
+  // al registrarla). NULL en los recibos que no nacen de una recepción. Solo
+  // puede haber un recibo vigente (no ANULADO) por recepción.
+  @Column({
+    name: 'id_recepcion_mineral',
+    type: 'bigint',
+    nullable: true,
+  })
+  idRecepcionMineral?: string | null;
+
+  @ManyToOne(() => RecepcionMineral, (recepcion) => recepcion.recibos, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_recepcion_mineral',
+    referencedColumnName: 'id',
+  })
+  recepcionMineral?: RecepcionMineral;
+
+  // Valorización cuyo saldo (Líquido Pagable) se paga con este recibo. NULL en
+  // los recibos que no nacen de una valorización. Solo puede haber un recibo
+  // vigente (no ANULADO) por valorización.
+  @Column({
+    name: 'id_valorizacion_mineral',
+    type: 'bigint',
+    nullable: true,
+  })
+  idValorizacionMineral?: string | null;
+
+  @ManyToOne(() => ValorizacionMineral, (valorizacion) => valorizacion.recibos, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_valorizacion_mineral',
+    referencedColumnName: 'id',
+  })
+  valorizacionMineral?: ValorizacionMineral;
+
+  // Venta de lote que cobra este recibo (anticipo o pago del comprador).
+  // Puede haber varios recibos por venta.
+  @Column({
+    name: 'id_venta_lote',
+    type: 'bigint',
+    nullable: true,
+  })
+  idVentaLote?: string | null;
+
+  @ManyToOne(() => VentaLote, (venta) => venta.recibos, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_venta_lote',
+    referencedColumnName: 'id',
+  })
+  ventaLote?: VentaLote;
 
   @Column({
     name: 'estado',

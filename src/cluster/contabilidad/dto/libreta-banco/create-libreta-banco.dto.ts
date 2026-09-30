@@ -16,6 +16,12 @@ import {
  * Cuerpo único del `POST /contabilidad/libreta-banco`:
  * sin `id` registra un movimiento, con `id` lo actualiza.
  * El `saldo` no se envía: lo calcula el servicio.
+ *
+ * Contraparte (solo una): `idPersona`, `idActorProductivoMinero` o
+ * `idCliente` => además del banco, postea una línea en el kardex ABIERTO de
+ * esa contraparte (DEBE banco = DEBE kardex, anticipo; HABER banco = HABER
+ * kardex, pago). Sin ninguna => solo se registra en la libreta con el texto
+ * de `nombresApellidos`.
  */
 export class CreateLibretaBancoDto {
   @ApiPropertyOptional({
@@ -47,6 +53,16 @@ export class CreateLibretaBancoDto {
   @MaxLength(30, { message: 'El N° de transacción no puede exceder los 30 caracteres.' })
   nroTransaccion?: string;
 
+  @ApiProperty({
+    example: 'TRANSFERENCIA',
+    description:
+      'Tipo de transacción bancaria (QR, TRANSFERENCIA, CHEQUE, DEPOSITO, EFECTIVO...). Texto libre: el front manda el nombre ya elegido de su lista, no se relaciona con ningún catálogo.',
+  })
+  @IsNotEmpty({ message: 'El tipo de transacción es obligatorio.' })
+  @IsString({ message: 'El tipo de transacción debe ser una cadena de texto.' })
+  @MaxLength(30, { message: 'El tipo de transacción no puede exceder los 30 caracteres.' })
+  tipoTransaccion: string;
+
   @ApiPropertyOptional({
     example: 'RENE MISQUE - ANDIA ROMAN PERALTA',
     description:
@@ -65,6 +81,34 @@ export class CreateLibretaBancoDto {
   @IsOptional()
   @IsString({ message: 'El id de la persona debe ser una cadena de texto.' })
   idPersona?: string;
+
+  @ApiPropertyOptional({
+    example: '3',
+    description:
+      'Id del actor productivo minero cuando la contraparte es un actor. Excluyente con idPersona e idCliente.',
+  })
+  @IsOptional()
+  @IsString({ message: 'El id del actor productivo minero debe ser una cadena de texto.' })
+  idActorProductivoMinero?: string;
+
+  @ApiPropertyOptional({
+    example: '2',
+    description:
+      'Id del cliente/comprador cuando la contraparte es un cliente. Excluyente con idPersona e idActorProductivoMinero.',
+  })
+  @IsOptional()
+  @IsString({ message: 'El id del cliente debe ser una cadena de texto.' })
+  idCliente?: string;
+
+  @ApiPropertyOptional({
+    example: 2,
+    description: 'Id del destino del gasto o categoría del ingreso (parametrica.destino_gasto).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'El destino del gasto no es válido.' })
+  @IsPositive({ message: 'El destino del gasto no es válido.' })
+  idDestinoGasto?: number;
 
   @ApiProperty({
     example: 'ANTICIPO A CTA SACO MINERAL',
@@ -93,4 +137,27 @@ export class CreateLibretaBancoDto {
   )
   @IsPositive({ message: 'El monto debe ser mayor a 0.' })
   monto: number;
+
+  @ApiPropertyOptional({
+    example: 'F-1234',
+    description: 'N° de factura o recibo que respalda el movimiento (se copia a la línea del kardex, si la hay).',
+  })
+  @IsOptional()
+  @IsString({ message: 'La factura/recibo debe ser una cadena de texto.' })
+  @MaxLength(30, { message: 'La factura/recibo no puede exceder los 30 caracteres.' })
+  facturaRecibo?: string;
+
+  @ApiPropertyOptional({
+    example: 6.96,
+    description:
+      'Tipo de cambio (Bs. por 1 USD). Obligatorio solo si la cuenta es en USD y hay persona/actor/cliente: el kardex lleva su saldo en Bs. y se convierte con este valor.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 4 },
+    { message: 'El tipo de cambio debe ser numérico con hasta 4 decimales.' },
+  )
+  @IsPositive({ message: 'El tipo de cambio debe ser mayor a 0.' })
+  tipoCambio?: number;
 }

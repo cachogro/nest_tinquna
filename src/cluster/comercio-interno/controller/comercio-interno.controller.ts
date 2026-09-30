@@ -256,6 +256,30 @@ export class ComercioInternoController {
     return await this.personaCiService.findAllPersonaCi();
   }
 
+  @Get('persona_ci/autorizadas')
+  @Auth()
+  @ApiOperation({
+    summary: 'Obtener las personas autorizadas y activas',
+    description:
+      'Retorna solo las personas con la bandera `autorizado = true` y `activo = true`. ' +
+      '`autorizado` se administra manualmente en la base de datos (no existe endpoint para registrarlo/actualizarlo); ' +
+      'este listado es de solo lectura.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de personas autorizadas obtenida exitosamente.',
+    type: [PersonaCi],
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllPersonaCiAutorizadas(): Promise<PersonaCi[]> {
+    return await this.personaCiService.findAllAutorizadas();
+  }
+
   ////---------------------------registro mineral----------------------------------
   @Post('recepcion_mineral')
   @Auth()

@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 const PDFDocument = require('pdfkit-table');
 import { join } from 'path';
 import * as fs from 'fs';
 import { Recibo } from '../entities/recibo.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
-import { montoEnLetrasBolivianos } from 'src/common/utils/numero-a-letras.util';
+import { montoEnLetras } from 'src/common/utils/numero-a-letras.util';
+import { aBolivianos } from '../moneda.util';
 
 const LOGO_PATH = join(process.cwd(), 'uploads', 'logo.png');
 
@@ -31,12 +34,43 @@ const ETIQUETAS_COPIA: Array<'Original' | 'Copia 1' | 'Copia 2'> = [
 
 @Injectable()
 export class ReciboPdfService {
+  constructor(
+    @InjectRepository(Recibo, 'ci')
+    private readonly reciboRepository: Repository<Recibo>,
+  ) {}
+
+  /**
+   * Marca la PRIMERA vez que se generó el PDF de este recibo (por
+   * `generar()` o `generarProcesado()`, lo que se pida primero). Update
+   * atómico y condicional (`WHERE fecha_primera_impresion IS NULL`):
+   * impresiones posteriores no la pisan, y dos pedidos simultáneos no se
+   * pisan entre sí.
+   */
+  private async registrarPrimeraImpresionSiCorresponde(
+    id: string,
+  ): Promise<void> {
+    await this.reciboRepository
+      .createQueryBuilder()
+      .update(Recibo)
+      .set({ fechaPrimeraImpresion: () => 'NOW()' })
+      .where('id = :id', { id })
+      .andWhere('fecha_primera_impresion IS NULL')
+      .execute();
+  }
+
   /**
    * Hoja carta con 3 copias del recibo apiladas (Original, Copia 1, Copia 2),
    * separadas por una línea punteada, replicando el talonario físico.
    */
   async generar(recibo: Recibo, usuarioActual: Usuario): Promise<Buffer> {
-    return this.generarPdf(recibo, usuarioActual, recibo.concepto, false);
+    const pdf = await this.generarPdf(
+      recibo,
+      usuarioActual,
+      recibo.concepto,
+      false,
+    );
+    await this.registrarPrimeraImpresionSiCorresponde(recibo.id);
+    return pdf;
   }
 
   /**
@@ -47,13 +81,18 @@ export class ReciboPdfService {
    * kardex personal, Bs 200,00 a kardex de actor y Bs 100,00 en efectivo").
    * Si no tiene detalles (BORRADOR/ANULADO), es idéntico a `generar()`.
    */
-  async generarProcesado(recibo: Recibo, usuarioActual: Usuario): Promise<Buffer> {
-    return this.generarPdf(
+  async generarProcesado(
+    recibo: Recibo,
+    usuarioActual: Usuario,
+  ): Promise<Buffer> {
+    const pdf = await this.generarPdf(
       recibo,
       usuarioActual,
       this.textoConDesglose(recibo),
       true,
     );
+    await this.registrarPrimeraImpresionSiCorresponde(recibo.id);
+    return pdf;
   }
 
   private async generarPdf(
@@ -143,7 +182,15 @@ export class ReciboPdfService {
 
     const filaAlto = cajaAlto / 3;
     const numeroRecibo = `${recibo.serie}-${String(recibo.numero).padStart(4, '0')}`;
-    this.filaEtiquetaValor(doc, cajaX, y, cajaAncho, filaAlto, 'Recibo N.º', numeroRecibo);
+    this.filaEtiquetaValor(
+      doc,
+      cajaX,
+      y,
+      cajaAncho,
+      filaAlto,
+      'Recibo N.º',
+      numeroRecibo,
+    );
     this.filaEtiquetaValor(
       doc,
       cajaX,
@@ -151,9 +198,20 @@ export class ReciboPdfService {
       cajaAncho,
       filaAlto,
       'Bs.º',
-      this.formatearMonto(recibo.montoTotal),
+      // En USD: el equivalente en Bs. con el tipo de cambio del recibo.
+      this.formatearMonto(
+        aBolivianos(recibo.montoTotal, recibo.moneda, recibo.tipoCambio ?? null),
+      ),
     );
-    this.filaEtiquetaValor(doc, cajaX, y + filaAlto * 2, cajaAncho, filaAlto, '$us.º', '0');
+    this.filaEtiquetaValor(
+      doc,
+      cajaX,
+      y + filaAlto * 2,
+      cajaAncho,
+      filaAlto,
+      '$us.º',
+      recibo.moneda === 'USD' ? this.formatearMonto(recibo.montoTotal) : '0',
+    );
 
     // --- Título (pastilla) centrado entre el logo y la caja de info ---
     const tituloX = xi + logoAncho + 8;
@@ -178,8 +236,17 @@ export class ReciboPdfService {
     y += cajaAlto + 8;
 
     // --- Recibí de ---
-    doc.font('Helvetica-Bold').fontSize(8).text('Recibí de', xi, y, { width: 70 });
-    this.lineaPuntosConTexto(doc, xi + 70, y, anchoInterno - 70, recibidoPor.nombre);
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .text('Recibí de', xi, y, { width: 70 });
+    this.lineaPuntosConTexto(
+      doc,
+      xi + 70,
+      y,
+      anchoInterno - 70,
+      recibidoPor.nombre,
+    );
 
     y += 16;
 
@@ -189,7 +256,7 @@ export class ReciboPdfService {
       xi,
       y,
       anchoInterno,
-      montoEnLetrasBolivianos(recibo.montoTotal),
+      montoEnLetras(recibo.montoTotal, recibo.moneda),
       true,
     );
 
@@ -197,22 +264,34 @@ export class ReciboPdfService {
 
     // --- Por concepto (INGRESO) / Por concepto de (EGRESO) ---
     const etiquetaConcepto = esEgreso ? 'Por concepto de' : 'Por concepto';
-    doc.font('Helvetica-Bold').fontSize(8).text(etiquetaConcepto, xi, y, { width: 85 });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .text(etiquetaConcepto, xi, y, { width: 85 });
     const anchoValorConcepto = anchoInterno - 85;
 
     if (conDesglose) {
       // Recibo PROCESADO: el texto puede ocupar varias líneas (desglose de
       // detalles), así que se imprime sin la línea punteada de "llenar a
       // mano" y se calcula su altura real para correr el resto del layout.
-      doc.font('Helvetica').fontSize(8).text(textoConcepto, xi + 85, y, {
-        width: anchoValorConcepto,
-      });
+      doc
+        .font('Helvetica')
+        .fontSize(8)
+        .text(textoConcepto, xi + 85, y, {
+          width: anchoValorConcepto,
+        });
       const alturaConcepto = doc.heightOfString(textoConcepto, {
         width: anchoValorConcepto,
       });
       y += Math.max(18, alturaConcepto + 6);
     } else {
-      this.lineaPuntosConTexto(doc, xi + 85, y, anchoValorConcepto, textoConcepto);
+      this.lineaPuntosConTexto(
+        doc,
+        xi + 85,
+        y,
+        anchoValorConcepto,
+        textoConcepto,
+      );
       y += 18;
     }
 
@@ -224,21 +303,46 @@ export class ReciboPdfService {
 
     const anchoCasillero = anchoInterno / 3;
     this.casillero(doc, xi, y, anchoCasillero, 'Efectivo.º', esEfectivo);
-    this.casillero(doc, xi + anchoCasillero, y, anchoCasillero, 'Cheque.º', esCheque);
-    this.casillero(doc, xi + anchoCasillero * 2, y, anchoCasillero, 'Banco.º', esBanco);
+    this.casillero(
+      doc,
+      xi + anchoCasillero,
+      y,
+      anchoCasillero,
+      'Cheque.º',
+      esCheque,
+    );
+    this.casillero(
+      doc,
+      xi + anchoCasillero * 2,
+      y,
+      anchoCasillero,
+      'Banco.º',
+      esBanco,
+    );
 
     y += 16;
 
     doc.font('Helvetica-Bold').fontSize(8).text('Fecha', xi, y, { width: 40 });
-    this.lineaPuntosConTexto(doc, xi + 40, y, 200, this.formatearFechaLarga(recibo.fecha));
+    this.lineaPuntosConTexto(
+      doc,
+      xi + 40,
+      y,
+      200,
+      this.formatearFechaLarga(recibo.fecha),
+    );
 
     if (esBanco) {
-      const banco = recibo.cuentaBancaria?.entidadFinanciera?.sigla
-        ?? recibo.cuentaBancaria?.entidadFinanciera?.nombre
-        ?? '';
+      const banco =
+        recibo.cuentaBancaria?.entidadFinanciera?.sigla ??
+        recibo.cuentaBancaria?.entidadFinanciera?.nombre ??
+        '';
       const cuenta = recibo.cuentaBancaria?.numeroCuenta ?? '';
       const comprobante = recibo.nroComprobante ?? '';
-      const detalleBanco = [banco, cuenta && `Cta. ${cuenta}`, comprobante && `Comp. ${comprobante}`]
+      const detalleBanco = [
+        banco,
+        cuenta && `Cta. ${cuenta}`,
+        comprobante && `Comp. ${comprobante}`,
+      ]
         .filter(Boolean)
         .join(' - ');
       if (detalleBanco) {
@@ -264,17 +368,32 @@ export class ReciboPdfService {
       .stroke();
 
     doc.font('Helvetica-Bold').fontSize(7);
-    doc.text('Entregue conforme', xi, yFirmas + 2, { width: mitad, align: 'center' });
-    doc.text('Recibi conforme', xi + mitad, yFirmas + 2, { width: mitad, align: 'center' });
+    doc.text('Entregue conforme', xi, yFirmas + 2, {
+      width: mitad,
+      align: 'center',
+    });
+    doc.text('Recibi conforme', xi + mitad, yFirmas + 2, {
+      width: mitad,
+      align: 'center',
+    });
 
     doc.font('Helvetica').fontSize(7);
-    doc.text(`Nombre.º ${entregadoPor.nombre}`, xi, yFirmas + 13, { width: mitad, align: 'center' });
-    doc.text(`CI: ${entregadoPor.ci}`, xi, yFirmas + 23, { width: mitad, align: 'center' });
+    doc.text(`Nombre.º ${entregadoPor.nombre}`, xi, yFirmas + 13, {
+      width: mitad,
+      align: 'center',
+    });
+    doc.text(`CI: ${entregadoPor.ci}`, xi, yFirmas + 23, {
+      width: mitad,
+      align: 'center',
+    });
     doc.text(`Nombre.º ${recibidoPor.nombre}`, xi + mitad, yFirmas + 13, {
       width: mitad,
       align: 'center',
     });
-    doc.text(`CI: ${recibidoPor.ci}`, xi + mitad, yFirmas + 23, { width: mitad, align: 'center' });
+    doc.text(`CI: ${recibidoPor.ci}`, xi + mitad, yFirmas + 23, {
+      width: mitad,
+      align: 'center',
+    });
 
     // --- Etiqueta de copia (Original / Copia 1 / Copia 2) ---
     doc
@@ -321,7 +440,10 @@ export class ReciboPdfService {
     doc
       .font('Helvetica')
       .fontSize(8)
-      .text(texto ?? '', x, y, { width: ancho, align: centrado ? 'center' : 'left' });
+      .text(texto ?? '', x, y, {
+        width: ancho,
+        align: centrado ? 'center' : 'left',
+      });
     doc
       .moveTo(x, y + 11)
       .lineWidth(0.5)
@@ -333,13 +455,29 @@ export class ReciboPdfService {
     doc.undash().strokeColor('#000000');
   }
 
-  private casillero(doc: any, x: number, y: number, ancho: number, etiqueta: string, marcado: boolean) {
+  private casillero(
+    doc: any,
+    x: number,
+    y: number,
+    ancho: number,
+    etiqueta: string,
+    marcado: boolean,
+  ) {
     const lado = 8;
-    doc.rect(x, y + 1, lado, lado).lineWidth(0.75).stroke();
+    doc
+      .rect(x, y + 1, lado, lado)
+      .lineWidth(0.75)
+      .stroke();
     if (marcado) {
-      doc.font('Helvetica-Bold').fontSize(8).text('x', x + 1.5, y, { width: lado });
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .text('x', x + 1.5, y, { width: lado });
     }
-    doc.font('Helvetica').fontSize(8).text(etiqueta, x + lado + 4, y, { width: ancho - lado - 4 });
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .text(etiqueta, x + lado + 4, y, { width: ancho - lado - 4 });
   }
 
   private lineaPunteada(doc: any, x: number, y: number, ancho: number) {
@@ -356,7 +494,11 @@ export class ReciboPdfService {
   // ------------------------------------------------------------------ datos
   private datosUsuario(usuario: Usuario): { nombre: string; ci: string } {
     const persona = usuario?.persona;
-    const nombre = [persona?.nombres, persona?.apellidoPaterno, persona?.apellidoMaterno]
+    const nombre = [
+      persona?.nombres,
+      persona?.apellidoPaterno,
+      persona?.apellidoMaterno,
+    ]
       .filter(Boolean)
       .join(' ')
       .trim();
@@ -374,7 +516,9 @@ export class ReciboPdfService {
   }
 
   private formatearMonto(monto: number): string {
-    return new Intl.NumberFormat('es-BO', { minimumFractionDigits: 0 }).format(Number(monto));
+    return new Intl.NumberFormat('es-BO', { minimumFractionDigits: 0 }).format(
+      Number(monto),
+    );
   }
 
   private formatearFechaLarga(fecha: string): string {
@@ -397,9 +541,10 @@ export class ReciboPdfService {
     }
 
     const partes = detalles.map((detalle) => {
-      const monto = `Bs ${this.formatearMonto(detalle.monto)}`;
+      const monto = `${recibo.moneda === 'USD' ? '$us' : 'Bs'} ${this.formatearMonto(detalle.monto)}`;
       if (detalle.destino === 'PERSONAL') return `${monto} a kardex personal`;
       if (detalle.destino === 'ACTOR') return `${monto} a kardex de actor`;
+      if (detalle.destino === 'CLIENTE') return `${monto} a kardex de cliente`;
       return `${monto} en efectivo`;
     });
 

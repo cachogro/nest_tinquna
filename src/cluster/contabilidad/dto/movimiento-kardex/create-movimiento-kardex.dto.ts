@@ -77,6 +77,16 @@ export class CreateMovimientoKardexDto {
   detalle: string;
 
   @ApiPropertyOptional({
+    example: 'LOTE-2026-014',
+    description:
+      'Lote de mineral asociado (texto libre por ahora). Típicamente usado en kardex de CLIENTE, para saber qué lote se entregó/cobró.',
+  })
+  @IsOptional()
+  @IsString({ message: 'El lote debe ser una cadena de texto.' })
+  @MaxLength(100, { message: 'El lote no puede exceder los 100 caracteres.' })
+  lote?: string;
+
+  @ApiPropertyOptional({
     example: 1,
     description: 'Id de la subcuenta (parametrica.kardex_subcuenta): "Principal", "Compresora"...',
   })
@@ -132,7 +142,31 @@ export class CreateMovimientoKardexDto {
   })
   tipo: 'DEBE' | 'HABER';
 
-  @ApiProperty({ example: 960, description: 'Monto del movimiento (mayor a 0).' })
+  @ApiPropertyOptional({
+    enum: ['BS', 'USD'],
+    default: 'BS',
+    example: 'BS',
+    description:
+      'Moneda del `monto`. El kardex lleva su saldo en Bs.: en USD, `debe`/`haber` se guardan convertidos con `tipoCambio` y el importe original queda en `debeUsd`/`haberUsd`. La caja (efectivo) o la cuenta bancaria reciben el monto en esta misma moneda. Por defecto BS.',
+  })
+  @IsOptional()
+  @IsIn(['BS', 'USD'], { message: 'La moneda debe ser BS o USD.' })
+  moneda?: 'BS' | 'USD';
+
+  @ApiPropertyOptional({
+    example: 6.96,
+    description: 'Tipo de cambio (Bs. por 1 USD). Obligatorio si `moneda` = USD; se ignora en BS.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 4 },
+    { message: 'El tipo de cambio debe ser numérico con hasta 4 decimales.' },
+  )
+  @IsPositive({ message: 'El tipo de cambio debe ser mayor a 0.' })
+  tipoCambio?: number;
+
+  @ApiProperty({ example: 960, description: 'Monto del movimiento (mayor a 0), en la moneda indicada.' })
   @Type(() => Number)
   @IsNumber(
     { maxDecimalPlaces: 2 },

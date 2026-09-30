@@ -16,7 +16,6 @@ import {
 import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
 import { PersonaCi } from '../entities/persona-ci.entity';
 import { PersonaTipo } from '../../parametricas/entities/persona-tipo.entity';
-import { PersonaPersonaTipo } from '../entities/persona-persona-tipo.entity';
 import { RecepcionMineral } from '../entities/recepcion-mineral/recepcion-mineral.entity';
 import { EstadoRegistro } from 'src/cluster/parametricas/entities/estado-registro.entity';
 import { ConfigService } from '@nestjs/config';
@@ -31,6 +30,7 @@ import { RegistrosMineralPaginadosDto } from '../dto/recepcion-mineral/registro-
 import { ReciboRecepcionMineralPdfService } from './recibo-pdf-recepcion-mineral.service';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
 import { resolverRangoFechas } from 'src/common/utils/rango-fechas.util';
+import { Recibo } from 'src/cluster/contabilidad/entities/recibo.entity';
 
 @Injectable()
 export class ComercioInternoService {
@@ -46,9 +46,6 @@ export class ComercioInternoService {
 
     @InjectRepository(PersonaTipo, 'ci')
     private readonly personaTipoRepository: Repository<PersonaTipo>,
-
-    @InjectRepository(PersonaPersonaTipo, 'ci')
-    private readonly personaPersonaTipoRepository: Repository<PersonaPersonaTipo>,
 
     @InjectRepository(EstadoRegistro, 'ci')
     private readonly estadoRepository: Repository<EstadoRegistro>,
@@ -179,6 +176,7 @@ export class ComercioInternoService {
       .leftJoinAndSelect('recepcion.persona', 'persona')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.estado', 'estado')
+      .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'")
       // .leftJoinAndSelect(
       //   'recepcion.detalles',
       //   'detalle',
@@ -235,7 +233,7 @@ export class ComercioInternoService {
     return codificacion;
   }
 
-  private async validarProveedor(idPersona: string): Promise<PersonaCi> {
+  private async validarPersona(idPersona: string): Promise<PersonaCi> {
     const persona = await this.personaRepository.findOne({
       where: {
         id: idPersona,
@@ -247,25 +245,35 @@ export class ComercioInternoService {
       throw new NotFoundException('La persona seleccionada no existe.');
     }
 
-    const esProveedor = await this.personaPersonaTipoRepository
-      .createQueryBuilder('ppt')
-      .innerJoin('ppt.personaTipo', 'tipo')
-      .where('ppt.idPersona = :idPersona', {
-        idPersona,
-      })
-      .andWhere('tipo.codigo = :codigo', {
-        codigo: 'PROV',
-      })
-      .andWhere('ppt.activo = true')
-      .getOne();
+    return persona;
+  }
 
-    if (!esProveedor) {
+  /**
+   * Si la recepción ya tiene un recibo de anticipo vigente (BORRADOR o
+   * PROCESADO), no se puede cambiar el monto ni la persona: el recibo se
+   * generó con esos datos.
+   */
+  private async validarAnticipoSinReciboVigente(
+    recepcion: RecepcionMineral,
+    nuevoAnticipo: number,
+    nuevoIdPersona: string,
+  ): Promise<void> {
+    const cambio =
+      Number(recepcion.anticipo ?? 0) !== nuevoAnticipo ||
+      String(recepcion.idPersona) !== String(nuevoIdPersona);
+    if (!cambio) return;
+
+    const recibo = await this.dataSource.manager.findOne(Recibo, {
+      where: {
+        idRecepcionMineral: recepcion.id,
+        estado: In(['BORRADOR', 'PROCESADO']),
+      },
+    });
+    if (recibo) {
       throw new BadRequestException(
-        'La persona seleccionada no está registrada como proveedor.',
+        `El anticipo ya tiene el recibo ${recibo.serie}-${recibo.numero} (${recibo.estado}): no se puede modificar el monto ni la persona.${recibo.estado === 'BORRADOR' ? ' Anule el recibo primero.' : ''}`,
       );
     }
-
-    return persona;
   }
 
   async create(
@@ -284,14 +292,15 @@ export class ComercioInternoService {
       humedad,
       fechaRecepcion,
       observaciones,
+      lugarAcopio,
       // detalles,
     } = createDto;
 
     // Validar codificación
     const codificacion = await this.validarCodificacion(idCodificacion);
 
-    // Validar proveedor
-    await this.validarProveedor(idPersona);
+    // Validar persona
+    await this.validarPersona(idPersona);
 
     // Validar detalle
     //await this.validarDetalleRecepcion(idCodificacion, detalles);
@@ -324,6 +333,7 @@ export class ComercioInternoService {
         humedad,
         //totalValorBruto,
         fechaRecepcion,
+        lugarAcopio,
         observaciones,
         idEstado: 1,
         usuarioRegistro: user.usuario,
@@ -366,6 +376,7 @@ export class ComercioInternoService {
       // totalValorBruto,
       fechaRecepcion,
       observaciones,
+      lugarAcopio,
       //detalles,
     } = updateDto;
 
@@ -378,8 +389,15 @@ export class ComercioInternoService {
     // Validar codificación
     const codificacion = await this.validarCodificacion(idCodificacion);
 
-    // Validar proveedor
-    await this.validarProveedor(idPersona);
+    // Validar persona
+    await this.validarPersona(idPersona);
+
+    // Anticipo/persona bloqueados si ya hay un recibo vigente
+    await this.validarAnticipoSinReciboVigente(
+      recepcion,
+      Number(anticipo ?? recepcion.anticipo ?? 0),
+      idPersona,
+    );
 
     // Validar detalle
     // await this.validarDetalleRecepcion(idCodificacion, detalles);
@@ -409,6 +427,7 @@ export class ComercioInternoService {
         humedad,
         // totalValorBruto,
         fechaRecepcion,
+        lugarAcopio,
         observaciones,
         usuarioUltimaModificacion: user.usuario,
       });
@@ -452,6 +471,7 @@ export class ComercioInternoService {
     recepcion.idEstado = idEstado;
     recepcion.usuarioUltimaModificacion = user.usuario;
     await this.recepcionRepository.save(recepcion);
+
     return await this.obtenerRecepcionCompleta(id);
   }
 
@@ -498,7 +518,8 @@ export class ComercioInternoService {
       .leftJoinAndSelect('recepcion.persona', 'persona')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
-      .leftJoinAndSelect('recepcion.estado', 'estado');
+      .leftJoinAndSelect('recepcion.estado', 'estado')
+      .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'");
 
     // .leftJoinAndSelect(
     //   'recepcion.detalles',
@@ -605,6 +626,7 @@ export class ComercioInternoService {
       .leftJoinAndSelect('recepcion.persona', 'persona')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.estado', 'estado')
+      .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'")
       // .leftJoinAndSelect('recepcion.estado', 'estado')
       .where('recepcion.id = :id', { id })
       .getOne();

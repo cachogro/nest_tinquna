@@ -34,6 +34,9 @@ import { CreateReciboDto } from '../dto/recibo/create-recibo.dto';
 import { ProcesarReciboDto } from '../dto/recibo/procesar-recibo.dto';
 import { FiltrosReciboDto } from '../dto/recibo/filtros-recibo.dto';
 import { ReciboPaginadoDto } from '../dto/recibo/recibo-paginado.dto';
+import { ReciboPdfHorizontalService } from '../services/recibo-pdf-horizontal.service';
+import { ReciboExcelService } from '../services/recibo-excel.service';
+import { FiltroReciboExcelDto } from '../dto/recibo/filtro-recibo-excel.dto';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
@@ -42,6 +45,8 @@ export class ReciboController {
   constructor(
     private readonly reciboService: ReciboService,
     private readonly reciboPdfService: ReciboPdfService,
+    private readonly reciboPdfHorizontalService: ReciboPdfHorizontalService,
+    private readonly reciboExcelService: ReciboExcelService,
   ) {}
 
   @Post('recibo')
@@ -50,7 +55,7 @@ export class ReciboController {
   @ApiOperation({
     summary: 'Generar un recibo de ingreso o egreso (BORRADOR o PROCESADO)',
     description:
-      'Genera un recibo (serie R=INGRESO, serie C=EGRESO, numeración global por serie). Dos modos: sin `detalles` queda como BORRADOR (solo la cabecera: tipo, fecha, montoTotal, concepto y contraparte —una de `idPersona`, `idActorProductivoMinero` o `nombresApellidos`, obligatoria alguna de las tres, excluyentes entre sí— ya alcanza para imprimirlo) y se procesa después con `PATCH /contabilidad/recibo/:id/procesar`, o se da de baja con `PATCH /contabilidad/recibo/:id/anular`; con `detalles` se procesa en el mismo paso (queda PROCESADO) y postea automáticamente, por CADA línea de `detalles`: un movimiento en la caja de flujo (Caja id=1, "CAJA PRINCIPAL", el registro maestro de la empresa) — las líneas PERSONAL/ACTOR SIEMPRE postean INGRESO (valor recuperado por la empresa al saldar esa deuda, sea cual sea el tipo del recibo); las líneas EFECTIVO postean según el tipo del recibo: INGRESO si el recibo es INGRESO (plata que efectivamente entra), EGRESO si es EGRESO (plata que efectivamente sale) — y, según el destino, una línea de kardex: PERSONAL/ACTOR postea HABER en el kardex de `idPersona`/`idActorProductivoMinero` (salda una deuda existente); EFECTIVO no requiere kardex, pero si además trae `idPersona` o `idActorProductivoMinero` de alguien con kardex abierto, postea un DEBE (anticipo nuevo, sube su deuda, a diferencia de PERSONAL/ACTOR que la baja). Cada línea puede tener su propio `idDestinoGasto` (parametrica.destino_gasto), que se aplica tanto a su línea de kardex como a su movimiento de caja. Un recibo con varias líneas genera varios movimientos de caja (uno por línea). Al procesar (acá o en `/procesar`), requiere que cada kardex referenciado en `detalles` ya esté ABIERTO y que la Caja id=1 ya esté aperturada en BOB. La contraparte física de la cabecera (`idPersona`/`idActorProductivoMinero`/`nombresApellidos`) es solo informativa para la impresión; el efecto real en kardex/caja lo definen los `idPersona`/`idActorProductivoMinero` de cada línea de `detalles`, que son independientes. Si `idFormaPago` es un medio bancario (QR, Transferencia, Cheque, Depósito), se puede indicar `idCuentaBancaria` y `nroComprobante`: en ese caso, la línea EFECTIVO del recibo (si tiene una) también postea un movimiento en la libreta de bancos de esa cuenta (misma dirección que en caja: HABER si entra, DEBE si sale), por el monto de esa línea; las líneas PERSONAL/ACTOR nunca tocan la libreta de bancos (no representan plata que realmente se mueve). Si no hay línea EFECTIVO, `idCuentaBancaria`/`nroComprobante` quedan solo como referencia informativa del recibo.',
+      'Genera un recibo (serie R=INGRESO, serie C=EGRESO, numeración global por serie). Dos modos: sin `detalles` queda como BORRADOR (solo la cabecera: tipo, fecha, montoTotal, concepto y contraparte —una de `idPersona`, `idActorProductivoMinero`, `idCliente` o `nombresApellidos`, obligatoria alguna de las cuatro, excluyentes entre sí— ya alcanza para imprimirlo) y se procesa después con `PATCH /contabilidad/recibo/:id/procesar`, o se da de baja con `PATCH /contabilidad/recibo/:id/anular`; con `detalles` se procesa en el mismo paso (queda PROCESADO) y postea automáticamente, por CADA línea de `detalles`: un movimiento en la caja de flujo (Caja id=1, "CAJA PRINCIPAL", el registro maestro de la empresa) — las líneas PERSONAL/ACTOR/CLIENTE SIEMPRE postean INGRESO (valor recuperado/cobrado por la empresa al saldar esa deuda, sea cual sea el tipo del recibo); las líneas EFECTIVO postean según el tipo del recibo: INGRESO si el recibo es INGRESO (plata que efectivamente entra), EGRESO si es EGRESO (plata que efectivamente sale) — y, según el destino, una línea de kardex: PERSONAL/ACTOR/CLIENTE postea HABER en el kardex de `idPersona`/`idActorProductivoMinero`/`idCliente` (salda una deuda existente, en el caso de CLIENTE es el cobro de una venta a crédito); EFECTIVO no requiere kardex, pero si además trae `idPersona`, `idActorProductivoMinero` o `idCliente` de alguien con kardex abierto, postea un DEBE (anticipo/venta a crédito nuevo, sube su deuda, a diferencia de PERSONAL/ACTOR/CLIENTE que la baja). Cada línea puede tener su propio `idDestinoGasto` (parametrica.destino_gasto), que se aplica tanto a su línea de kardex como a su movimiento de caja. Un recibo con varias líneas genera varios movimientos de caja (uno por línea). Al procesar (acá o en `/procesar`), requiere que cada kardex referenciado en `detalles` ya esté ABIERTO y que la Caja id=1 ya esté aperturada en BS. La contraparte física de la cabecera (`idPersona`/`idActorProductivoMinero`/`idCliente`/`nombresApellidos`) es solo informativa para la impresión; el efecto real en kardex/caja lo definen los `idPersona`/`idActorProductivoMinero`/`idCliente` de cada línea de `detalles`, que son independientes. Si `idFormaPago` es un medio bancario (QR, Transferencia, Cheque, Depósito), `idCuentaBancaria` y `nroComprobante` pasan a ser OBLIGATORIOS ya en la cabecera (se validan y se guardan aunque el recibo quede BORRADOR; 400 si faltan): en ese caso, la línea EFECTIVO del recibo (si tiene una) también postea, recién al procesar, un movimiento en la libreta de bancos de esa cuenta (misma dirección que en caja: HABER si entra, DEBE si sale), por el monto de esa línea; las líneas PERSONAL/ACTOR/CLIENTE nunca tocan la libreta de bancos (no representan plata que realmente se mueve). Si no hay línea EFECTIVO, `idCuentaBancaria`/`nroComprobante` quedan solo como referencia informativa del recibo.',
   })
   @ApiBody({
     type: CreateReciboDto,
@@ -63,6 +68,7 @@ export class ReciboController {
           montoTotal: 500,
           concepto: 'PAGO POR MINERAL ENTREGADO',
           idPersona: '20',
+          idPersonaAutorizo: '7',
         },
       },
       borradorConActor: {
@@ -74,6 +80,7 @@ export class ReciboController {
           montoTotal: 1650,
           concepto: 'ANTICIPO A CTA TRANSPORTE',
           idActorProductivoMinero: '4',
+          idPersonaAutorizo: '7',
         },
       },
       ingreso: {
@@ -85,6 +92,7 @@ export class ReciboController {
           concepto: 'A CUENTA PAGO DE DEUDA',
           idFormaPago: 1,
           idPersona: '18',
+          idPersonaAutorizo: '7',
           detalles: [{ destino: 'PERSONAL', idPersona: '18', monto: 15000 }],
         },
       },
@@ -98,8 +106,14 @@ export class ReciboController {
           concepto: 'PAGO DE DEUDA',
           idFormaPago: 1,
           idActorProductivoMinero: '4',
+          idPersonaAutorizo: '7',
           detalles: [
-            { destino: 'PERSONAL', idPersona: '18', monto: 400, idDestinoGasto: 1 },
+            {
+              destino: 'PERSONAL',
+              idPersona: '18',
+              monto: 400,
+              idDestinoGasto: 1,
+            },
             {
               destino: 'EFECTIVO',
               idActorProductivoMinero: '4',
@@ -119,6 +133,7 @@ export class ReciboController {
           concepto: 'A CUENTA ANTICIPO INGENIO VILLA IMPERIAL',
           idFormaPago: 1,
           idPersona: '20',
+          idPersonaAutorizo: '7',
           detalles: [
             {
               destino: 'PERSONAL',
@@ -148,6 +163,7 @@ export class ReciboController {
           idCuentaBancaria: 1,
           nroComprobante: '4613159797',
           idPersona: '18',
+          idPersonaAutorizo: '7',
           detalles: [
             {
               destino: 'PERSONAL',
@@ -170,6 +186,7 @@ export class ReciboController {
           nombresApellidos: 'PEDRO SOLA MAMANI - 55866977',
           idCuentaBancaria: 1,
           nroComprobante: '8858778899558',
+          idPersonaAutorizo: '7',
           detalles: [{ destino: 'EFECTIVO', monto: 200, idDestinoGasto: 14 }],
         },
       },
@@ -183,6 +200,7 @@ export class ReciboController {
           concepto: 'PAGO DE SACOS',
           idFormaPago: 1,
           idPersona: '23',
+          idPersonaAutorizo: '7',
           detalles: [
             {
               destino: 'EFECTIVO',
@@ -202,6 +220,7 @@ export class ReciboController {
           concepto: 'ANTICIPO A CTA TRANSPORTE',
           idFormaPago: 1,
           nombresApellidos: 'JAVIER VARGAS - ROBERTO COLQUE 7MO LOTE',
+          idPersonaAutorizo: '7',
           detalles: [
             { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 1650 },
           ],
@@ -217,6 +236,7 @@ export class ReciboController {
           concepto: 'PAGO POR MINERAL ENTREGADO',
           idFormaPago: 1,
           idPersona: '20',
+          idPersonaAutorizo: '7',
           detalles: [
             {
               destino: 'PERSONAL',
@@ -243,11 +263,11 @@ export class ReciboController {
   })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos, la suma de los detalles no coincide con el montoTotal, algún destinatario no tiene un kardex abierto, la Caja id=1 todavía no fue aperturada en BOB, o (si hay línea EFECTIVO y se indicó idCuentaBancaria) esa cuenta bancaria todavía no fue aperturada.',
+      'Datos inválidos, la suma de los detalles no coincide con el montoTotal, algún destinatario no tiene un kardex abierto, la Caja id=1 todavía no fue aperturada en BS, la forma de pago es bancaria pero falta idCuentaBancaria/nroComprobante, la persona indicada en idPersonaAutorizo no está autorizada o está inactiva, o (si hay línea EFECTIVO y se indicó idCuentaBancaria) esa cuenta bancaria todavía no fue aperturada.',
   })
   @ApiNotFoundResponse({
     description:
-      'No se encontró la persona, el actor, la forma de pago, la cuenta bancaria, el tipo de movimiento, el destino del gasto, o el kardex de algún destinatario.',
+      'No se encontró la persona, el actor, el cliente, la forma de pago, la cuenta bancaria, la persona que autorizó (idPersonaAutorizo), el destino del gasto, o el kardex de algún destinatario.',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -325,7 +345,7 @@ export class ReciboController {
   })
   @ApiBadRequestResponse({
     description:
-      'El recibo no está en estado BORRADOR (ya fue procesado o anulado), la suma de los detalles no coincide con el montoTotal, algún destinatario no tiene un kardex abierto, la Caja id=1 todavía no fue aperturada en BOB, o (si hay línea EFECTIVO y hay idCuentaBancaria, sea nueva o la del borrador) esa cuenta bancaria todavía no fue aperturada.',
+      'El recibo no está en estado BORRADOR (ya fue procesado o anulado), la suma de los detalles no coincide con el montoTotal, algún destinatario no tiene un kardex abierto, la Caja id=1 todavía no fue aperturada en BS, o (si hay línea EFECTIVO y hay idCuentaBancaria, sea nueva o la del borrador) esa cuenta bancaria todavía no fue aperturada.',
   })
   @ApiNotFoundResponse({
     description:
@@ -376,6 +396,41 @@ export class ReciboController {
     @GetUser() user: Usuario,
   ): Promise<Recibo> {
     return await this.reciboService.anular(id, user);
+  }
+
+  @Get('recibo/reporte/excel')
+  @Auth()
+  @ApiOperation({
+    summary: 'Exportar el libro de recibos a Excel',
+    description:
+      'Genera el .xlsx "LIBRO DE RECIBOS" con todos los recibos (serie R de ingreso y C de egreso) que cumplan los filtros, sin paginar y en orden cronológico: fecha, N° de recibo, tipo, estado, nombre, concepto, forma de pago, N° de comprobante, importe (ingreso/egreso), usuario que lo generó y observación (quién y cuándo anuló). Los totales solo suman los PROCESADOS; los BORRADOR van sombreados y los ANULADOS tachados. Al pie trae un resumen con cantidad e importes por estado. Todos los filtros son opcionales: sin filtros sale el libro completo.',
+  })
+  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiBadRequestResponse({
+    description: 'Filtros inválidos (ej. fecha desde posterior a fecha hasta).',
+  })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async exportarExcel(
+    @Query() filtro: FiltroReciboExcelDto,
+    @GetUser() user: Usuario,
+    @Res() res: Response,
+  ): Promise<void> {
+    const buffer = await this.reciboExcelService.generar(filtro, user);
+    const periodo = [filtro.fechaDesde, filtro.fechaHasta]
+      .filter(Boolean)
+      .join('_al_');
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=libro-recibos${periodo ? `-${periodo}` : ''}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
   }
 
   @Get('recibo')
@@ -443,6 +498,105 @@ export class ReciboController {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}.pdf`,
+      'Content-Length': pdf.length,
+    });
+
+    res.end(pdf);
+  }
+
+  @Get('recibo/:id/pdf-procesado')
+  @Auth()
+  @ApiOperation({
+    summary:
+      'Generar el PDF de un recibo PROCESADO (con desglose en "Por concepto")',
+    description:
+      'Mismo formato que `GET /contabilidad/recibo/:id/pdf` (hoja carta con 3 copias, igual al talonario físico). La única diferencia: en "Por concepto (de)" no muestra solo el texto libre del recibo, sino que lo desglosa según sus `detalles` (ej. "PAGO POR MINERAL ENTREGADO: Bs 200,00 a kardex personal, Bs 200,00 a kardex de actor y Bs 100,00 en efectivo"). Si el recibo todavía no tiene `detalles` (BORRADOR o ANULADO), el resultado es idéntico al PDF de `/pdf`. Los dos PDF se pueden descargar por separado.',
+  })
+  @ApiParam({ name: 'id', description: 'Id del recibo.', example: '5' })
+  @ApiOkResponse({ description: 'PDF generado correctamente.' })
+  @ApiNotFoundResponse({ description: 'No se encontró el recibo.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async descargarPdfProcesado(
+    @Param('id') id: string,
+    @GetUser() user: Usuario,
+    @Res() res: Response,
+  ) {
+    const recibo = await this.reciboService.buscarPorId(id);
+    const pdf = await this.reciboPdfService.generarProcesado(recibo, user);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}-procesado.pdf`,
+      'Content-Length': pdf.length,
+    });
+
+    res.end(pdf);
+  }
+  //----------------------------forma horizontal----------------------------
+
+  @Get('recibo2/:id/pdf')
+  @Auth()
+  @ApiOperation({
+    summary: 'Generar el PDF de un recibo (3 copias en hoja carta)',
+    description:
+      'Devuelve una hoja carta con 3 copias del recibo apiladas (Original, Copia 1, Copia 2), igual al talonario físico: logo, N° de recibo, monto en Bs. y en letras, contraparte, concepto, forma de pago (Efectivo/Cheque/Banco) y firmas. "Entregue conforme" se llena con el usuario que pide el PDF; "Recibi conforme" con la contraparte del recibo. Funciona con el recibo en cualquier estado (BORRADOR, PROCESADO o ANULADO).',
+  })
+  @ApiParam({ name: 'id', description: 'Id del recibo.', example: '5' })
+  @ApiOkResponse({ description: 'PDF generado correctamente.' })
+  @ApiNotFoundResponse({ description: 'No se encontró el recibo.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async descargarPdf2(
+    @Param('id') id: string,
+    @GetUser() user: Usuario,
+    @Res() res: Response,
+  ) {
+    const recibo = await this.reciboService.buscarPorId(id);
+    const pdf = await this.reciboPdfHorizontalService.generar(recibo, user);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}.pdf`,
+      'Content-Length': pdf.length,
+    });
+
+    res.end(pdf);
+  }
+
+  @Get('recibo2/:id/pdf-procesado')
+  @Auth()
+  @ApiOperation({
+    summary:
+      'Generar el PDF de un recibo PROCESADO (con desglose en "Por concepto")',
+    description:
+      'Mismo formato que `GET /contabilidad/recibo/:id/pdf` (hoja carta con 3 copias, igual al talonario físico). La única diferencia: en "Por concepto (de)" no muestra solo el texto libre del recibo, sino que lo desglosa según sus `detalles` (ej. "PAGO POR MINERAL ENTREGADO: Bs 200,00 a kardex personal, Bs 200,00 a kardex de actor y Bs 100,00 en efectivo"). Si el recibo todavía no tiene `detalles` (BORRADOR o ANULADO), el resultado es idéntico al PDF de `/pdf`. Los dos PDF se pueden descargar por separado.',
+  })
+  @ApiParam({ name: 'id', description: 'Id del recibo.', example: '5' })
+  @ApiOkResponse({ description: 'PDF generado correctamente.' })
+  @ApiNotFoundResponse({ description: 'No se encontró el recibo.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async descargarPdfProcesado2(
+    @Param('id') id: string,
+    @GetUser() user: Usuario,
+    @Res() res: Response,
+  ) {
+    const recibo = await this.reciboService.buscarPorId(id);
+    const pdf = await this.reciboPdfHorizontalService.generarProcesado(
+      recibo,
+      user,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}-procesado.pdf`,
       'Content-Length': pdf.length,
     });
 

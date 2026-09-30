@@ -10,7 +10,7 @@ import { Caja } from 'src/cluster/parametricas/entities/caja.entity';
 
 export type TipoPeriodoCaja = 'MENSUAL' | 'GESTION';
 export type EstadoPeriodoCaja = 'ABIERTO' | 'CERRADO';
-export type MonedaCaja = 'BOB' | 'USD';
+export type MonedaCaja = 'BS' | 'USD';
 
 /**
  * Período de la caja de flujo, igual mecanismo que PeriodoBanco:

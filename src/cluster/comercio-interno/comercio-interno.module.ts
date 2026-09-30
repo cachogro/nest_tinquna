@@ -3,6 +3,11 @@ import { ComercioInternoService } from './services/comercio-interno.service';
 import { ComercioInternoController } from './controller/comercio-interno.controller';
 import { ReportesRecepcionMineralController } from './controller/reportes-recepcion-mineral.controller';
 import { ValorizacionEntregadoController } from './controller/valorizacion-entregado.controller';
+import { PromedioMineralController } from './controller/promedio-mineral.controller';
+import { PromedioMineralService } from './services/promedio-mineral.service';
+import { PromedioMineral } from './entities/promedio/promedio-mineral.entity';
+import { CodificacionLote } from 'src/cluster/parametricas/entities/codificacion-lote.entity';
+import { PromedioMineralDetalle } from './entities/promedio/promedio-mineral-detalle.entity';
 import { ReportesValorizacionMineralController } from './controller/reportes-valorizacion-mineral.controller';
 import { RecepcionMineralReportesService } from './reports/recepcion-mineral-reportes.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -42,6 +47,7 @@ import { ValorizacionMineralReporteExcelService } from './reports/valorizacion-m
     ValorizacionMineralService,
     ValorizacionMineralPdfService,
     ValorizacionEntregadoService,
+    PromedioMineralService,
     ValorizacionMineralReportesService,
     ValorizacionMineralReporteExcelService,
   ],
@@ -49,6 +55,7 @@ import { ValorizacionMineralReporteExcelService } from './reports/valorizacion-m
     ComercioInternoController,
     ReportesRecepcionMineralController,
     ValorizacionEntregadoController,
+    PromedioMineralController,
     ReportesValorizacionMineralController,
   ],
   imports: [
@@ -64,6 +71,9 @@ import { ValorizacionMineralReporteExcelService } from './reports/valorizacion-m
         ValorizacionCalculo,
         ValorizacionDetalleMineral,
         ValorizacionMineral,
+        PromedioMineral,
+        PromedioMineralDetalle,
+        CodificacionLote,
       ],
       'ci',
     ),

@@ -160,7 +160,7 @@ export class MovimientoCajaService {
   async obtenerCajaAperturada(id: number, moneda: MonedaCaja): Promise<Caja> {
     const caja = await this.obtenerCajaActiva(id);
     const fechaApertura =
-      moneda === 'BOB' ? caja.fechaSaldoInicialBob : caja.fechaSaldoInicialUsd;
+      moneda === 'BS' ? caja.fechaSaldoInicialBs : caja.fechaSaldoInicialUsd;
     if (!fechaApertura) {
       throw new BadRequestException(
         `La caja "${caja.nombre}" todavía no fue aperturada en ${moneda}. Cargá el monto y la fecha de apertura (POST /parametricas/caja) antes de registrar movimientos.`,
@@ -171,7 +171,7 @@ export class MovimientoCajaService {
 
   private saldoInicialCaja(caja: Caja, moneda: MonedaCaja): number {
     return this.r2(
-      Number(moneda === 'BOB' ? caja.saldoInicialBob : caja.saldoInicialUsd),
+      Number(moneda === 'BS' ? caja.saldoInicialBs : caja.saldoInicialUsd),
     );
   }
 
@@ -325,6 +325,7 @@ export class MovimientoCajaService {
       idDestinoGasto?: number | null;
       idRecibo?: string | null;
       idMovimientoKardex?: string | null;
+      idTraspaso?: string | null;
       ingreso: number;
       egreso: number;
     },
@@ -357,6 +358,7 @@ export class MovimientoCajaService {
         idDestinoGasto: datos.idDestinoGasto ?? null,
         idRecibo: datos.idRecibo ?? null,
         idMovimientoKardex: datos.idMovimientoKardex ?? null,
+        idTraspaso: datos.idTraspaso ?? null,
         ingreso: datos.ingreso,
         egreso: datos.egreso,
         saldo: 0,
@@ -479,6 +481,38 @@ export class MovimientoCajaService {
     });
   }
 
+  /**
+   * Expone el recálculo de saldos para otros servicios (ej. TraspasoService,
+   * que edita `movimiento_caja` directamente y necesita recalcular después)
+   * dentro de una transacción ya abierta.
+   */
+  async recalcularSaldosEnTransaccion(
+    manager: EntityManager,
+    idCaja: number,
+    moneda: MonedaCaja,
+  ): Promise<void> {
+    await this.recalcularCaja(manager, idCaja, moneda);
+  }
+
+  /**
+   * Núcleo de "activar/desactivar un movimiento" (update + recálculo),
+   * reusable dentro de una transacción ya abierta por otro servicio (ej.
+   * TraspasoService, que necesita activar/desactivar en bloque el movimiento
+   * de caja y el de libreta_banco de un mismo traspaso).
+   */
+  async cambiarEstadoEnTransaccion(
+    manager: EntityManager,
+    mov: MovimientoCaja,
+    activo: boolean,
+    user: Usuario,
+  ): Promise<void> {
+    await manager.update(MovimientoCaja, mov.id, {
+      activo,
+      usuarioUltimaModificacion: user.usuario,
+    });
+    await this.recalcularSaldosEnTransaccion(manager, mov.idCaja, mov.moneda);
+  }
+
   async cambiarEstado(
     id: number,
     activo: boolean,
@@ -498,11 +532,7 @@ export class MovimientoCajaService {
     }
 
     return this.dataSource.transaction(async (manager) => {
-      await manager.update(MovimientoCaja, mov.id, {
-        activo,
-        usuarioUltimaModificacion: user.usuario,
-      });
-      await this.recalcularCaja(manager, mov.idCaja, mov.moneda);
+      await this.cambiarEstadoEnTransaccion(manager, mov, activo, user);
       return manager.findOne(MovimientoCaja, {
         where: { id: mov.id },
         relations: { periodoCaja: true, persona: true, formaPago: true, destinoGasto: true },
@@ -513,12 +543,21 @@ export class MovimientoCajaService {
   async listar(filtro: FiltroMovimientoCajaDto) {
     const caja = await this.obtenerCajaActiva(filtro.idCaja);
 
+    // Bandeja liviana: solo lo que muestra la tabla. El período ya viaja en
+    // `periodos` (el front cruza por idPeriodoCaja).
     const qb = this.movimientoRepository
       .createQueryBuilder('m')
-      .innerJoinAndSelect('m.periodoCaja', 'p')
-      .leftJoinAndSelect('m.persona', 'per')
-      .leftJoinAndSelect('m.formaPago', 'fp')
-      .leftJoinAndSelect('m.destinoGasto', 'dg')
+      .innerJoin('m.periodoCaja', 'p')
+      .leftJoin('m.persona', 'per')
+      .addSelect([
+        'per.id',
+        'per.nombres',
+        'per.apellidoPaterno',
+        'per.apellidoMaterno',
+        'per.numeroDocumento',
+      ])
+      .leftJoin('m.destinoGasto', 'dg')
+      .addSelect(['dg.id', 'dg.nombre'])
       .where('m.idCaja = :id', { id: caja.id })
       .andWhere('m.moneda = :moneda', { moneda: filtro.moneda });
 
@@ -555,8 +594,8 @@ export class MovimientoCajaService {
         moneda: filtro.moneda,
         saldoInicial: this.saldoInicialCaja(caja, filtro.moneda),
         fechaSaldoInicial:
-          filtro.moneda === 'BOB'
-            ? (caja.fechaSaldoInicialBob ?? null)
+          filtro.moneda === 'BS'
+            ? (caja.fechaSaldoInicialBs ?? null)
             : (caja.fechaSaldoInicialUsd ?? null),
       },
       periodos,

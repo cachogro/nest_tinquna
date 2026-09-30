@@ -10,9 +10,9 @@ export class CerrarGestionCajaDto {
   @IsPositive({ message: 'La caja no es válida.' })
   idCaja: number;
 
-  @ApiProperty({ enum: ['BOB', 'USD'], example: 'BOB', description: 'Moneda de la gestión.' })
-  @IsIn(['BOB', 'USD'], { message: 'La moneda debe ser BOB o USD.' })
-  moneda: 'BOB' | 'USD';
+  @ApiProperty({ enum: ['BS', 'USD'], example: 'BS', description: 'Moneda de la gestión.' })
+  @IsIn(['BS', 'USD'], { message: 'La moneda debe ser BS o USD.' })
+  moneda: 'BS' | 'USD';
 
   @ApiProperty({ example: 2025, description: 'Año / gestión a cerrar / reabrir.' })
   @Type(() => Number)

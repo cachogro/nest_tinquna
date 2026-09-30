@@ -16,6 +16,7 @@ import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancari
 import { Kardex } from './kardex.entity';
 import { Recibo } from './recibo.entity';
 import { MovimientoCaja } from './movimiento-caja.entity';
+import { MonedaCaja } from './periodo-caja.entity';
 
 /**
  * Línea de un kardex de anticipos (hoja 2 del Excel).
@@ -108,6 +109,17 @@ export class MovimientoKardex extends Auditoria {
     length: 255,
   })
   detalle: string;
+
+  // Lote de mineral asociado al movimiento (referencia libre, típicamente
+  // para kardex de CLIENTE: qué lote se entregó/cobró). Texto libre por
+  // ahora; sin catálogo ni FK todavía.
+  @Column({
+    name: 'lote',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  lote?: string | null;
 
   @Column({
     name: 'id_subcuenta',
@@ -214,6 +226,46 @@ export class MovimientoKardex extends Auditoria {
   })
   recibo?: Recibo;
 
+  // Moneda en que se hizo el movimiento. El kardex lleva su saldo SIEMPRE en
+  // Bs.: si es USD, `debe`/`haber` son el equivalente en Bs. (monto en USD x
+  // `tipoCambio`) y el importe original queda en `debeUsd`/`haberUsd`.
+  @Column({
+    name: 'moneda',
+    type: 'varchar',
+    length: 3,
+    default: 'BS',
+  })
+  moneda: MonedaCaja;
+
+  // Bs. por 1 USD. Obligatorio si moneda = USD; null en BS.
+  @Column({
+    name: 'tipo_cambio',
+    type: 'numeric',
+    precision: 12,
+    scale: 4,
+    nullable: true,
+  })
+  tipoCambio?: number | null;
+
+  @Column({
+    name: 'debe_usd',
+    type: 'numeric',
+    precision: 16,
+    scale: 2,
+    default: 0,
+  })
+  debeUsd: number;
+
+  @Column({
+    name: 'haber_usd',
+    type: 'numeric',
+    precision: 16,
+    scale: 2,
+    default: 0,
+  })
+  haberUsd: number;
+
+  // Siempre en Bs. (ver `moneda`).
   @Column({
     name: 'debe',
     type: 'numeric',

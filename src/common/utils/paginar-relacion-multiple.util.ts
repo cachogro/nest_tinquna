@@ -42,10 +42,23 @@ export async function paginarConJoinMultiple<T extends { id: string }>(
     .getRawOne<{ total: string }>();
   const total = Number(totalCrudo);
 
-  const idsPagina = await queryFiltrado
+  // Con SELECT DISTINCT, Postgres exige que cada expresión del ORDER BY
+  // aparezca en la lista de resultados, así que se agregan al select. Como
+  // son columnas del alias raíz o de relaciones *-a-uno, no generan
+  // duplicados por id.
+  const queryIds = queryFiltrado
     .clone()
     .select(`${aliasRaiz}.id`, 'id')
-    .distinct(true)
+    .distinct(true);
+  Object.keys(queryFiltrado.expressionMap.orderBys).forEach(
+    (expresion, indice) => {
+      if (expresion !== `${aliasRaiz}.id`) {
+        queryIds.addSelect(expresion, `orden_${indice}`);
+      }
+    },
+  );
+
+  const idsPagina = await queryIds
     .offset((page - 1) * limit)
     .limit(limit)
     .getRawMany<{ id: string }>();

@@ -8,6 +8,7 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
+import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { LibretaBanco } from '../entities/libreta-banco.entity';
 import { PeriodoBanco } from '../entities/periodo-banco.entity';
@@ -15,6 +16,28 @@ import { CreateLibretaBancoDto } from '../dto/libreta-banco/create-libreta-banco
 import { FiltroLibretaBancoDto } from '../dto/libreta-banco/filtro-libreta-banco.dto';
 import { CerrarPeriodoBancoDto } from '../dto/libreta-banco/cerrar-periodo-banco.dto';
 import { CerrarGestionBancoDto } from '../dto/libreta-banco/cerrar-gestion-banco.dto';
+import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
+import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
+import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
+import { Kardex } from '../entities/kardex.entity';
+import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
+import { aBolivianos, monedaDeCuenta, resolverTipoCambio } from '../moneda.util';
+import {
+  buscarKardexAbiertoContraparte,
+  contraparteDeKardex,
+  recalcularSaldoKardex,
+  siguienteNumeroLineaKardex,
+} from '../kardex-posteo.util';
+import { KardexActividadService } from './kardex-actividad.service';
+
+/** Relaciones que se devuelven al crear/editar/cambiar estado un movimiento. */
+const RELACIONES_MOVIMIENTO = {
+  periodoBanco: true,
+  persona: true,
+  actorProductivoMinero: true,
+  cliente: true,
+  destinoGasto: true,
+} as const;
 
 @Injectable()
 export class LibretaBancoService {
@@ -31,23 +54,95 @@ export class LibretaBancoService {
     @InjectRepository(PersonaCi, 'ci')
     private readonly personaRepository: Repository<PersonaCi>,
 
+    @InjectRepository(DestinoGasto, 'ci')
+    private readonly destinoGastoRepository: Repository<DestinoGasto>,
+
+    @InjectRepository(ActorProductivoMinero, 'ci')
+    private readonly actorRepository: Repository<ActorProductivoMinero>,
+
+    @InjectRepository(Cliente, 'ci')
+    private readonly clienteRepository: Repository<Cliente>,
+
+    private readonly kardexActividadService: KardexActividadService,
+
     @InjectDataSource('ci')
     private readonly dataSource: DataSource,
   ) {}
 
   /**
-   * Resuelve el beneficiario del movimiento:
-   *   - con `idPersona`: valida que exista en persona_ci y usa su nombre
-   *     (o el texto manual si vino);
-   *   - sin `idPersona`: guarda solo el texto libre `nombresApellidos`.
+   * Resuelve el beneficiario / contraparte del movimiento (mismo criterio
+   * que la contraparte de un recibo). Solo UNA de:
+   *   - `idPersona`: valida que exista en persona_ci y usa su nombre;
+   *   - `idActorProductivoMinero`: valida que exista y esté activo;
+   *   - `idCliente`: valida que exista y esté activo;
+   *   - ninguna: guarda solo el texto libre `nombresApellidos`.
+   * Con vínculo, `nombresApellidos` toma el texto manual si vino o, si no,
+   * el nombre del vinculado (es lo que se imprime y sale en el Excel).
    */
-  private async resolverBeneficiario(
-    dto: CreateLibretaBancoDto,
-  ): Promise<{ idPersona: string | null; nombresApellidos: string | null }> {
+  private async resolverBeneficiario(dto: CreateLibretaBancoDto): Promise<{
+    idPersona: string | null;
+    idActorProductivoMinero: string | null;
+    idCliente: string | null;
+    nombresApellidos: string | null;
+  }> {
     const textoManual = dto.nombresApellidos?.trim() || null;
+    const sinVinculo = {
+      idPersona: null,
+      idActorProductivoMinero: null,
+      idCliente: null,
+    };
+
+    const vinculos = [
+      dto.idPersona,
+      dto.idActorProductivoMinero,
+      dto.idCliente,
+    ].filter(Boolean).length;
+    if (vinculos > 1) {
+      throw new BadRequestException(
+        'El beneficiario del movimiento solo puede ser uno: persona, actor productivo minero o cliente.',
+      );
+    }
+
+    if (dto.idActorProductivoMinero) {
+      const actor = await this.actorRepository.findOne({
+        where: { id: String(dto.idActorProductivoMinero) },
+      });
+      if (!actor) {
+        throw new NotFoundException(
+          'No se encontró el actor productivo minero indicado.',
+        );
+      }
+      if (!actor.activo) {
+        throw new BadRequestException(
+          'El actor productivo minero indicado está inactivo.',
+        );
+      }
+      return {
+        ...sinVinculo,
+        idActorProductivoMinero: actor.id,
+        nombresApellidos: textoManual || actor.nombre.toUpperCase(),
+      };
+    }
+
+    if (dto.idCliente) {
+      const cliente = await this.clienteRepository.findOne({
+        where: { id: String(dto.idCliente) },
+      });
+      if (!cliente) {
+        throw new NotFoundException('No se encontró el cliente indicado.');
+      }
+      if (!cliente.activo) {
+        throw new BadRequestException('El cliente indicado está inactivo.');
+      }
+      return {
+        ...sinVinculo,
+        idCliente: cliente.id,
+        nombresApellidos: textoManual || cliente.nombre.toUpperCase(),
+      };
+    }
 
     if (!dto.idPersona) {
-      return { idPersona: null, nombresApellidos: textoManual };
+      return { ...sinVinculo, nombresApellidos: textoManual };
     }
 
     const persona = await this.personaRepository.findOne({
@@ -68,6 +163,7 @@ export class LibretaBancoService {
       .toUpperCase();
 
     return {
+      ...sinVinculo,
       idPersona: persona.id,
       nombresApellidos: textoManual || nombreDerivado || null,
     };
@@ -98,6 +194,84 @@ export class LibretaBancoService {
       : { debe: 0, haber: monto };
   }
 
+  /**
+   * Importes de la línea de kardex: el kardex lleva su saldo en Bs.; si la
+   * cuenta es en USD se convierte con `tipoCambio` (obligatorio en ese caso)
+   * y el original queda en debeUsd/haberUsd. Misma dirección que el banco:
+   * DEBE (sale plata, anticipo) sube la deuda; HABER (entra plata, pago) la baja.
+   */
+  private importesKardex(
+    cuenta: CuentaBancaria,
+    debe: number,
+    haber: number,
+    tipoCambio?: number | string | null,
+  ) {
+    const moneda = monedaDeCuenta(cuenta);
+    const tc = resolverTipoCambio(moneda, tipoCambio);
+    return {
+      moneda,
+      tipoCambio: tc,
+      debe: aBolivianos(debe, moneda, tc),
+      haber: aBolivianos(haber, moneda, tc),
+      debeUsd: moneda === 'USD' ? debe : 0,
+      haberUsd: moneda === 'USD' ? haber : 0,
+    };
+  }
+
+  /**
+   * `id_forma_pago` de la línea de kardex a partir del texto libre
+   * `tipoTransaccion` de la libreta (QR, TRANSFERENCIA...), buscado por
+   * código o nombre en parametrica.forma_pago. Null si no hay coincidencia
+   * (ej. RETIRO): la línea se guarda igual, sin forma de pago.
+   */
+  private async resolverIdFormaPago(tipoTransaccion: string): Promise<number | null> {
+    const texto = tipoTransaccion.trim().toUpperCase();
+    if (!texto) {
+      return null;
+    }
+    const formaPago = await this.dataSource.manager
+      .createQueryBuilder(FormaPago, 'fp')
+      .where('UPPER(fp.codigo) = :texto OR UPPER(fp.nombre) = :texto', { texto })
+      .getOne();
+    return formaPago?.id ?? null;
+  }
+
+  /** Los movimientos generados por un recibo o un traspaso se gestionan desde su origen. */
+  private validarEditableDesdeLibreta(mov: LibretaBanco): void {
+    if (mov.idRecibo) {
+      throw new BadRequestException(
+        'Este movimiento lo generó un recibo: no se puede modificar desde la libreta de bancos.',
+      );
+    }
+    if (mov.idTraspaso) {
+      throw new BadRequestException(
+        'Este movimiento lo generó un traspaso: modificalo o desactivalo desde el traspaso.',
+      );
+    }
+  }
+
+  /** Línea de kardex enlazada al movimiento (si la tiene), validando que su kardex siga abierto. */
+  private async lineaKardexEditable(
+    mov: LibretaBanco,
+  ): Promise<(MovimientoKardex & { kardex: Kardex }) | null> {
+    if (!mov.idMovimientoKardex) {
+      return null;
+    }
+    const linea = await this.dataSource.manager.findOne(MovimientoKardex, {
+      where: { id: mov.idMovimientoKardex },
+      relations: { kardex: true },
+    });
+    if (!linea?.kardex) {
+      return null;
+    }
+    if (linea.kardex.estado === 'CERRADO') {
+      throw new BadRequestException(
+        `El movimiento está cargado en el kardex N° ${linea.kardex.numero}, que ya está cerrado: no puede modificarse.`,
+      );
+    }
+    return linea as MovimientoKardex & { kardex: Kardex };
+  }
+
   private async obtenerCuentaActiva(id: number): Promise<CuentaBancaria> {
     const cuenta = await this.cuentaRepository.findOne({ where: { id } });
     if (!cuenta) {
@@ -107,6 +281,22 @@ export class LibretaBancoService {
       throw new BadRequestException('La cuenta bancaria está inactiva.');
     }
     return cuenta;
+  }
+
+  /** Solo valida que el destino exista (mismo criterio que MovimientoCajaService). */
+  private async resolverDestinoGasto(
+    idDestinoGasto?: number,
+  ): Promise<number | null> {
+    if (!idDestinoGasto) {
+      return null;
+    }
+    const destinoGasto = await this.destinoGastoRepository.findOne({
+      where: { id: idDestinoGasto },
+    });
+    if (!destinoGasto) {
+      throw new NotFoundException('El destino del gasto indicado no existe.');
+    }
+    return destinoGasto.id;
   }
 
   /** Folio siguiente para la libreta de una cuenta dentro de una gestión. */
@@ -251,12 +441,17 @@ export class LibretaBancoService {
     datos: {
       fecha: string;
       nroTransaccion?: string | null;
+      tipoTransaccion: string;
       facturaRecibo?: string | null;
       idPersona?: string | null;
+      idActorProductivoMinero?: string | null;
+      idCliente?: string | null;
       nombresApellidos?: string | null;
       concepto: string;
       idRecibo?: string | null;
       idMovimientoKardex?: string | null;
+      idTraspaso?: string | null;
+      idDestinoGasto?: number | null;
       debe: number;
       haber: number;
     },
@@ -279,12 +474,17 @@ export class LibretaBancoService {
         folio,
         fecha: datos.fecha,
         nroTransaccion: datos.nroTransaccion ?? null,
+        tipoTransaccion: datos.tipoTransaccion,
         facturaRecibo: datos.facturaRecibo ?? null,
         idPersona: datos.idPersona ?? null,
+        idActorProductivoMinero: datos.idActorProductivoMinero ?? null,
+        idCliente: datos.idCliente ?? null,
         nombresApellidos: datos.nombresApellidos ?? null,
         concepto: datos.concepto,
         idRecibo: datos.idRecibo ?? null,
         idMovimientoKardex: datos.idMovimientoKardex ?? null,
+        idTraspaso: datos.idTraspaso ?? null,
+        idDestinoGasto: datos.idDestinoGasto ?? null,
         debe: this.r2(datos.debe),
         haber: this.r2(datos.haber),
         saldo: 0,
@@ -311,17 +511,62 @@ export class LibretaBancoService {
     const cuenta = await this.obtenerCuentaActiva(dto.idCuentaBancaria);
     const { debe, haber } = this.debeHaber(dto);
     const beneficiario = await this.resolverBeneficiario(dto);
+    const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
+    // Con persona/actor/cliente: también afecta su kardex abierto (falla si
+    // no tiene uno). Sin contraparte vinculada: solo se registra en la libreta.
+    const kardex = await buscarKardexAbiertoContraparte(
+      this.dataSource.manager,
+      beneficiario,
+    );
+    if (kardex) {
+      await this.kardexActividadService.validarActivo(kardex);
+    }
+    const importesKardex = kardex
+      ? this.importesKardex(cuenta, debe, haber, dto.tipoCambio)
+      : null;
+    const idFormaPago = kardex ? await this.resolverIdFormaPago(dto.tipoTransaccion) : null;
+    const nroTransaccion = dto.nroTransaccion?.trim() || null;
+    const facturaRecibo = dto.facturaRecibo?.trim() || null;
+    const concepto = dto.concepto.trim();
 
     return this.dataSource.transaction(async (manager) => {
+      let idMovimientoKardex: string | null = null;
+      if (kardex && importesKardex) {
+        const linea = await manager.save(
+          manager.create(MovimientoKardex, {
+            idKardex: kardex.id,
+            numeroLinea: await siguienteNumeroLineaKardex(manager, kardex.id),
+            fecha: dto.fecha,
+            nroComprobante: nroTransaccion,
+            facturaRecibo,
+            idCuentaBancaria: cuenta.id,
+            idFormaPago,
+            detalle: concepto,
+            idDestinoGasto,
+            ...importesKardex,
+            saldo: 0,
+            usuarioRegistro: user.usuario,
+          }),
+        );
+        await recalcularSaldoKardex(manager, kardex.id);
+        idMovimientoKardex = linea.id;
+      }
+
       const mov = await this.crearMovimientoEnTransaccion(
         manager,
         cuenta,
         {
           fecha: dto.fecha,
-          nroTransaccion: dto.nroTransaccion?.trim() || null,
+          nroTransaccion,
+          tipoTransaccion: dto.tipoTransaccion.trim(),
+          facturaRecibo,
           idPersona: beneficiario.idPersona,
+          idActorProductivoMinero: beneficiario.idActorProductivoMinero,
+          idCliente: beneficiario.idCliente,
           nombresApellidos: beneficiario.nombresApellidos,
-          concepto: dto.concepto.trim(),
+          concepto,
+          idDestinoGasto,
+          idMovimientoKardex,
           debe,
           haber,
         },
@@ -330,7 +575,7 @@ export class LibretaBancoService {
 
       return manager.findOne(LibretaBanco, {
         where: { id: mov.id },
-        relations: { periodoBanco: true, persona: true },
+        relations: RELACIONES_MOVIMIENTO,
       });
     });
   }
@@ -346,6 +591,7 @@ export class LibretaBancoService {
     if (!mov) {
       throw new NotFoundException('No se encontró el movimiento solicitado.');
     }
+    this.validarEditableDesdeLibreta(mov);
     if (mov.periodoBanco.estado === 'CERRADO') {
       throw new BadRequestException(
         'El movimiento pertenece a un período cerrado y no puede modificarse. Registrá una regularización en el período abierto.',
@@ -361,9 +607,102 @@ export class LibretaBancoService {
 
     const [gestion, mes] = this.gestionMesDeFecha(dto.fecha);
     const { debe, haber } = this.debeHaber(dto);
-    const beneficiario = await this.resolverBeneficiario(dto);
+    let beneficiario = await this.resolverBeneficiario(dto);
+    const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
+    const nroTransaccion = dto.nroTransaccion?.trim() || null;
+    const facturaRecibo =
+      dto.facturaRecibo !== undefined
+        ? dto.facturaRecibo.trim() || null
+        : mov.facturaRecibo ?? null;
+    const concepto = dto.concepto.trim();
+
+    // Kardex: si el movimiento ya tiene línea, se sincroniza y la contraparte
+    // queda fija (es la titular de ese kardex); si no la tiene y ahora se
+    // indica persona/actor/cliente, se postea una línea nueva.
+    const linea = await this.lineaKardexEditable(mov);
+    const indicaContraparte = Boolean(
+      beneficiario.idPersona ||
+        beneficiario.idActorProductivoMinero ||
+        beneficiario.idCliente,
+    );
+    let kardexNuevo: Kardex | null = null;
+    if (linea) {
+      const titular = contraparteDeKardex(linea.kardex);
+      const cambia =
+        indicaContraparte &&
+        (String(beneficiario.idPersona ?? '') !== String(titular.idPersona ?? '') ||
+          String(beneficiario.idActorProductivoMinero ?? '') !==
+            String(titular.idActorProductivoMinero ?? '') ||
+          String(beneficiario.idCliente ?? '') !== String(titular.idCliente ?? ''));
+      if (cambia) {
+        throw new BadRequestException(
+          'Este movimiento ya está cargado en el kardex de otra persona/actor/cliente. Para cambiar la contraparte, desactivá el movimiento y registralo de nuevo.',
+        );
+      }
+      beneficiario = {
+        ...titular,
+        nombresApellidos:
+          dto.nombresApellidos?.trim() ||
+          beneficiario.nombresApellidos ||
+          mov.nombresApellidos ||
+          null,
+      };
+    } else if (indicaContraparte) {
+      kardexNuevo = await buscarKardexAbiertoContraparte(
+        this.dataSource.manager,
+        beneficiario,
+      );
+      if (kardexNuevo) {
+        await this.kardexActividadService.validarActivo(kardexNuevo);
+      }
+    }
+    const importesKardex =
+      linea || kardexNuevo
+        ? this.importesKardex(
+            cuenta,
+            debe,
+            haber,
+            dto.tipoCambio ?? linea?.tipoCambio ?? null,
+          )
+        : null;
+    const idFormaPago =
+      linea || kardexNuevo ? await this.resolverIdFormaPago(dto.tipoTransaccion) : null;
 
     return this.dataSource.transaction(async (manager) => {
+      let idMovimientoKardex = mov.idMovimientoKardex ?? null;
+      if (linea && importesKardex) {
+        await manager.update(MovimientoKardex, linea.id, {
+          fecha: dto.fecha,
+          nroComprobante: nroTransaccion,
+          facturaRecibo,
+          idFormaPago,
+          detalle: concepto,
+          idDestinoGasto,
+          ...importesKardex,
+          usuarioUltimaModificacion: user.usuario,
+        });
+        await recalcularSaldoKardex(manager, linea.idKardex);
+      } else if (kardexNuevo && importesKardex) {
+        const nueva = await manager.save(
+          manager.create(MovimientoKardex, {
+            idKardex: kardexNuevo.id,
+            numeroLinea: await siguienteNumeroLineaKardex(manager, kardexNuevo.id),
+            fecha: dto.fecha,
+            nroComprobante: nroTransaccion,
+            facturaRecibo,
+            idCuentaBancaria: cuenta.id,
+            idFormaPago,
+            detalle: concepto,
+            idDestinoGasto,
+            ...importesKardex,
+            saldo: 0,
+            usuarioRegistro: user.usuario,
+          }),
+        );
+        await recalcularSaldoKardex(manager, kardexNuevo.id);
+        idMovimientoKardex = nueva.id;
+      }
+
       let idPeriodoBanco = mov.idPeriodoBanco;
       let folio = mov.folio;
 
@@ -388,10 +727,16 @@ export class LibretaBancoService {
         idPeriodoBanco,
         folio,
         fecha: dto.fecha,
-        nroTransaccion: dto.nroTransaccion?.trim() || null,
+        nroTransaccion,
+        tipoTransaccion: dto.tipoTransaccion.trim(),
+        facturaRecibo,
         idPersona: beneficiario.idPersona,
+        idActorProductivoMinero: beneficiario.idActorProductivoMinero,
+        idCliente: beneficiario.idCliente,
         nombresApellidos: beneficiario.nombresApellidos,
-        concepto: dto.concepto.trim(),
+        concepto,
+        idDestinoGasto,
+        idMovimientoKardex,
         debe,
         haber,
         usuarioUltimaModificacion: user.usuario,
@@ -401,9 +746,40 @@ export class LibretaBancoService {
 
       return manager.findOne(LibretaBanco, {
         where: { id: mov.id },
-        relations: { periodoBanco: true, persona: true },
+        relations: RELACIONES_MOVIMIENTO,
       });
     });
+  }
+
+  /**
+   * Expone el recálculo de saldos para otros servicios (ej. TraspasoService,
+   * que edita `libreta_banco` directamente y necesita recalcular después)
+   * dentro de una transacción ya abierta.
+   */
+  async recalcularSaldosEnTransaccion(
+    manager: EntityManager,
+    idCuentaBancaria: number,
+  ): Promise<void> {
+    await this.recalcularCuenta(manager, idCuentaBancaria);
+  }
+
+  /**
+   * Núcleo de "activar/desactivar un movimiento" (update + recálculo),
+   * reusable dentro de una transacción ya abierta por otro servicio (ej.
+   * TraspasoService, que necesita activar/desactivar en bloque el movimiento
+   * de libreta_banco y el de caja de un mismo traspaso).
+   */
+  async cambiarEstadoEnTransaccion(
+    manager: EntityManager,
+    mov: LibretaBanco,
+    activo: boolean,
+    user: Usuario,
+  ): Promise<void> {
+    await manager.update(LibretaBanco, mov.id, {
+      activo,
+      usuarioUltimaModificacion: user.usuario,
+    });
+    await this.recalcularSaldosEnTransaccion(manager, mov.idCuentaBancaria);
   }
 
   async cambiarEstado(
@@ -418,21 +794,28 @@ export class LibretaBancoService {
     if (!mov) {
       throw new NotFoundException('No se encontró el movimiento solicitado.');
     }
+    this.validarEditableDesdeLibreta(mov);
     if (mov.periodoBanco.estado === 'CERRADO') {
       throw new BadRequestException(
         'El movimiento pertenece a un período cerrado y no puede modificarse.',
       );
     }
+    // Si el movimiento afecta un kardex, su línea se activa/desactiva junto
+    // con él para que el saldo del kardex no quede descuadrado.
+    const linea = await this.lineaKardexEditable(mov);
 
     return this.dataSource.transaction(async (manager) => {
-      await manager.update(LibretaBanco, mov.id, {
-        activo,
-        usuarioUltimaModificacion: user.usuario,
-      });
-      await this.recalcularCuenta(manager, mov.idCuentaBancaria);
+      await this.cambiarEstadoEnTransaccion(manager, mov, activo, user);
+      if (linea) {
+        await manager.update(MovimientoKardex, linea.id, {
+          activo,
+          usuarioUltimaModificacion: user.usuario,
+        });
+        await recalcularSaldoKardex(manager, linea.idKardex);
+      }
       return manager.findOne(LibretaBanco, {
         where: { id: mov.id },
-        relations: { periodoBanco: true, persona: true },
+        relations: RELACIONES_MOVIMIENTO,
       });
     });
   }
@@ -440,10 +823,27 @@ export class LibretaBancoService {
   async listar(filtro: FiltroLibretaBancoDto) {
     const cuenta = await this.obtenerCuentaActiva(filtro.idCuentaBancaria);
 
+    // Bandeja liviana: solo lo que muestra la tabla. El período ya viaja en
+    // `periodos` (el front cruza por idPeriodoBanco) y el detalle completo
+    // del movimiento se pide aparte con GET libreta-banco/detalle/:id.
     const qb = this.libretaRepository
       .createQueryBuilder('l')
-      .innerJoinAndSelect('l.periodoBanco', 'p')
-      .leftJoinAndSelect('l.persona', 'per')
+      .innerJoin('l.periodoBanco', 'p')
+      .leftJoin('l.persona', 'per')
+      .addSelect([
+        'per.id',
+        'per.nombres',
+        'per.apellidoPaterno',
+        'per.apellidoMaterno',
+        'per.numeroDocumento',
+      ])
+      .leftJoin('l.actorProductivoMinero', 'act')
+      .addSelect(['act.id', 'act.nombre'])
+      .leftJoin('l.cliente', 'cli')
+      .addSelect(['cli.id', 'cli.nombre'])
+      // usuarioRegistro tiene select:false en Auditoria; la bandeja muestra
+      // quién registró cada movimiento.
+      .addSelect('l.usuarioRegistro')
       .where('l.idCuentaBancaria = :id', { id: cuenta.id });
 
     if (filtro.gestion) {
@@ -453,7 +853,12 @@ export class LibretaBancoService {
       qb.andWhere('p.mes = :m', { m: filtro.mes });
     }
 
-    qb.orderBy('l.folio', 'ASC').addOrderBy('l.id', 'ASC');
+    // El folio se reinicia en cada gestión: se ordena primero por período
+    // para que, sin filtro de gestión, no se mezclen los años.
+    qb.orderBy('p.gestion', 'ASC')
+      .addOrderBy('p.mes', 'ASC')
+      .addOrderBy('l.folio', 'ASC')
+      .addOrderBy('l.id', 'ASC');
     const movimientos = await qb.getMany();
 
     const wherePeriodo: Record<string, unknown> = {
@@ -482,6 +887,52 @@ export class LibretaBancoService {
       periodos,
       movimientos,
     };
+  }
+
+  /**
+   * Detalle completo de un movimiento (visor de la bandeja): cuenta, período,
+   * beneficiario, destino del gasto, auditoría y un resumen del origen
+   * (recibo, traspaso o línea de kardex) cuando lo tiene.
+   */
+  async buscarPorId(id: string): Promise<LibretaBanco> {
+    const movimiento = await this.libretaRepository
+      .createQueryBuilder('l')
+      .leftJoinAndSelect('l.cuentaBancaria', 'cuenta')
+      .leftJoinAndSelect('cuenta.entidadFinanciera', 'entidad')
+      .leftJoinAndSelect('l.periodoBanco', 'p')
+      .leftJoinAndSelect('l.persona', 'per')
+      .leftJoin('l.actorProductivoMinero', 'act')
+      .addSelect(['act.id', 'act.nombre'])
+      .leftJoin('l.cliente', 'cli')
+      .addSelect(['cli.id', 'cli.nombre'])
+      .leftJoinAndSelect('l.destinoGasto', 'dg')
+      .leftJoin('l.recibo', 'rec')
+      .addSelect(['rec.id', 'rec.serie', 'rec.numero', 'rec.tipo', 'rec.estado'])
+      .leftJoin('l.traspaso', 'tr')
+      .addSelect(['tr.id', 'tr.tipo', 'tr.concepto'])
+      .leftJoin('l.movimientoKardex', 'mk')
+      .addSelect(['mk.id', 'mk.numeroLinea'])
+      .leftJoin('mk.kardex', 'k')
+      .addSelect(['k.id', 'k.numero', 'k.tipo', 'k.gestion'])
+      .leftJoin('k.persona', 'kper')
+      .addSelect([
+        'kper.id',
+        'kper.nombres',
+        'kper.apellidoPaterno',
+        'kper.apellidoMaterno',
+      ])
+      .leftJoin('k.actorProductivoMinero', 'kact')
+      .addSelect(['kact.id', 'kact.nombre'])
+      .leftJoin('k.cliente', 'kcli')
+      .addSelect(['kcli.id', 'kcli.nombre'])
+      // usuarioRegistro y fechaRegistro tienen select:false en Auditoria.
+      .addSelect(['l.usuarioRegistro', 'l.fechaRegistro'])
+      .where('l.id = :id', { id })
+      .getOne();
+    if (!movimiento) {
+      throw new NotFoundException('No se encontró el movimiento.');
+    }
+    return movimiento;
   }
 
   async listarPeriodos(idCuentaBancaria: number): Promise<PeriodoBanco[]> {

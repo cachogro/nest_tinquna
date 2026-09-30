@@ -11,11 +11,13 @@ import {
 } from 'typeorm';
 import { EstadoValorizacion } from 'src/cluster/parametricas/entities/estado-valorizacion.entity';
 import { Laboratorio } from 'src/cluster/parametricas/entities/laboratorio.entity';
+import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
 import { ValorizacionDetalleMineral } from './valorizacion-detalle-mineral.entity';
 import { ValorizacionCalculo } from './valorizacion-calculo.entity';
 import { ValorizacionCalculoAporte } from './valorizacion-calculo-aporte.entity';
 import { RecepcionMineral } from '../recepcion-mineral/recepcion-mineral.entity';
 import { ApiProperty } from '@nestjs/swagger';
+import { Recibo } from 'src/cluster/contabilidad/entities/recibo.entity';
 
 @Entity({
   name: 'valorizacion_mineral',
@@ -101,6 +103,30 @@ export class ValorizacionMineral extends Auditoria {
     name: 'id_estado_valorizacion',
   })
   estadoValorizacion?: EstadoValorizacion;
+
+  // ============================
+  // Codificación de valorización
+  // ============================
+
+  // Codificación con la que realmente se valoriza cuando difiere de la de la
+  // recepción (ej. recepción ICC que, por el análisis de laboratorio, conviene
+  // valorizar como BCL). No cambia el código de operación ni el correlativo.
+  // null = se usa la codificación de la recepción. Ver codificacionEfectiva().
+  @Column({
+    name: 'id_codificacion_valorizacion',
+    type: 'bigint',
+    nullable: true,
+  })
+  idCodificacionValorizacion?: string | null;
+
+  @ManyToOne(() => Codificacion, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_codificacion_valorizacion',
+  })
+  codificacionValorizacion?: Codificacion | null;
 
   // ============================
   // Pesos
@@ -351,6 +377,20 @@ export class ValorizacionMineral extends Auditoria {
   fechaEntregado?: Date | null;
 
   // ============================
+  // Promedio
+  // ============================
+
+  // Bandera: null = disponible para armar un promedio; con valor = ya forma
+  // parte de ese promedio y no puede seleccionarse de nuevo. Lo gestiona
+  // exclusivamente PromedioMineralService.
+  @Column({
+    name: 'id_promedio_mineral',
+    type: 'bigint',
+    nullable: true,
+  })
+  idPromedioMineral?: string | null;
+
+  // ============================
   // Relaciones
   // ============================
 
@@ -376,6 +416,24 @@ export class ValorizacionMineral extends Auditoria {
     },
   )
   calculoAportes?: ValorizacionCalculoAporte[];
+
+  // Recibos que pagan el saldo de esta valorización
+  // (contabilidad.recibo.id_valorizacion_mineral). Solo puede haber uno
+  // vigente (BORRADOR/PROCESADO); los ANULADOS quedan como historial.
+  @OneToMany(() => Recibo, (recibo) => recibo.valorizacionMineral)
+  recibos?: Recibo[];
+
+  /**
+   * Codificación con la que se valoriza: la propia si se cambió, si no la de
+   * la recepción. Requiere haber cargado ambas relaciones.
+   */
+  codificacionEfectiva(): Codificacion | null {
+    return (
+      this.codificacionValorizacion ??
+      this.recepcionMineral?.codificacion ??
+      null
+    );
+  }
 
   @BeforeInsert()
   addUuid() {

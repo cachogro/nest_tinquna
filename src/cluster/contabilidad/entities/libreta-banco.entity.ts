@@ -7,10 +7,14 @@ import {
 } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
+import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
+import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
+import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
 import { PeriodoBanco } from './periodo-banco.entity';
 import { Recibo } from './recibo.entity';
 import { MovimientoKardex } from './movimiento-kardex.entity';
+import { Traspaso } from './traspaso.entity';
 
 /**
  * Libreta de bancos: el mayor de una cuenta bancaria. Una fila por movimiento,
@@ -85,6 +89,17 @@ export class LibretaBanco extends Auditoria {
   })
   nroTransaccion?: string;
 
+  // Tipo de transacción bancaria (QR, TRANSFERENCIA, CHEQUE, DEPOSITO,
+  // EFECTIVO...). Texto libre, no FK: el front manda directamente el nombre
+  // elegido de su lista (misma idea que parametrica.forma_pago, pero sin
+  // relacionar para no acoplar esta tabla a ese catálogo).
+  @Column({
+    name: 'tipo_transaccion',
+    type: 'varchar',
+    length: 30,
+  })
+  tipoTransaccion: string;
+
   // Código del recibo (o factura) que respalda el movimiento (ej.
   // "REC:INGRESO-0009"), independiente del n° de transacción bancaria.
   @Column({
@@ -123,12 +138,71 @@ export class LibretaBanco extends Auditoria {
   })
   persona?: PersonaCi;
 
+  // Contraparte alternativa (igual que en un recibo): actor productivo minero
+  // o cliente/comprador. Solo una entre persona, actor y cliente; lo valida
+  // el servicio. nombresApellidos guarda igual el nombre para imprimir.
+  @Column({
+    name: 'id_actor_productivo_minero',
+    type: 'bigint',
+    nullable: true,
+  })
+  idActorProductivoMinero?: string | null;
+
+  @ManyToOne(() => ActorProductivoMinero, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_actor_productivo_minero',
+    referencedColumnName: 'id',
+  })
+  actorProductivoMinero?: ActorProductivoMinero;
+
+  @Column({
+    name: 'id_cliente',
+    type: 'bigint',
+    nullable: true,
+  })
+  idCliente?: string | null;
+
+  @ManyToOne(() => Cliente, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_cliente',
+    referencedColumnName: 'id',
+  })
+  cliente?: Cliente;
+
   @Column({
     name: 'concepto',
     type: 'varchar',
     length: 255,
   })
   concepto: string;
+
+  // "DESTINO DEL GASTO" del Excel (parametrica.destino_gasto), igual que en
+  // movimiento_caja / movimiento_kardex / recibo_detalle / traspaso. Antes
+  // de esta columna, un recibo o kardex pagado por banco perdía su destino
+  // del gasto para efectos de reportes: nunca generaba fila en
+  // movimiento_caja, así que no había dónde guardarlo del lado del banco.
+  @Column({
+    name: 'id_destino_gasto',
+    type: 'int',
+    nullable: true,
+  })
+  idDestinoGasto?: number | null;
+
+  @ManyToOne(() => DestinoGasto, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_destino_gasto',
+    referencedColumnName: 'id',
+  })
+  destinoGasto?: DestinoGasto;
 
   // Presente cuando el movimiento nace de la línea EFECTIVO de un recibo
   // pagado por un medio bancario (idCuentaBancaria). Las líneas
@@ -171,6 +245,26 @@ export class LibretaBanco extends Auditoria {
     referencedColumnName: 'id',
   })
   movimientoKardex?: MovimientoKardex;
+
+  // Presente cuando el movimiento nace de un traspaso interno entre la caja
+  // de flujo y esta cuenta (depósito/retiro): no es un ingreso/egreso real
+  // del negocio, es la misma plata cambiando de custodia.
+  @Column({
+    name: 'id_traspaso',
+    type: 'bigint',
+    nullable: true,
+  })
+  idTraspaso?: string | null;
+
+  @ManyToOne(() => Traspaso, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_traspaso',
+    referencedColumnName: 'id',
+  })
+  traspaso?: Traspaso;
 
   @Column({
     name: 'debe',

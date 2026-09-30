@@ -10,11 +10,13 @@ import { DataSource, FindOptionsWhere, Repository } from 'typeorm';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
+import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
 import { Kardex } from '../entities/kardex.entity';
 import { AbrirKardexDto } from '../dto/kardex/abrir-kardex.dto';
 import { FiltrosKardexDto } from '../dto/kardex/filtros-kardex.dto';
 import { KardexPaginadoDto } from '../dto/kardex/kardex-paginado.dto';
+import { KardexActividadService } from './kardex-actividad.service';
 
 @Injectable()
 export class KardexService {
@@ -28,8 +30,13 @@ export class KardexService {
     @InjectRepository(PersonaCi, 'ci')
     private readonly personaRepository: Repository<PersonaCi>,
 
+    @InjectRepository(Cliente, 'ci')
+    private readonly clienteRepository: Repository<Cliente>,
+
     @InjectDataSource('ci')
     private readonly dataSource: DataSource,
+
+    private readonly kardexActividadService: KardexActividadService,
   ) {}
 
   // ------------------------------------------------------------------ helpers
@@ -50,18 +57,28 @@ export class KardexService {
   private relaciones = {
     actorProductivoMinero: true,
     persona: true,
+    cliente: true,
     kardexAnterior: true,
   } as const;
 
-  /** Filtro base por destinatario (actor o persona) según el tipo del DTO. */
+  /** Es el actor id=1 ("Tinkuriquna", la propia empresa): distingue PERSONAL de ASOCIADO. */
+  private readonly ID_ACTOR_EMPRESA = '1';
+
+  /** Filtro base por destinatario (actor, persona/asociado o cliente) según el tipo del DTO. */
   private wherePorDestinatario(dto: {
-    tipo: 'ACTOR' | 'PERSONAL';
+    tipo: 'ACTOR' | 'ASOCIADO' | 'PERSONAL' | 'CLIENTE';
     idActorProductivoMinero?: string;
     idPersona?: string;
+    idCliente?: string;
   }): FindOptionsWhere<Kardex> {
-    return dto.tipo === 'ACTOR'
-      ? { tipo: 'ACTOR', idActorProductivoMinero: dto.idActorProductivoMinero }
-      : { tipo: 'PERSONAL', idPersona: dto.idPersona };
+    if (dto.tipo === 'ACTOR') {
+      return { tipo: 'ACTOR', idActorProductivoMinero: dto.idActorProductivoMinero };
+    }
+    if (dto.tipo === 'CLIENTE') {
+      return { tipo: 'CLIENTE', idCliente: dto.idCliente };
+    }
+    // PERSONAL y ASOCIADO comparten la FK id_persona; se distinguen por tipo.
+    return { tipo: dto.tipo, idPersona: dto.idPersona };
   }
 
   private async validarDestinatario(dto: AbrirKardexDto): Promise<void> {
@@ -71,9 +88,9 @@ export class KardexService {
           'Para un kardex de ACTOR se requiere idActorProductivoMinero.',
         );
       }
-      if (dto.idPersona) {
+      if (dto.idPersona || dto.idCliente) {
         throw new BadRequestException(
-          'Un kardex de ACTOR no lleva idPersona.',
+          'Un kardex de ACTOR no lleva idPersona ni idCliente.',
         );
       }
       const actor = await this.actorRepository.findOne({
@@ -89,15 +106,39 @@ export class KardexService {
           'El actor productivo minero está inactivo.',
         );
       }
-    } else {
-      if (!dto.idPersona) {
+    } else if (dto.tipo === 'CLIENTE') {
+      if (!dto.idCliente) {
         throw new BadRequestException(
-          'Para un kardex PERSONAL se requiere idPersona.',
+          'Para un kardex de CLIENTE se requiere idCliente.',
         );
       }
-      if (dto.idActorProductivoMinero) {
+      if (dto.idPersona || dto.idActorProductivoMinero) {
         throw new BadRequestException(
-          'Un kardex PERSONAL no lleva idActorProductivoMinero.',
+          'Un kardex de CLIENTE no lleva idPersona ni idActorProductivoMinero.',
+        );
+      }
+      const cliente = await this.clienteRepository.findOne({
+        where: { id: String(dto.idCliente) },
+      });
+      if (!cliente) {
+        throw new NotFoundException('No se encontró el cliente.');
+      }
+      if (!cliente.activo) {
+        throw new BadRequestException('El cliente está inactivo.');
+      }
+    } else {
+      // PERSONAL y ASOCIADO comparten validación de forma (idPersona,
+      // sin idActor/idCliente) y solo difieren en si la persona es o no
+      // personal interno de la empresa (idActorProductivoMinero === '1').
+      const etiquetaTipo = dto.tipo === 'PERSONAL' ? 'PERSONAL' : 'ASOCIADO';
+      if (!dto.idPersona) {
+        throw new BadRequestException(
+          `Para un kardex ${etiquetaTipo} se requiere idPersona.`,
+        );
+      }
+      if (dto.idActorProductivoMinero || dto.idCliente) {
+        throw new BadRequestException(
+          `Un kardex ${etiquetaTipo} no lleva idActorProductivoMinero ni idCliente.`,
         );
       }
       const persona = await this.personaRepository.findOne({
@@ -108,6 +149,21 @@ export class KardexService {
       }
       if (!persona.activo) {
         throw new BadRequestException('La persona está inactiva.');
+      }
+
+      const esPersonalInterno =
+        persona.idActorProductivoMinero != null &&
+        String(persona.idActorProductivoMinero) === this.ID_ACTOR_EMPRESA;
+
+      if (dto.tipo === 'PERSONAL' && !esPersonalInterno) {
+        throw new BadRequestException(
+          'Esta persona no es personal interno de la empresa. Usá tipo ASOCIADO.',
+        );
+      }
+      if (dto.tipo === 'ASOCIADO' && esPersonalInterno) {
+        throw new BadRequestException(
+          'Esta persona es personal interno de la empresa. Usá tipo PERSONAL.',
+        );
       }
     }
   }
@@ -121,20 +177,26 @@ export class KardexService {
       where: this.wherePorDestinatario(dto),
     });
     if (yaExiste) {
+      const etiquetas = {
+        ACTOR: 'Este actor',
+        ASOCIADO: 'Esta persona asociada',
+        PERSONAL: 'Esta persona',
+        CLIENTE: 'Este cliente',
+      } as const;
       throw new ConflictException(
-        dto.tipo === 'ACTOR'
-          ? 'Este actor ya tiene un kardex. El siguiente (N° 2, N° 3...) se genera al cerrar el actual.'
-          : 'Esta persona ya tiene un kardex. El siguiente se genera al cerrar el actual.',
+        `${etiquetas[dto.tipo]} ya tiene un kardex. El siguiente (N° 2, N° 3...) se genera al cerrar el actual.`,
       );
     }
 
     const saldoInicial = dto.saldoInicial ?? 0;
+    const esPersonaOAsociado = dto.tipo === 'PERSONAL' || dto.tipo === 'ASOCIADO';
 
     const kardex = this.kardexRepository.create({
       tipo: dto.tipo,
       idActorProductivoMinero:
         dto.tipo === 'ACTOR' ? String(dto.idActorProductivoMinero) : null,
-      idPersona: dto.tipo === 'PERSONAL' ? String(dto.idPersona) : null,
+      idPersona: esPersonaOAsociado ? String(dto.idPersona) : null,
+      idCliente: dto.tipo === 'CLIENTE' ? String(dto.idCliente) : null,
       numero: 1,
       gestion: dto.gestion ?? this.gestionActual(),
       descripcion: this.normalizar(dto.descripcion),
@@ -184,6 +246,7 @@ export class KardexService {
           tipo: kardex.tipo,
           idActorProductivoMinero: kardex.idActorProductivoMinero,
           idPersona: kardex.idPersona,
+          idCliente: kardex.idCliente,
           numero: kardex.numero + 1,
           gestion: this.gestionActual(),
           descripcion: kardex.descripcion,
@@ -308,6 +371,7 @@ export class KardexService {
       gestion,
       idActorProductivoMinero,
       idPersona,
+      idCliente,
       busqueda,
       orderBy = 'fechaApertura',
       orderDirection = 'DESC',
@@ -316,7 +380,8 @@ export class KardexService {
     const query = this.kardexRepository
       .createQueryBuilder('kardex')
       .leftJoinAndSelect('kardex.actorProductivoMinero', 'actor')
-      .leftJoinAndSelect('kardex.persona', 'persona');
+      .leftJoinAndSelect('kardex.persona', 'persona')
+      .leftJoinAndSelect('kardex.cliente', 'cliente');
 
     if (tipo) {
       query.andWhere('kardex.tipo = :tipo', { tipo });
@@ -335,6 +400,9 @@ export class KardexService {
     if (idPersona) {
       query.andWhere('kardex.idPersona = :idPersona', { idPersona });
     }
+    if (idCliente) {
+      query.andWhere('kardex.idCliente = :idCliente', { idCliente });
+    }
     if (busqueda) {
       query.andWhere(
         `(
@@ -342,6 +410,7 @@ export class KardexService {
           OR persona.nombres ILIKE :busqueda
           OR persona.apellidoPaterno ILIKE :busqueda
           OR persona.apellidoMaterno ILIKE :busqueda
+          OR cliente.nombre ILIKE :busqueda
           OR kardex.descripcion ILIKE :busqueda
         )`,
         { busqueda: `%${busqueda}%` },
@@ -364,6 +433,9 @@ export class KardexService {
     query.skip((page - 1) * limit).take(limit);
 
     const [data, total] = await query.getManyAndCount();
+    // ACTIVO / INACTIVO (baja lógica por días sin movimientos, ver
+    // KardexActividadService): los inactivos siguen apareciendo.
+    await this.kardexActividadService.completar(data);
 
     return {
       data,
@@ -382,6 +454,36 @@ export class KardexService {
     if (!kardex) {
       throw new NotFoundException('No se encontró el kardex.');
     }
+    await this.kardexActividadService.completar([kardex]);
     return kardex;
+  }
+
+  /**
+   * Reactiva un kardex dado de baja lógica por inactividad: guarda cuándo y
+   * quién, lo que reinicia el conteo de KARDEX_DIAS_INACTIVIDAD desde hoy.
+   * Decisión manual del operador/admin (no se reactiva solo con un movimiento,
+   * porque justamente las transacciones están bloqueadas mientras esté inactivo).
+   */
+  async reactivar(id: string, user: Usuario): Promise<Kardex> {
+    const kardex = await this.kardexRepository.findOne({ where: { id } });
+    if (!kardex) {
+      throw new NotFoundException('No se encontró el kardex.');
+    }
+    if (kardex.estado !== 'ABIERTO' || kardex.activo === false) {
+      throw new BadRequestException(
+        'Solo se puede reactivar un kardex ABIERTO y vigente (no cerrado ni anulado).',
+      );
+    }
+    const [actividad] = [...(await this.kardexActividadService.actividades([kardex])).values()];
+    if (actividad?.estado !== 'INACTIVO') {
+      throw new BadRequestException('El kardex está ACTIVO: no hace falta reactivarlo.');
+    }
+
+    await this.kardexRepository.update(kardex.id, {
+      fechaReactivacion: new Date(),
+      reactivadoPor: user.usuario,
+      usuarioUltimaModificacion: user.usuario,
+    });
+    return this.buscarPorId(kardex.id);
   }
 }
