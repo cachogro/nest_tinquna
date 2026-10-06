@@ -113,7 +113,7 @@ export class MovimientoKardexService {
     }
     if (kardex.estado === 'CERRADO') {
       throw new BadRequestException(
-        `El kardex N° ${kardex.numero} está cerrado. Registrá el movimiento en el kardex abierto.`,
+        `El kardex ${kardex.codigo} está cerrado. Registrá el movimiento en el kardex abierto.`,
       );
     }
     return kardex;

@@ -34,6 +34,8 @@ import { ValidRoles } from 'src/security/enums/valid-roles';
 import { KardexService } from '../services/kardex.service';
 import { KardexExcelService } from '../services/kardex-excel.service';
 import { DeudasTotalesExcelService } from '../services/deudas-totales-excel.service';
+import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
+import { FormatoReporteDto } from '../dto/reporte/formato-reporte.dto';
 import { Kardex } from '../entities/kardex.entity';
 import { AbrirKardexDto } from '../dto/kardex/abrir-kardex.dto';
 import { FiltrosKardexDto } from '../dto/kardex/filtros-kardex.dto';
@@ -48,6 +50,7 @@ export class KardexController {
     private readonly kardexService: KardexService,
     private readonly kardexExcelService: KardexExcelService,
     private readonly deudasTotalesExcelService: DeudasTotalesExcelService,
+    private readonly contabilidadPdfService: ContabilidadPdfService,
   ) {}
 
   @Post('kardex')
@@ -56,7 +59,7 @@ export class KardexController {
   @ApiOperation({
     summary: 'Abrir el primer kardex de un actor o de una persona',
     description:
-      'Registra el kardex N° 1 de un actor productivo minero (cubre a todas sus personas) o de una persona individual. Los kardex siguientes (N° 2, N° 3...) se generan solos al cerrar el actual. `saldoInicial` es la deuda que se arrastra del Excel; por defecto 0.',
+      'Registra el kardex N° 1 de un actor productivo minero (cubre a todas sus personas) o de una persona individual, y le genera su `codigo` (ej. KA-001). Los kardex siguientes (N° 2, N° 3...) se generan solos al cerrar el actual, cada uno con el siguiente código de su sigla. `saldoInicial` es la deuda que se arrastra del Excel; por defecto 0.',
   })
   @ApiBody({
     type: AbrirKardexDto,
@@ -220,13 +223,20 @@ export class KardexController {
   @ApiOperation({
     summary: 'Listado paginado de kardex',
     description:
-      'Bandeja paginada de kardex (mismo formato que persona_ci / actor-productivo-minero), para elegir un kardex abierto o cerrado antes de entrar a cargarle movimientos. Filtra por tipo, estado, gestión, actor o persona puntual, y por búsqueda libre (nombre del actor, nombre/apellidos de la persona o descripción del kardex). Cada kardex abierto trae `actividad` ({ estado: ACTIVO | INACTIVO, ultimaActividad, inactivoDesde, diasSinActividad, diasInactividad }); los INACTIVOS siguen apareciendo pero no admiten transacciones hasta reactivarlos (PATCH kardex/:id/reactivar). En cerrados o anulados `actividad` es null.',
+      'Bandeja paginada de kardex (mismo formato que persona_ci / actor-productivo-minero), para elegir un kardex abierto o cerrado antes de entrar a cargarle movimientos. Filtra por tipo, estado, gestión, código (`codigo`, completo o parcial), actor o persona puntual, y por búsqueda libre (nombre del actor, nombre/apellidos de la persona, descripción o código del kardex). Cada kardex trae su `codigo` (K<tipo>-<correlativo>, ej. KA-001, KP-002: A=ACTOR, S=ASOCIADO, P=PERSONAL, C=CLIENTE; cada sigla lleva su propia numeración). Cada kardex abierto trae `actividad` ({ estado: ACTIVO | INACTIVO, ultimaActividad, inactivoDesde, diasSinActividad, diasInactividad }); los INACTIVOS siguen apareciendo pero no admiten transacciones hasta reactivarlos (PATCH kardex/:id/reactivar). En cerrados o anulados `actividad` es null.',
   })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiQuery({ name: 'tipo', required: false, enum: ['ACTOR', 'ASOCIADO', 'PERSONAL', 'CLIENTE'] })
   @ApiQuery({ name: 'estado', required: false, enum: ['ABIERTO', 'CERRADO'] })
   @ApiQuery({ name: 'gestion', required: false, type: Number, example: 2026 })
+  @ApiQuery({
+    name: 'codigo',
+    required: false,
+    type: String,
+    example: 'KA-001',
+    description: 'Código del kardex, completo o parcial.',
+  })
   @ApiQuery({ name: 'idActorProductivoMinero', required: false, type: String })
   @ApiQuery({ name: 'idPersona', required: false, type: String })
   @ApiQuery({ name: 'idCliente', required: false, type: String })
@@ -234,7 +244,7 @@ export class KardexController {
   @ApiQuery({
     name: 'orderBy',
     required: false,
-    enum: ['id', 'numero', 'gestion', 'estado', 'fechaApertura'],
+    enum: ['id', 'codigo', 'numero', 'gestion', 'estado', 'fechaApertura'],
   })
   @ApiQuery({ name: 'orderDirection', required: false, enum: ['ASC', 'DESC'] })
   @ApiOkResponse({
@@ -250,11 +260,11 @@ export class KardexController {
   @Get('kardex/reporte/deudas-totales/excel')
   @Auth()
   @ApiOperation({
-    summary: 'Exportar el resumen de deudas (todos los kardex) a Excel',
+    summary: 'Exportar el resumen de deudas (todos los kardex) a Excel o PDF',
     description:
-      'Genera el .xlsx "RESUMEN DE DEUDAS" (modelo DEUDAS TOTALES): una fila por cada kardex ABIERTO con saldo por cobrar > 0, con la fecha de su última interacción, cuenta, titular e importe. El kardex de un actor productivo minero y los de sus personas asociadas se agrupan como una CORPORACIÓN con su importe total. Cada deudor se marca INACTIVO cuando pasa un mes contable completo sin interactuar (sin movimientos en su kardex -anticipos, pagos- ni entregas de mineral desde el primer día del mes anterior; para un actor cuentan las entregas de cualquiera de sus personas) y vuelve a ACTIVO con su siguiente interacción.',
+      'Genera el .xlsx "RESUMEN DE DEUDAS" (modelo DEUDAS TOTALES): una fila por cada kardex ABIERTO con saldo por cobrar > 0, con la fecha de su última interacción, cuenta, titular e importe. El kardex de un actor productivo minero y los de sus personas asociadas se agrupan como una CORPORACIÓN con su importe total. Cada deudor se marca INACTIVO cuando pasa un mes contable completo sin interactuar (sin movimientos en su kardex -anticipos, pagos- ni entregas de mineral desde el primer día del mes anterior; para un actor cuentan las entregas de cualquiera de sus personas) y vuelve a ACTIVO con su siguiente interacción. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
-  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({ description: 'Filtros inválidos.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
@@ -264,14 +274,12 @@ export class KardexController {
   ): Promise<void> {
     const buffer = await this.deudasTotalesExcelService.generar(filtro);
 
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=resumen-deudas${filtro.tipo ? `-${filtro.tipo.toLowerCase()}` : ''}.xlsx`,
-      'Content-Length': buffer.length,
-    });
-
-    res.end(buffer);
+    await this.contabilidadPdfService.enviar(
+      res,
+      buffer,
+      `resumen-deudas${filtro.tipo ? `-${filtro.tipo.toLowerCase()}` : ''}`,
+      filtro.formato,
+    );
   }
 
   @Get('kardex/:id')
@@ -289,28 +297,29 @@ export class KardexController {
   @Get('kardex/:id/excel')
   @Auth()
   @ApiOperation({
-    summary: 'Exportar el kardex actual a Excel',
+    summary: 'Exportar el kardex actual a Excel o PDF',
     description:
-      'Genera el .xlsx del kardex (actor, persona o cliente) con el mismo formato del libro físico: cabecera con proveedor, cuenta y gestión, el detalle de todas las líneas activas (en orden de registro, con APROBADO POR, TIPO DE PAGO ej. "QR - UNION - 123578955" y LOTE) y el total de anticipos por cobrar.',
+      'Genera el .xlsx del kardex (actor, persona o cliente) con el mismo formato del libro físico: cabecera con proveedor, código del kardex, cuenta y gestión, el detalle de todas las líneas activas (en orden de registro, con APROBADO POR, TIPO DE PAGO ej. "QR - UNION - 123578955" y LOTE) y el total de anticipos por cobrar. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta apaisada, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
   @ApiParam({ name: 'id', description: 'Id del kardex.', example: '3' })
-  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiNotFoundResponse({ description: 'No se encontró el kardex.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async exportarExcel(
     @Param('id') id: string,
+    @Query() filtro: FormatoReporteDto,
     @Res() res: Response,
   ): Promise<void> {
-    const buffer = await this.kardexExcelService.generar(id);
+    const { buffer, codigo } = await this.kardexExcelService.generar(id);
 
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=kardex-${id}.xlsx`,
-      'Content-Length': buffer.length,
-    });
-
-    res.end(buffer);
+    // El kardex tiene 14 columnas: en PDF va apaisado, como la caja de flujo.
+    await this.contabilidadPdfService.enviar(
+      res,
+      buffer,
+      `kardex-${codigo}`,
+      filtro.formato,
+      { horizontal: true },
+    );
   }
 }

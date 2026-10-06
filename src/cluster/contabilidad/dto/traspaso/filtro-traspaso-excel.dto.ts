@@ -2,13 +2,15 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsDateString, IsIn, IsInt, IsOptional, IsPositive, IsString } from 'class-validator';
 
+import { FormatoReporteDto } from '../reporte/formato-reporte.dto';
+
 /**
  * Filtros del reporte Excel de traspasos. A diferencia del listado
  * (`FiltroTraspasoDto`) filtra por rango de fechas en vez de gestión, y
  * permite elegir moneda y estado (activos / desactivados). Todos son
  * opcionales: sin filtros sale el libro completo en orden cronológico.
  */
-export class FiltroTraspasoExcelDto {
+export class FiltroTraspasoExcelDto extends FormatoReporteDto {
   @ApiPropertyOptional({ example: 1, description: 'Filtrar por cuenta bancaria.' })
   @IsOptional()
   @Type(() => Number)

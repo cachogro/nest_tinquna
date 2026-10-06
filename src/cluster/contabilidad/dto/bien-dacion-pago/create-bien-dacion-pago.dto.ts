@@ -49,18 +49,18 @@ export class CreateBienDacionPagoDto {
   @MaxLength(255, { message: 'La descripción no puede exceder los 255 caracteres.' })
   descripcion: string;
 
-  @ApiPropertyOptional({
-    example: 45000,
-    description: 'Valor referencial / avalúo aproximado del bien (no exacto, solo antecedente).',
+  @ApiProperty({
+    example: 5000,
+    description:
+      'Valor acordado con el dueño por el bien (Bs.): lo que se propone amortizar de su deuda al tomarlo en pago o venderlo.',
   })
-  @IsOptional()
   @Type(() => Number)
   @IsNumber(
     { maxDecimalPlaces: 2 },
-    { message: 'El valor referencial debe ser numérico con hasta 2 decimales.' },
+    { message: 'El valor acordado debe ser numérico con hasta 2 decimales.' },
   )
-  @IsPositive({ message: 'El valor referencial debe ser mayor a 0.' })
-  valorReferencial?: number;
+  @IsPositive({ message: 'El valor acordado debe ser mayor a 0.' })
+  valorReferencial: number;
 
   @ApiPropertyOptional({
     example: 'ENTREGADO A CUENTA DE SU DEUDA POR ANTICIPOS.',

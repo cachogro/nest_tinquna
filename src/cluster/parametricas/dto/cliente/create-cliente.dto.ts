@@ -1,5 +1,10 @@
 import {
+  MODALIDADES_VENTA_CLIENTE,
+  ModalidadVentaCliente,
+} from '../../entities/cliente.entity';
+import {
   IsDateString,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsPositive,
@@ -53,6 +58,16 @@ export class CreateClienteDto {
     message: 'El tipo de cliente seleccionado no es válido.',
   })
   idTipoActorProductivoMinero?: number;
+
+  /**
+   * Cómo se le cobra: COMERCIO_INTERNO (cuenta corriente, por defecto) o
+   * EXPORTACION (lote por lote).
+   */
+  @IsOptional()
+  @IsIn(MODALIDADES_VENTA_CLIENTE, {
+    message: 'La modalidad de venta debe ser COMERCIO_INTERNO o EXPORTACION.',
+  })
+  modalidadVenta?: ModalidadVentaCliente;
 
   @IsOptional()
   @IsString({

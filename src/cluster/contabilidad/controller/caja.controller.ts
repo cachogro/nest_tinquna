@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseBoolPipe,
+  ParseEnumPipe,
   ParseIntPipe,
   Patch,
   Post,
@@ -33,14 +34,17 @@ import { Usuario } from 'src/security/entities/usuario.entity';
 import { MovimientoCajaService } from '../services/movimiento-caja.service';
 import { CajaFlujoExcelService } from '../services/caja-flujo-excel.service';
 import { CajaFlujoConsolidadoExcelService } from '../services/caja-flujo-consolidado-excel.service';
-import { FiltroCajaConsolidadoExcelDto } from '../dto/movimiento-caja/filtro-caja-consolidado-excel.dto';
+import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
 import { MovimientoCaja } from '../entities/movimiento-caja.entity';
 import { PeriodoCaja } from '../entities/periodo-caja.entity';
 import { CreateMovimientoCajaDto } from '../dto/movimiento-caja/create-movimiento-caja.dto';
 import { FiltroMovimientoCajaDto } from '../dto/movimiento-caja/filtro-movimiento-caja.dto';
-import { FiltroCajaFlujoExcelDto } from '../dto/movimiento-caja/filtro-caja-flujo-excel.dto';
-import { CerrarPeriodoCajaDto } from '../dto/movimiento-caja/cerrar-periodo-caja.dto';
-import { CerrarGestionCajaDto } from '../dto/movimiento-caja/cerrar-gestion-caja.dto';
+import { FiltroCajaExcelDto } from '../dto/movimiento-caja/filtro-caja-excel.dto';
+import {
+  ACCIONES_PERIODO,
+  AccionPeriodo,
+  AccionPeriodoCajaDto,
+} from '../dto/movimiento-caja/accion-periodo-caja.dto';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
@@ -50,6 +54,7 @@ export class CajaController {
     private readonly movimientoCajaService: MovimientoCajaService,
     private readonly cajaFlujoExcelService: CajaFlujoExcelService,
     private readonly cajaFlujoConsolidadoExcelService: CajaFlujoConsolidadoExcelService,
+    private readonly contabilidadPdfService: ContabilidadPdfService,
   ) {}
 
   //--------------------------- Caja de flujo --------------------------------
@@ -200,20 +205,11 @@ export class CajaController {
   @Get('movimiento-caja/excel')
   @Auth()
   @ApiOperation({
-    summary: 'Exportar la caja de flujo a Excel (provisional, sin bancos)',
+    summary: 'Exportar la caja de flujo a Excel o PDF (una caja o el libro completo)',
     description:
-      'Genera el .xlsx de la caja de flujo con el mismo formato del libro físico (fecha, concepto, entrega de fondos a, factura y/o recibo, N° cpte., destino del gasto, ingreso, egreso, saldo), para una caja, moneda, gestión y mes puntuales: a diferencia del listado, acá gestión y mes son obligatorios porque el Excel imprime un único período mensual del libro. Por ahora no incluye las columnas de bancos (Banco Unión, BCP, Sol, etc.), solo los registros de efectivo.',
+      'Genera el .xlsx de un único período mensual del libro, por eso gestión y mes son obligatorios. Sin `completo` exporta una caja en una moneda con el formato del libro físico (fecha, concepto, entrega de fondos a, factura y/o recibo, N° cpte., destino del gasto, ingreso, egreso, saldo); ahí `idCaja` y `moneda` son obligatorios. Con `completo=true` exporta el libro completo como la hoja "CAJA DE FLUJO" del modelo físico: en una sola lista ordenada por fecha y hora de registro, la caja en Bs., la caja en $us. y cada cuenta bancaria (aperturadas o con movimientos en el mes), cada una con su grupo INGRESO / EGRESO / SALDO, sumas totales, resumen por cuenta y firmas; `moneda` se ignora e `idCaja` es opcional (por defecto la caja principal). Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta apaisada (por la cantidad de columnas), márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
-  @ApiQuery({ name: 'idCaja', required: true, type: Number, example: 1 })
-  @ApiQuery({
-    name: 'moneda',
-    required: true,
-    enum: ['BS', 'USD'],
-    example: 'BS',
-  })
-  @ApiQuery({ name: 'gestion', required: true, type: Number, example: 2026 })
-  @ApiQuery({ name: 'mes', required: true, type: Number, example: 7 })
-  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({ description: 'Caja inactiva o filtros inválidos.' })
   @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
@@ -221,57 +217,38 @@ export class CajaController {
     description: 'Error interno del servidor.',
   })
   async exportarExcel(
-    @Query() filtro: FiltroCajaFlujoExcelDto,
+    @Query() filtro: FiltroCajaExcelDto,
     @GetUser() user: Usuario,
     @Res() res: Response,
   ): Promise<void> {
-    const buffer = await this.cajaFlujoExcelService.generar(filtro, user);
+    const periodo = `${filtro.gestion}-${String(filtro.mes).padStart(2, '0')}`;
+    let buffer: Buffer;
+    let nombre: string;
 
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=caja-flujo-${filtro.idCaja}-${filtro.moneda}-${filtro.gestion}-${String(filtro.mes).padStart(2, '0')}.xlsx`,
-      'Content-Length': buffer.length,
+    if (filtro.completo) {
+      buffer = await this.cajaFlujoConsolidadoExcelService.generar(
+        { idCaja: filtro.idCaja, gestion: filtro.gestion, mes: filtro.mes },
+        user,
+      );
+      nombre = `caja-flujo-completa-${periodo}`;
+    } else {
+      // idCaja y moneda ya vienen validados por el DTO cuando no es completo.
+      const idCaja = filtro.idCaja;
+      const moneda = filtro.moneda;
+      buffer = await this.cajaFlujoExcelService.generar(
+        { idCaja, moneda, gestion: filtro.gestion, mes: filtro.mes },
+        user,
+      );
+      nombre = `caja-flujo-${idCaja}-${moneda}-${periodo}`;
+    }
+
+    // La caja de flujo va apaisada: tiene tres columnas por cada cuenta.
+    await this.contabilidadPdfService.enviar(res, buffer, nombre, filtro.formato, {
+      horizontal: true,
     });
-
-    res.end(buffer);
   }
 
-  @Get('movimiento-caja/excel-completo')
-  @Auth()
-  @ApiOperation({
-    summary: 'Exportar la caja de flujo completa a Excel (caja + todas las cuentas bancarias)',
-    description:
-      'Libro completo del mes como la hoja "CAJA DE FLUJO" del modelo físico: en una sola lista ordenada por fecha y hora de registro, todos los movimientos vigentes de la caja en Bs., de la caja en $us. y de cada cuenta bancaria (aperturadas o con movimientos en el mes). Cada una tiene su grupo INGRESO / EGRESO / SALDO; los saldos se arrastran en todas las filas desde el saldo inicial del mes. Cierra con sumas totales, un resumen por cuenta (saldo inicial, ingresos, egresos, saldo final) y firmas. Más pesado que `GET movimiento-caja/excel`, que se mantiene para consultar una sola caja/moneda.',
-  })
-  @ApiQuery({ name: 'idCaja', required: false, type: Number, example: 1 })
-  @ApiQuery({ name: 'gestion', required: true, type: Number, example: 2026 })
-  @ApiQuery({ name: 'mes', required: true, type: Number, example: 9 })
-  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
-  @ApiBadRequestResponse({ description: 'Filtros inválidos.' })
-  @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async exportarExcelCompleto(
-    @Query() filtro: FiltroCajaConsolidadoExcelDto,
-    @GetUser() user: Usuario,
-    @Res() res: Response,
-  ): Promise<void> {
-    const buffer = await this.cajaFlujoConsolidadoExcelService.generar(filtro, user);
-
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=caja-flujo-completa-${filtro.gestion}-${String(filtro.mes).padStart(2, '0')}.xlsx`,
-      'Content-Length': buffer.length,
-    });
-
-    res.end(buffer);
-  }
-
-  //--------------------------- Períodos y cierres --------------------------
+//--------------------------- Períodos y cierres --------------------------
 
   @Get('movimiento-caja/periodo')
   @Auth()
@@ -304,115 +281,59 @@ export class CajaController {
     return await this.movimientoCajaService.listarPeriodos(idCaja, moneda);
   }
 
-  @Post('movimiento-caja/periodo/cerrar')
+  @Post('movimiento-caja/periodo/:accion')
   @Auth()
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Cerrar un período mensual de caja',
+    summary: 'Cerrar o reabrir un período mensual o la gestión de una caja',
     description:
-      'Sella el mes: sus movimientos quedan inmutables, se fija `saldo_final = saldo_inicial + ingresos - egresos`, y ese saldo pasa como saldo inicial del mes siguiente (misma moneda). Requiere que el mes anterior ya esté cerrado (contigüidad).',
+      '`accion` = cerrar | reabrir; `alcance` (en el cuerpo) = MES | GESTION, siempre en una moneda. Cerrar MES sella el mes: sus movimientos quedan inmutables, se fija `saldo_final = saldo_inicial + ingresos - egresos` y ese saldo pasa como saldo inicial del mes siguiente; requiere que el mes anterior ya esté cerrado (contigüidad). Reabrir MES lo vuelve a ABIERTO; requiere que ni el mes siguiente ni la gestión estén cerrados. Cerrar GESTION solo se puede con sus 12 meses cerrados: registra el resumen anual (saldo inicial de enero, totales del año, saldo final de diciembre) y sella el año. Reabrir GESTION la vuelve a ABIERTO; después se pueden reabrir sus meses en orden inverso.',
   })
-  @ApiBody({ type: CerrarPeriodoCajaDto })
+  @ApiParam({ name: 'accion', enum: ACCIONES_PERIODO, example: 'cerrar' })
+  @ApiBody({
+    type: AccionPeriodoCajaDto,
+    examples: {
+      mes: {
+        summary: 'Un mes',
+        value: { idCaja: 1, moneda: 'BS', gestion: 2026, mes: 9, alcance: 'MES' },
+      },
+      gestion: {
+        summary: 'La gestión (año)',
+        value: { idCaja: 1, moneda: 'BS', gestion: 2026, alcance: 'GESTION' },
+      },
+    },
+  })
   @ApiOkResponse({
-    description: 'Período cerrado correctamente.',
+    description: 'Período o gestión actualizado correctamente.',
     type: PeriodoCaja,
   })
   @ApiBadRequestResponse({
     description:
-      'El período ya está cerrado, o el mes anterior sigue abierto, o la gestión está cerrada.',
+      'Acción o alcance inválidos; el período ya está en ese estado; el mes anterior sigue abierto o el siguiente cerrado; la gestión está cerrada o le faltan meses por cerrar.',
   })
   @ApiNotFoundResponse({
-    description: 'No hay movimientos registrados en ese mes para la caja.',
+    description:
+      'No se encontró la caja, el período, el cierre de gestión, o no hay movimientos en ese mes.',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({
     description: 'Error interno del servidor.',
   })
-  async cerrarPeriodo(
-    @Body() body: CerrarPeriodoCajaDto,
+  async accionPeriodo(
+    @Param('accion', new ParseEnumPipe(AccionPeriodo)) accion: AccionPeriodo,
+    @Body() body: AccionPeriodoCajaDto,
     @GetUser() user: Usuario,
   ): Promise<PeriodoCaja> {
-    return await this.movimientoCajaService.cerrarPeriodo(body, user);
-  }
-
-  @Post('movimiento-caja/periodo/reabrir')
-  @Auth()
-  @ApiOperation({
-    summary: 'Reabrir un período mensual de caja',
-    description:
-      'Vuelve el mes a ABIERTO. Requiere que el mes siguiente NO esté cerrado y que la gestión NO esté cerrada (misma moneda).',
-  })
-  @ApiBody({ type: CerrarPeriodoCajaDto })
-  @ApiOkResponse({
-    description: 'Período reabierto correctamente.',
-    type: PeriodoCaja,
-  })
-  @ApiBadRequestResponse({
-    description:
-      'El período no está cerrado, o el mes siguiente / la gestión están cerrados.',
-  })
-  @ApiNotFoundResponse({ description: 'No existe el período indicado.' })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async reabrirPeriodo(
-    @Body() body: CerrarPeriodoCajaDto,
-    @GetUser() user: Usuario,
-  ): Promise<PeriodoCaja> {
-    return await this.movimientoCajaService.reabrirPeriodo(body, user);
-  }
-
-  @Post('movimiento-caja/periodo/cerrar-gestion')
-  @Auth()
-  @ApiOperation({
-    summary: 'Cerrar la gestión (año) de una caja en una moneda',
-    description:
-      'Solo se puede cerrar la gestión cuando sus 12 meses están cerrados. Registra el resumen anual (saldo inicial de enero, totales del año, saldo final de diciembre) y sella el año.',
-  })
-  @ApiBody({ type: CerrarGestionCajaDto })
-  @ApiOkResponse({
-    description: 'Gestión cerrada correctamente.',
-    type: PeriodoCaja,
-  })
-  @ApiBadRequestResponse({
-    description: 'Faltan meses por cerrar en la gestión.',
-  })
-  @ApiNotFoundResponse({ description: 'No se encontró la caja.' })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async cerrarGestion(
-    @Body() body: CerrarGestionCajaDto,
-    @GetUser() user: Usuario,
-  ): Promise<PeriodoCaja> {
-    return await this.movimientoCajaService.cerrarGestion(body, user);
-  }
-
-  @Post('movimiento-caja/periodo/reabrir-gestion')
-  @Auth()
-  @ApiOperation({
-    summary: 'Reabrir la gestión (año) de una caja en una moneda',
-    description:
-      'Vuelve la gestión a ABIERTO. Después se pueden reabrir los meses de ese año (en orden inverso).',
-  })
-  @ApiBody({ type: CerrarGestionCajaDto })
-  @ApiOkResponse({
-    description: 'Gestión reabierta correctamente.',
-    type: PeriodoCaja,
-  })
-  @ApiBadRequestResponse({ description: 'La gestión no está cerrada.' })
-  @ApiNotFoundResponse({
-    description: 'No existe un cierre de gestión para esa caja/moneda.',
-  })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async reabrirGestion(
-    @Body() body: CerrarGestionCajaDto,
-    @GetUser() user: Usuario,
-  ): Promise<PeriodoCaja> {
-    return await this.movimientoCajaService.reabrirGestion(body, user);
+    const { alcance, mes, ...gestion } = body;
+    if (alcance === 'GESTION') {
+      return accion === AccionPeriodo.CERRAR
+        ? await this.movimientoCajaService.cerrarGestion(gestion, user)
+        : await this.movimientoCajaService.reabrirGestion(gestion, user);
+    }
+    // Con alcance MES el DTO ya exigió el mes.
+    const periodo = { ...gestion, mes };
+    return accion === AccionPeriodo.CERRAR
+      ? await this.movimientoCajaService.cerrarPeriodo(periodo, user)
+      : await this.movimientoCajaService.reabrirPeriodo(periodo, user);
   }
 }

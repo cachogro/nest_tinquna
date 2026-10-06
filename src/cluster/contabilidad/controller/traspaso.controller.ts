@@ -36,6 +36,7 @@ import { FiltroTraspasoDto } from '../dto/traspaso/filtro-traspaso.dto';
 import { TraspasoPaginadoDto } from '../dto/traspaso/traspaso-paginado.dto';
 import { FiltroTraspasoExcelDto } from '../dto/traspaso/filtro-traspaso-excel.dto';
 import { TraspasoExcelService } from '../services/traspaso-excel.service';
+import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
@@ -44,6 +45,7 @@ export class TraspasoController {
   constructor(
     private readonly traspasoService: TraspasoService,
     private readonly traspasoExcelService: TraspasoExcelService,
+    private readonly contabilidadPdfService: ContabilidadPdfService,
   ) {}
 
   @Post('traspaso')
@@ -141,11 +143,11 @@ export class TraspasoController {
   @Get('traspaso/reporte/excel')
   @Auth()
   @ApiOperation({
-    summary: 'Exportar el libro de traspasos caja <-> banco a Excel',
+    summary: 'Exportar el libro de traspasos caja <-> banco a Excel o PDF',
     description:
-      'Genera el .xlsx "LIBRO DE TRASPASOS CAJA - BANCO" con todos los traspasos que cumplan los filtros, sin paginar y en orden cronológico: fecha, tipo, estado, concepto, cuenta bancaria, N° de comprobante, destino del gasto, moneda, importe (depósito caja → banco / retiro banco → caja), usuario que lo registró y observación (quién y cuándo lo desactivó). Los totales solo suman los VIGENTES y van separados por moneda (Bs. / $us); los desactivados salen tachados. Al pie trae un resumen con cantidad e importes por estado y moneda. Todos los filtros son opcionales: sin filtros sale el libro completo.',
+      'Genera el .xlsx "LIBRO DE TRASPASOS CAJA - BANCO" con todos los traspasos que cumplan los filtros, sin paginar y en orden cronológico: fecha, tipo, estado, concepto, cuenta bancaria, N° de comprobante, destino del gasto, moneda, importe (depósito caja → banco / retiro banco → caja), usuario que lo registró y observación (quién y cuándo lo desactivó). Los totales solo suman los VIGENTES y van separados por moneda (Bs. / $us); los desactivados salen tachados. Al pie trae un resumen con cantidad e importes por estado y moneda. Todos los filtros son opcionales: sin filtros sale el libro completo. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
-  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({ description: 'Filtros inválidos (ej. fecha desde posterior a fecha hasta).' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
@@ -157,14 +159,12 @@ export class TraspasoController {
     const buffer = await this.traspasoExcelService.generar(filtro, user);
     const periodo = [filtro.fechaDesde, filtro.fechaHasta].filter(Boolean).join('_al_');
 
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=libro-traspasos${periodo ? `-${periodo}` : ''}.xlsx`,
-      'Content-Length': buffer.length,
-    });
-
-    res.end(buffer);
+    await this.contabilidadPdfService.enviar(
+      res,
+      buffer,
+      `libro-traspasos${periodo ? `-${periodo}` : ''}`,
+      filtro.formato,
+    );
   }
 
   @Get('traspaso')

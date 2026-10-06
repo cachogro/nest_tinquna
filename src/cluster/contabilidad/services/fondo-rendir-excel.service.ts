@@ -47,6 +47,11 @@ interface FilaRendicion {
  * FondoRendirDetalle, de cualquiera de sus fondos, no solo los abiertos en
  * el período) en un solo libro con saldo corriente, igual formato que el
  * modelo físico de la empresa. Mensual (con `mes`) o anual (sin `mes`).
+ *
+ * Cuando justificó de más: si se le devolvió el excedente, esa devolución
+ * es otro CARGO; si no, el saldo corriente simplemente queda negativo y lo
+ * absorbe su siguiente entrega (por eso las líneas SALDO_FAVOR, que solo
+ * mueven ese excedente de un fondo a otro, no se imprimen).
  */
 @Injectable()
 export class FondoRendirExcelService {
@@ -141,11 +146,25 @@ export class FondoRendirExcelService {
       .andWhere('f.fecha < :antesDe', { antesDe })
       .getRawOne<{ total: string }>();
 
+    // Las devoluciones del excedente también son plata entregada (CARGO).
+    const { total: totalRepuesto } = await this.fondoRepository
+      .createQueryBuilder('f')
+      .select('COALESCE(SUM(f.montoRepuesto), 0)', 'total')
+      .where(
+        destinatario.idPersona
+          ? 'f.idPersona = :idDestinatario'
+          : 'f.idActorProductivoMinero = :idDestinatario',
+        { idDestinatario: destinatario.idPersona ?? destinatario.idActorProductivoMinero },
+      )
+      .andWhere('f.fechaReposicion < :antesDe', { antesDe })
+      .getRawOne<{ total: string }>();
+
     const { total: totalDescargo } = await this.detalleRepository
       .createQueryBuilder('d')
       .innerJoin('d.fondoRendir', 'f')
       .select('COALESCE(SUM(d.monto), 0)', 'total')
       .where('d.activo = true')
+      .andWhere(`d.tipo <> 'SALDO_FAVOR'`)
       .andWhere('d.fecha < :antesDe', { antesDe })
       .andWhere(
         destinatario.idPersona
@@ -155,7 +174,14 @@ export class FondoRendirExcelService {
       )
       .getRawOne<{ total: string }>();
 
-    return this.r2(Number(totalCargo) - Number(totalDescargo));
+    return this.r2(Number(totalCargo) + Number(totalRepuesto) - Number(totalDescargo));
+  }
+
+  /** "C-0007" — código del recibo, para la columna de documento respaldo. */
+  private codigoRecibo(recibo?: { serie?: string; numero?: number } | null): string {
+    return recibo?.serie && recibo.numero != null
+      ? `${recibo.serie}-${String(recibo.numero).padStart(4, '0')}`
+      : '';
   }
 
   private async filasDelPeriodo(
@@ -178,6 +204,10 @@ export class FondoRendirExcelService {
       // explícito para poder desempatar el orden dentro de un mismo día.
       .addSelect('d.fechaRegistro')
       .where('d.activo = true')
+      // El saldo a favor arrastrado de otro fondo NO es un descargo nuevo:
+      // ese gasto ya figura como DESCARGO en su fondo de origen, y este
+      // libro es un saldo corriente por destinatario (contarlo duplicaría).
+      .andWhere(`d.tipo <> 'SALDO_FAVOR'`)
       .andWhere('d.fecha >= :desde', { desde })
       .andWhere('d.fecha <= :hasta', { hasta })
       .andWhere(
@@ -190,6 +220,14 @@ export class FondoRendirExcelService {
       .addOrderBy('d.id', 'ASC');
     const detalles = await detallesQuery.getMany();
 
+    // Devoluciones del excedente (fondo rendido en exceso repuesto con un
+    // recibo de egreso): plata que se le entregó, va como CARGO.
+    const reposiciones = await this.fondoRepository.find({
+      where: { ...where, fechaReposicion: Between(desde, hasta) },
+      relations: { reciboReposicion: true },
+      order: { fechaReposicion: 'ASC', id: 'ASC' },
+    });
+
     const filas: FilaRendicion[] = [
       ...fondosEnRango.map((f) => ({
         fecha: f.fecha,
@@ -199,10 +237,22 @@ export class FondoRendirExcelService {
         cargo: this.r2(Number(f.montoEntregado)),
         descargo: null,
       })),
+      ...reposiciones.map((f) => ({
+        fecha: f.fechaReposicion!,
+        momento: f.reciboReposicion?.fechaHoraGeneracion ?? new Date(`${f.fechaReposicion}T23:59:59`),
+        concepto: `DEVOLUCIÓN POR EXCESO EN RENDICIÓN - ${f.concepto}`,
+        comprobante:
+          f.reciboReposicion?.nroComprobante || this.codigoRecibo(f.reciboReposicion),
+        cargo: this.r2(Number(f.montoRepuesto)),
+        descargo: null,
+      })),
       ...detalles.map((d) => ({
         fecha: d.fecha,
         momento: d.fechaRegistro,
-        concepto: d.concepto,
+        concepto:
+          d.tipo === 'SIN_COMPROBANTE'
+            ? `${d.concepto} - ${d.fondoRendir?.concepto ?? ''}`.replace(/ - $/, '')
+            : d.concepto,
         comprobante: d.nroComprobante || d.facturaRecibo || '',
         cargo: null,
         descargo: this.r2(Number(d.monto)),

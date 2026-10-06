@@ -36,7 +36,9 @@ import { FiltrosReciboDto } from '../dto/recibo/filtros-recibo.dto';
 import { ReciboPaginadoDto } from '../dto/recibo/recibo-paginado.dto';
 import { ReciboPdfHorizontalService } from '../services/recibo-pdf-horizontal.service';
 import { ReciboExcelService } from '../services/recibo-excel.service';
+import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
 import { FiltroReciboExcelDto } from '../dto/recibo/filtro-recibo-excel.dto';
+import { FiltroReciboPdfDto } from '../dto/recibo/filtro-recibo-pdf.dto';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
@@ -47,6 +49,7 @@ export class ReciboController {
     private readonly reciboPdfService: ReciboPdfService,
     private readonly reciboPdfHorizontalService: ReciboPdfHorizontalService,
     private readonly reciboExcelService: ReciboExcelService,
+    private readonly contabilidadPdfService: ContabilidadPdfService,
   ) {}
 
   @Post('recibo')
@@ -401,11 +404,11 @@ export class ReciboController {
   @Get('recibo/reporte/excel')
   @Auth()
   @ApiOperation({
-    summary: 'Exportar el libro de recibos a Excel',
+    summary: 'Exportar el libro de recibos a Excel o PDF',
     description:
-      'Genera el .xlsx "LIBRO DE RECIBOS" con todos los recibos (serie R de ingreso y C de egreso) que cumplan los filtros, sin paginar y en orden cronológico: fecha, N° de recibo, tipo, estado, nombre, concepto, forma de pago, N° de comprobante, importe (ingreso/egreso), usuario que lo generó y observación (quién y cuándo anuló). Los totales solo suman los PROCESADOS; los BORRADOR van sombreados y los ANULADOS tachados. Al pie trae un resumen con cantidad e importes por estado. Todos los filtros son opcionales: sin filtros sale el libro completo.',
+      'Genera el .xlsx "LIBRO DE RECIBOS" con todos los recibos (serie R de ingreso y C de egreso) que cumplan los filtros, sin paginar y en orden cronológico: fecha, N° de recibo, tipo, estado, nombre, concepto, forma de pago, N° de comprobante, importe (ingreso/egreso), usuario que lo generó y observación (quién y cuándo anuló). Los totales solo suman los PROCESADOS; los BORRADOR van sombreados y los ANULADOS tachados. Al pie trae un resumen con cantidad e importes por estado. Todos los filtros son opcionales: sin filtros sale el libro completo. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
-  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({
     description: 'Filtros inválidos (ej. fecha desde posterior a fecha hasta).',
   })
@@ -423,14 +426,12 @@ export class ReciboController {
       .filter(Boolean)
       .join('_al_');
 
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=libro-recibos${periodo ? `-${periodo}` : ''}.xlsx`,
-      'Content-Length': buffer.length,
-    });
-
-    res.end(buffer);
+    await this.contabilidadPdfService.enviar(
+      res,
+      buffer,
+      `libro-recibos${periodo ? `-${periodo}` : ''}`,
+      filtro.formato,
+    );
   }
 
   @Get('recibo')
@@ -478,125 +479,36 @@ export class ReciboController {
   @ApiOperation({
     summary: 'Generar el PDF de un recibo (3 copias en hoja carta)',
     description:
-      'Devuelve una hoja carta con 3 copias del recibo apiladas (Original, Copia 1, Copia 2), igual al talonario físico: logo, N° de recibo, monto en Bs. y en letras, contraparte, concepto, forma de pago (Efectivo/Cheque/Banco) y firmas. "Entregue conforme" se llena con el usuario que pide el PDF; "Recibi conforme" con la contraparte del recibo. Funciona con el recibo en cualquier estado (BORRADOR, PROCESADO o ANULADO).',
+      'Devuelve una hoja carta con 3 copias del recibo apiladas (Original, Copia 1, Copia 2), igual al talonario físico: logo, N° de recibo, monto en Bs. y en letras, contraparte, concepto, forma de pago (Efectivo/Cheque/Banco) y firmas. "Entregue conforme" se llena con el usuario que pide el PDF; "Recibi conforme" con la contraparte del recibo. Funciona con el recibo en cualquier estado (BORRADOR, PROCESADO o ANULADO). `formato` elige el diseño (HORIZONTAL por defecto, o VERTICAL). Con `procesado=true`, "Por concepto (de)" no muestra solo el texto libre del recibo sino que lo desglosa según sus `detalles` (ej. "PAGO POR MINERAL ENTREGADO: Bs 200,00 a kardex personal, Bs 200,00 a kardex de actor y Bs 100,00 en efectivo"); si el recibo todavía no tiene `detalles` (BORRADOR o ANULADO), el resultado es idéntico al normal.',
   })
-  @ApiParam({ name: 'id', description: 'Id del recibo.', example: '5' })
-  @ApiOkResponse({ description: 'PDF generado correctamente.' })
+  @ApiParam({
+    name: 'id',
+    description: 'Id del recibo.',
+    example: '1',
+  })
+  @ApiOkResponse({ description: 'PDF del recibo generado correctamente.' })
+  @ApiBadRequestResponse({ description: 'Formato inválido.' })
   @ApiNotFoundResponse({ description: 'No se encontró el recibo.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async descargarPdf(
     @Param('id') id: string,
+    @Query() filtro: FiltroReciboPdfDto,
     @GetUser() user: Usuario,
     @Res() res: Response,
   ) {
     const recibo = await this.reciboService.buscarPorId(id);
-    const pdf = await this.reciboPdfService.generar(recibo, user);
+    const servicio =
+      filtro.formato === 'VERTICAL'
+        ? this.reciboPdfService
+        : this.reciboPdfHorizontalService;
+    const pdf = filtro.procesado
+      ? await servicio.generarProcesado(recibo, user)
+      : await servicio.generar(recibo, user);
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}.pdf`,
-      'Content-Length': pdf.length,
-    });
-
-    res.end(pdf);
-  }
-
-  @Get('recibo/:id/pdf-procesado')
-  @Auth()
-  @ApiOperation({
-    summary:
-      'Generar el PDF de un recibo PROCESADO (con desglose en "Por concepto")',
-    description:
-      'Mismo formato que `GET /contabilidad/recibo/:id/pdf` (hoja carta con 3 copias, igual al talonario físico). La única diferencia: en "Por concepto (de)" no muestra solo el texto libre del recibo, sino que lo desglosa según sus `detalles` (ej. "PAGO POR MINERAL ENTREGADO: Bs 200,00 a kardex personal, Bs 200,00 a kardex de actor y Bs 100,00 en efectivo"). Si el recibo todavía no tiene `detalles` (BORRADOR o ANULADO), el resultado es idéntico al PDF de `/pdf`. Los dos PDF se pueden descargar por separado.',
-  })
-  @ApiParam({ name: 'id', description: 'Id del recibo.', example: '5' })
-  @ApiOkResponse({ description: 'PDF generado correctamente.' })
-  @ApiNotFoundResponse({ description: 'No se encontró el recibo.' })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async descargarPdfProcesado(
-    @Param('id') id: string,
-    @GetUser() user: Usuario,
-    @Res() res: Response,
-  ) {
-    const recibo = await this.reciboService.buscarPorId(id);
-    const pdf = await this.reciboPdfService.generarProcesado(recibo, user);
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}-procesado.pdf`,
-      'Content-Length': pdf.length,
-    });
-
-    res.end(pdf);
-  }
-  //----------------------------forma horizontal----------------------------
-
-  @Get('recibo2/:id/pdf')
-  @Auth()
-  @ApiOperation({
-    summary: 'Generar el PDF de un recibo (3 copias en hoja carta)',
-    description:
-      'Devuelve una hoja carta con 3 copias del recibo apiladas (Original, Copia 1, Copia 2), igual al talonario físico: logo, N° de recibo, monto en Bs. y en letras, contraparte, concepto, forma de pago (Efectivo/Cheque/Banco) y firmas. "Entregue conforme" se llena con el usuario que pide el PDF; "Recibi conforme" con la contraparte del recibo. Funciona con el recibo en cualquier estado (BORRADOR, PROCESADO o ANULADO).',
-  })
-  @ApiParam({ name: 'id', description: 'Id del recibo.', example: '5' })
-  @ApiOkResponse({ description: 'PDF generado correctamente.' })
-  @ApiNotFoundResponse({ description: 'No se encontró el recibo.' })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async descargarPdf2(
-    @Param('id') id: string,
-    @GetUser() user: Usuario,
-    @Res() res: Response,
-  ) {
-    const recibo = await this.reciboService.buscarPorId(id);
-    const pdf = await this.reciboPdfHorizontalService.generar(recibo, user);
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}.pdf`,
-      'Content-Length': pdf.length,
-    });
-
-    res.end(pdf);
-  }
-
-  @Get('recibo2/:id/pdf-procesado')
-  @Auth()
-  @ApiOperation({
-    summary:
-      'Generar el PDF de un recibo PROCESADO (con desglose en "Por concepto")',
-    description:
-      'Mismo formato que `GET /contabilidad/recibo/:id/pdf` (hoja carta con 3 copias, igual al talonario físico). La única diferencia: en "Por concepto (de)" no muestra solo el texto libre del recibo, sino que lo desglosa según sus `detalles` (ej. "PAGO POR MINERAL ENTREGADO: Bs 200,00 a kardex personal, Bs 200,00 a kardex de actor y Bs 100,00 en efectivo"). Si el recibo todavía no tiene `detalles` (BORRADOR o ANULADO), el resultado es idéntico al PDF de `/pdf`. Los dos PDF se pueden descargar por separado.',
-  })
-  @ApiParam({ name: 'id', description: 'Id del recibo.', example: '5' })
-  @ApiOkResponse({ description: 'PDF generado correctamente.' })
-  @ApiNotFoundResponse({ description: 'No se encontró el recibo.' })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async descargarPdfProcesado2(
-    @Param('id') id: string,
-    @GetUser() user: Usuario,
-    @Res() res: Response,
-  ) {
-    const recibo = await this.reciboService.buscarPorId(id);
-    const pdf = await this.reciboPdfHorizontalService.generarProcesado(
-      recibo,
-      user,
-    );
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}-procesado.pdf`,
+      'Content-Disposition': `inline; filename=Recibo-${recibo.serie}-${recibo.numero}${filtro.procesado ? '-procesado' : ''}.pdf`,
       'Content-Length': pdf.length,
     });
 

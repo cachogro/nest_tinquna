@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -9,7 +10,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Put,
   Query,
 } from '@nestjs/common';
 import {
@@ -78,9 +78,9 @@ import { MineralService } from '../services/mineral.service';
 import { EscalaPrecioMineral } from '../entities/escala-precio-mineral.entity';
 import { CreateEscalaPrecioMineralDto } from '../dto/escala-precio-mineral/create-escala-precio-mineral.dto';
 import { UpdateEscalaPrecioMineralDto } from '../dto/escala-precio-mineral/update-escala-precio-mineral.dto';
+import { GuardarEscalaPrecioMineralDto } from '../dto/escala-precio-mineral/guardar-escala-precio-mineral.dto';
 import { EscalaPrecioMineralService } from '../services/escala-precio-mineral.service';
 import { TipoCalculoValorizacion } from '../entities/tipo-calculo-valorizacion.entity';
-import { CreateTipoCalculoValorizacionDto } from '../dto/tipo-calculo-valorizacion/create-tipo-calculo-valorizacion.dto';
 import { UpdateTipoCalculoValorizacionDto } from '../dto/tipo-calculo-valorizacion/update-tipo-calculo-valorizacion.dto';
 import { TipoCalculoValorizacionService } from '../services/tipo-calculo-valorizacion.service';
 import { TipoCalculoValorizacionAgrupadoDto } from '../dto/tipo-calculo-valorizacion/tipo-calculo-valorizacion-agrupado.dto';
@@ -96,6 +96,12 @@ import { FormaPago } from '../entities/forma-pago.entity';
 import { KardexSubcuenta } from '../entities/kardex-subcuenta.entity';
 import { DestinoGasto } from '../entities/destino-gasto.entity';
 import { LugarAcopio } from '../entities/lugar-acopio.entity';
+import { CreateLugarAcopioDto } from '../dto/lugar-acopio/create-lugar-acopio.dto';
+import { UpdateLugarAcopioDto } from '../dto/lugar-acopio/update-lugar-acopio.dto';
+import { LugarAcopioService } from '../services/lugar-acopio.service';
+import { CreateFormaPagoDto } from '../dto/forma-pago/create-forma-pago.dto';
+import { UpdateFormaPagoDto } from '../dto/forma-pago/update-forma-pago.dto';
+import { FormaPagoService } from '../services/forma-pago.service';
 import { CodificacionLote } from '../entities/codificacion-lote.entity';
 import { CreateDestinoGastoDto } from '../dto/destino-gasto/create-destino-gasto.dto';
 import { UpdateDestinoGastoDto } from '../dto/destino-gasto/update-destino-gasto.dto';
@@ -129,23 +135,35 @@ export class ParametricasController {
     private readonly clienteService: ClienteService,
     private readonly destinoGastoService: DestinoGastoService,
     private readonly codificacionLoteService: CodificacionLoteService,
+    private readonly lugarAcopioService: LugarAcopioService,
+    private readonly formaPagoService: FormaPagoService,
   ) {}
 
   @Post('codificacion')
   @Auth()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Registrar una nueva codificación',
+    summary: 'Registrar o actualizar una codificación',
     description:
-      'Permite registrar una nueva codificación asociando uno o varios minerales existentes.',
+      'Si no se envía el campo id se registra una nueva codificación asociando uno o varios minerales existentes. Si se envía el id, se actualiza la codificación correspondiente.',
   })
   @ApiBody({
     type: CreateCodificacionDto,
-    description: 'Datos necesarios para registrar una codificación.',
+    description:
+      'Datos para crear (sin "id") o actualizar (con "id") una codificación.',
     examples: {
-      ejemplo: {
-        summary: 'Nueva codificación',
+      crear: {
+        summary: 'Registrar codificación',
         value: {
+          codigo: 'BZI',
+          nombre: 'PLATA Y ZINC',
+          minerales: [1, 3],
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar codificación',
+        value: {
+          id: '1',
           codigo: 'BZI',
           nombre: 'PLATA Y ZINC',
           minerales: [1, 3],
@@ -154,11 +172,12 @@ export class ParametricasController {
     },
   })
   @ApiCreatedResponse({
-    description: 'Codificación registrada correctamente.',
+    description: 'Codificación registrada o actualizada correctamente.',
     type: Codificacion,
   })
   @ApiBadRequestResponse({
-    description: 'Datos inválidos, código duplicado o minerales inexistentes.',
+    description:
+      'Datos inválidos, código duplicado, minerales inexistentes o la codificación a actualizar no existe.',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -170,53 +189,17 @@ export class ParametricasController {
     description: 'Error interno del servidor.',
   })
   async create(
-    @Body() createCodificacionDto: CreateCodificacionDto,
+    @Body() body: CreateCodificacionDto,
     @GetUser() user: Usuario,
   ): Promise<Codificacion> {
-    return await this.codificacionService.create(createCodificacionDto, user);
-  }
+    if (body.id) {
+      return await this.codificacionService.update(
+        body as UpdateCodificacionDto,
+        user,
+      );
+    }
 
-  @Put('codificacion')
-  @Auth()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Actualizar una codificación',
-    description:
-      'Actualiza una codificación existente utilizando el identificador enviado en el cuerpo de la petición.',
-  })
-  @ApiBody({
-    type: UpdateCodificacionDto,
-    description: 'Datos de la codificación a actualizar.',
-    examples: {
-      ejemplo: {
-        summary: 'Actualizar codificación',
-        value: {
-          id: '1',
-          codigo: 'BZI',
-          nombre: 'PLATA Y ZINC',
-          minerales: [1, 3],
-        },
-      },
-    },
-  })
-  @ApiOkResponse({
-    description: 'Codificación actualizada correctamente.',
-    type: Codificacion,
-  })
-  @ApiBadRequestResponse({
-    description: 'Datos inválidos, código duplicado o minerales inexistentes.',
-  })
-  @ApiUnauthorizedResponse({
-    description: 'No autorizado. Token no proporcionado o inválido.',
-  })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async update(
-    @Body() updateCodificacionDto: UpdateCodificacionDto,
-    @GetUser() user: Usuario,
-  ): Promise<Codificacion> {
-    return await this.codificacionService.update(updateCodificacionDto, user);
+    return await this.codificacionService.create(body, user);
   }
 
   @Get('allCodificacion')
@@ -659,19 +642,26 @@ export class ParametricasController {
   @Auth()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Cargar en bloque la tabla de precios por ley de un mineral',
+    summary:
+      'Cargar en bloque la tabla de precios por ley de un mineral, o actualizar tramos existentes',
     description:
-      'Registra todos los tramos de ley de un mineral en una sola inserción. ' +
+      'Si las filas no incluyen "id", registra todos los tramos de ley de un mineral en una sola inserción. ' +
       '"idMineral", "fechaVigenciaInicial" y "fechaVigenciaFinal" son ' +
       'compartidos por toda la carga; cada fila solo aporta "ley", ' +
       '"precioPunto" y "precioTm" (el front calcula y envía precioTm). Si la ' +
       'nueva vigencia se solapa con tramos activos existentes del mismo ' +
       'mineral, esos tramos quedan reemplazados: se desactivan por completo ' +
       '(activo=false), sin importar si les quedaban días de vigencia propia. ' +
-      'No depende de "cotizacion".',
+      'No depende de "cotizacion". ' +
+      'Si las filas incluyen "id" (el que devolvió la carga inicial), actualiza esos tramos: ' +
+      'se puede enviar una sola fila para corregir un solo tramo, o varias a ' +
+      'la vez, y lo que se omite no se modifica. No se puede modificar un tramo que ya venció. ' +
+      'No se pueden mezclar filas con y sin "id" en la misma petición.',
   })
   @ApiBody({
-    type: CreateEscalaPrecioMineralDto,
+    type: GuardarEscalaPrecioMineralDto,
+    description:
+      'Datos para cargar (filas sin "id") o actualizar (filas con "id") tramos de la escala de precio.',
     examples: {
       crear: {
         summary: 'Cargar tabla de Zinc (parcial)',
@@ -686,45 +676,6 @@ export class ParametricasController {
           ],
         },
       },
-    },
-  })
-  @ApiCreatedResponse({
-    description: 'Tramos registrados correctamente.',
-    type: [EscalaPrecioMineral],
-  })
-  @ApiBadRequestResponse({
-    description:
-      'Datos inválidos: no se envió ningún tramo, hay leyes repetidas en la ' +
-      'misma carga, o las fechas de vigencia son incoherentes.',
-  })
-  @ApiNotFoundResponse({
-    description: 'El mineral seleccionado no existe o se encuentra inactivo.',
-  })
-  @ApiUnauthorizedResponse({
-    description: 'No autorizado. Token no proporcionado o inválido.',
-  })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async createEscalaPrecio(
-    @Body() body: CreateEscalaPrecioMineralDto,
-    @GetUser() user: Usuario,
-  ): Promise<EscalaPrecioMineral[]> {
-    return await this.escalaPrecioMineralService.create(body, user);
-  }
-
-  @Patch('escala-precio')
-  @Auth()
-  @ApiOperation({
-    summary: 'Actualizar en bloque uno o varios tramos de la escala de precio',
-    description:
-      'Cada fila se identifica por "id" (el que devolvió la carga inicial). ' +
-      'Se puede enviar una sola fila para corregir un solo tramo, o varias a ' +
-      'la vez. No se puede modificar un tramo que ya venció.',
-  })
-  @ApiBody({
-    type: UpdateEscalaPrecioMineralDto,
-    examples: {
       actualizarUno: {
         summary: 'Corregir un solo tramo',
         value: {
@@ -742,18 +693,19 @@ export class ParametricasController {
       },
     },
   })
-  @ApiOkResponse({
-    description: 'Tramos actualizados correctamente.',
+  @ApiCreatedResponse({
+    description: 'Tramos registrados o actualizados correctamente.',
     type: [EscalaPrecioMineral],
   })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos: algún tramo ya no está vigente o las fechas de ' +
-      'vigencia resultantes son incoherentes.',
+      'Datos inválidos: no se envió ningún tramo, hay leyes repetidas en la ' +
+      'misma carga, se mezclaron filas con y sin "id", algún tramo a ' +
+      'actualizar ya no está vigente, o las fechas de vigencia son incoherentes.',
   })
   @ApiNotFoundResponse({
     description:
-      'Alguno de los "id" enviados no corresponde a un tramo existente.',
+      'El mineral seleccionado no existe o se encuentra inactivo (al crear), o alguno de los "id" enviados no corresponde a un tramo existente (al actualizar).',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -761,11 +713,29 @@ export class ParametricasController {
   @ApiInternalServerErrorResponse({
     description: 'Error interno del servidor.',
   })
-  async updateEscalaPrecio(
-    @Body() body: UpdateEscalaPrecioMineralDto,
+  async createEscalaPrecio(
+    @Body() body: GuardarEscalaPrecioMineralDto,
     @GetUser() user: Usuario,
   ): Promise<EscalaPrecioMineral[]> {
-    return await this.escalaPrecioMineralService.update(body, user);
+    const filasConId = body.filas.filter((fila) => fila.id != null).length;
+
+    if (filasConId === 0) {
+      return await this.escalaPrecioMineralService.create(
+        body as CreateEscalaPrecioMineralDto,
+        user,
+      );
+    }
+
+    if (filasConId !== body.filas.length) {
+      throw new BadRequestException(
+        'No puede mezclar tramos nuevos (sin id) y tramos a actualizar (con id) en la misma petición.',
+      );
+    }
+
+    return await this.escalaPrecioMineralService.update(
+      body as UpdateEscalaPrecioMineralDto,
+      user,
+    );
   }
 
   @Get('escala-precio/vigente/:idMineral')
@@ -1258,7 +1228,7 @@ export class ParametricasController {
   @ApiOperation({
     summary: 'Obtener todas las formas de pago',
     description:
-      'Catálogo usado en la libreta de bancos y en el kardex de anticipos (EFECTIVO, QR, TRANSFERENCIA, CHEQUE, DEPOSITO, TRANZADO, DSCT_LEY, DSCT_ANTICIPO). Sin CRUD por ahora: solo lectura de los valores activos.',
+      'Catálogo usado en la libreta de bancos y en el kardex de anticipos (EFECTIVO, QR, TRANSFERENCIA, CHEQUE, DEPOSITO, TRANZADO, DSCT_LEY, DSCT_ANTICIPO). Solo devuelve las activas; el panel de paramétricas usa GET forma-pago/todos.',
   })
   @ApiResponse({
     status: 200,
@@ -1273,6 +1243,137 @@ export class ParametricasController {
   })
   async findAllFormaPago(): Promise<FormaPago[]> {
     return await this.parametricaService.findAllFormaPago();
+  }
+
+  @Get('forma-pago/todos')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar formas de pago (activas e inactivas)',
+    description:
+      'Listado completo para el panel de paramétricas, ordenado por id.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de formas de pago obtenido correctamente.',
+    type: FormaPago,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllFormaPagoTodos(): Promise<FormaPago[]> {
+    return await this.formaPagoService.findAllFormaPago();
+  }
+
+  @Post('forma-pago')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar una forma de pago',
+    description:
+      'Si no se envía el campo id se registra una nueva forma de pago. Si se envía el id, se actualizan nombre y afectaFondo; el código no cambia una vez registrado.',
+  })
+  @ApiBody({
+    description: 'Datos de la forma de pago.',
+    examples: {
+      crear: {
+        summary: 'Registrar forma de pago',
+        value: {
+          codigo: 'TARJETA',
+          nombre: 'TARJETA DE DEBITO',
+          afectaFondo: true,
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar forma de pago',
+        value: {
+          id: 9,
+          codigo: 'TARJETA',
+          nombre: 'TARJETA',
+          afectaFondo: true,
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Forma de pago registrada o actualizada correctamente.',
+    type: FormaPago,
+  })
+  @ApiBadRequestResponse({
+    description: 'Los datos enviados no son válidos.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la forma de pago solicitada.',
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe una forma de pago con ese código.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createFormaPago(
+    @Body()
+    body: CreateFormaPagoDto | UpdateFormaPagoDto,
+    @GetUser() user: Usuario,
+  ): Promise<FormaPago> {
+    if ('id' in body && body.id) {
+      return await this.formaPagoService.update(body, user);
+    }
+
+    return await this.formaPagoService.create(body, user);
+  }
+
+  @Patch('forma-pago/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de una forma de pago',
+    description:
+      'Permite activar o desactivar una forma de pago mediante baja lógica. Las inactivas dejan de ofrecerse en recibos, kardex y pagos.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador de la forma de pago.',
+    example: 1,
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado de la forma de pago.',
+  })
+  @ApiOkResponse({
+    description: 'Estado de la forma de pago actualizado correctamente.',
+    type: FormaPago,
+  })
+  @ApiBadRequestResponse({
+    description: 'El valor del estado es inválido.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la forma de pago solicitada.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateFormaPago(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<FormaPago> {
+    return await this.formaPagoService.cambiarEstado(id, activo, user);
   }
 
   @Get('lugar-acopio')
@@ -1295,6 +1396,133 @@ export class ParametricasController {
   })
   async findAllLugarAcopio(): Promise<LugarAcopio[]> {
     return await this.parametricaService.findAllLugarAcopio();
+  }
+
+  @Get('lugar-acopio/todos')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar lugares de acopio (activos e inactivos)',
+    description:
+      'Listado completo para el panel de paramétricas, ordenado por descripción. Para llenar el selector de la recepción de mineral se usa GET lugar-acopio, que solo devuelve los activos.',
+  })
+  @ApiOkResponse({
+    description: 'Listado de lugares de acopio obtenido correctamente.',
+    type: LugarAcopio,
+    isArray: true,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllLugarAcopioTodos(): Promise<LugarAcopio[]> {
+    return await this.lugarAcopioService.findAllLugarAcopio();
+  }
+
+  @Post('lugar-acopio')
+  @Auth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Registrar o actualizar un lugar de acopio',
+    description:
+      'Si no se envía el campo id se registra un nuevo lugar de acopio. Si se envía el id, se actualiza el correspondiente. La descripción se guarda en mayúsculas y no puede repetirse.',
+  })
+  @ApiBody({
+    description: 'Datos del lugar de acopio.',
+    examples: {
+      crear: {
+        summary: 'Registrar lugar de acopio',
+        value: {
+          descripcion: 'GALPON',
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar lugar de acopio',
+        value: {
+          id: 1,
+          descripcion: 'INGENIO VILLA',
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Lugar de acopio registrado o actualizado correctamente.',
+    type: LugarAcopio,
+  })
+  @ApiBadRequestResponse({
+    description: 'Los datos enviados no son válidos.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el lugar de acopio solicitado.',
+  })
+  @ApiConflictResponse({
+    description: 'Ya existe un lugar de acopio con esa descripción.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createLugarAcopio(
+    @Body()
+    body: CreateLugarAcopioDto | UpdateLugarAcopioDto,
+    @GetUser() user: Usuario,
+  ): Promise<LugarAcopio> {
+    if ('id' in body && body.id) {
+      return await this.lugarAcopioService.update(body, user);
+    }
+
+    return await this.lugarAcopioService.create(body, user);
+  }
+
+  @Patch('lugar-acopio/cambiar_estado/:id')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cambiar estado de un lugar de acopio',
+    description:
+      'Permite activar o desactivar un lugar de acopio mediante baja lógica. Los inactivos dejan de ofrecerse en la recepción de mineral.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Identificador del lugar de acopio.',
+    example: 1,
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        activo: {
+          type: 'boolean',
+          example: false,
+        },
+      },
+    },
+    description: 'Nuevo estado del lugar de acopio.',
+  })
+  @ApiOkResponse({
+    description: 'Estado del lugar de acopio actualizado correctamente.',
+    type: LugarAcopio,
+  })
+  @ApiBadRequestResponse({
+    description: 'El valor del estado es inválido.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No se encontró el lugar de acopio solicitado.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async changeStateLugarAcopio(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('activo', ParseBoolPipe) activo: boolean,
+    @GetUser() user: Usuario,
+  ): Promise<LugarAcopio> {
+    return await this.lugarAcopioService.cambiarEstado(id, activo, user);
   }
 
   @Get('kardex-subcuenta')
@@ -2310,20 +2538,57 @@ export class ParametricasController {
   @Auth()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Registrar un tipo de cálculo de valorización',
+    summary: 'Registrar o actualizar un tipo de cálculo de valorización',
     description:
-      'Registra un tipo de cálculo (maquila, ajuste de maquila, penalidad por elemento, etc) usado al ' +
-      'itemizar los descuentos de una valorización. "idTipoCalculo" agrupa el cálculo: 1 = gastos de ' +
+      'Si no se envía el campo id se registra un tipo de cálculo (maquila, ajuste de maquila, penalidad por elemento, etc) usado al ' +
+      'itemizar los descuentos de una valorización. Si se envía el id, se actualiza el registro (se reenvía el body completo). ' +
+      '"idTipoCalculo" agrupa el cálculo: 1 = gastos de ' +
       'tratamiento, 2 = penalidades. "extras" guarda la configuración de referencia (base/unidad/escalador ' +
       'para gastos de tratamiento, o cada/cargo/leyLibre para penalidades).',
   })
-  @ApiBody({ type: CreateTipoCalculoValorizacionDto })
+  @ApiBody({
+    type: UpdateTipoCalculoValorizacionDto,
+    examples: {
+      crear: {
+        summary: 'Registrar tipo de cálculo',
+        value: {
+          descripcion: 'AS',
+          idTipoCalculo: 2,
+          extras: {
+            cada: 0.1,
+            cargo: 2.5,
+            leyLibre: 0.4,
+            unidadLey: '%',
+            unidadCargo: 'USD/TMS',
+          },
+        },
+      },
+      actualizar: {
+        summary: 'Actualizar tipo de cálculo',
+        value: {
+          id: 3,
+          descripcion: 'AS',
+          idTipoCalculo: 2,
+          extras: {
+            cada: 0.1,
+            cargo: 3,
+            leyLibre: 0.4,
+            unidadLey: '%',
+            unidadCargo: 'USD/TMS',
+          },
+        },
+      },
+    },
+  })
   @ApiCreatedResponse({
-    description: 'Tipo de cálculo registrado correctamente.',
+    description: 'Tipo de cálculo registrado o actualizado correctamente.',
     type: TipoCalculoValorizacion,
   })
   @ApiConflictResponse({
     description: 'Ya existe un tipo de cálculo con la misma descripción.',
+  })
+  @ApiNotFoundResponse({
+    description: 'No existe el tipo de cálculo a actualizar.',
   })
   @ApiBadRequestResponse({
     description: 'Datos inválidos.',
@@ -2335,39 +2600,14 @@ export class ParametricasController {
     description: 'Error interno del servidor.',
   })
   async createTipoCalculoValorizacion(
-    @Body() body: CreateTipoCalculoValorizacionDto,
-    @GetUser() user: Usuario,
-  ): Promise<TipoCalculoValorizacion> {
-    return await this.tipoCalculoValorizacionService.create(body, user);
-  }
-
-  @Patch('tipo-calculo-valorizacion')
-  @Auth()
-  @ApiOperation({
-    summary: 'Actualizar un tipo de cálculo de valorización',
-  })
-  @ApiBody({ type: UpdateTipoCalculoValorizacionDto })
-  @ApiOkResponse({
-    description: 'Tipo de cálculo actualizado correctamente.',
-    type: TipoCalculoValorizacion,
-  })
-  @ApiConflictResponse({
-    description: 'Ya existe otro tipo de cálculo con la misma descripción.',
-  })
-  @ApiNotFoundResponse({
-    description: 'No existe el tipo de cálculo indicado.',
-  })
-  @ApiUnauthorizedResponse({
-    description: 'No autorizado. Token no proporcionado o inválido.',
-  })
-  @ApiInternalServerErrorResponse({
-    description: 'Error interno del servidor.',
-  })
-  async updateTipoCalculoValorizacion(
     @Body() body: UpdateTipoCalculoValorizacionDto,
     @GetUser() user: Usuario,
   ): Promise<TipoCalculoValorizacion> {
-    return await this.tipoCalculoValorizacionService.update(body, user);
+    if (body.id) {
+      return await this.tipoCalculoValorizacionService.update(body, user);
+    }
+
+    return await this.tipoCalculoValorizacionService.create(body, user);
   }
 
   @Patch('tipo-calculo-valorizacion/cambiar_estado/:id')

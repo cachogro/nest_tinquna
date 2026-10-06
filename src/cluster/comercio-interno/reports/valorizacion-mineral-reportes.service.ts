@@ -1,3 +1,4 @@
+import { proveedorDeRecepcion } from 'src/cluster/comercio-interno/recepcion-proveedor.util';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -139,7 +140,7 @@ export class ValorizacionMineralReportesService {
       idValorizacion: v.id,
       codigoOperacion: v.recepcionMineral?.codigoOperacion ?? null,
       codificacion: v.codificacionEfectiva()?.codigo ?? null,
-      proveedor: this.nombreCompleto(v.recepcionMineral?.persona),
+      proveedor: this.nombreCompleto(proveedorDeRecepcion(v.recepcionMineral)),
       numeroDocumento: v.recepcionMineral?.persona?.numeroDocumento ?? null,
       numeroSacos: v.recepcionMineral?.numeroSacos ?? null,
       pesoKg: Number(

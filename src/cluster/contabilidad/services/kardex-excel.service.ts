@@ -47,7 +47,7 @@ export class KardexExcelService {
     private readonly movimientoKardexService: MovimientoKardexService,
   ) {}
 
-  async generar(idKardex: string): Promise<Buffer> {
+  async generar(idKardex: string): Promise<{ buffer: Buffer; codigo: string }> {
     const kardex = await this.kardexService.buscarPorId(idKardex);
     const todosLosMovimientos =
       await this.movimientoKardexService.listarParaExcel(idKardex);
@@ -58,7 +58,7 @@ export class KardexExcelService {
     const paleta = PALETAS.kardex;
     const excel = this.contabilidadExcel;
     const workbook = excel.crearLibro();
-    const worksheet = excel.crearHoja(workbook, `KARDEX N° ${kardex.numero}`, COLUMNAS);
+    const worksheet = excel.crearHoja(workbook, `KARDEX ${kardex.codigo}`, COLUMNAS);
 
     const hoy = new Date();
     const practicadoAl = [
@@ -76,7 +76,10 @@ export class KardexExcelService {
       5,
       7,
       TOTAL_COLUMNAS,
-      { etiqueta: `KARDEX N° ${kardex.numero}  -  GESTIÓN`, valor: String(kardex.gestion) },
+      {
+        etiqueta: `KARDEX ${kardex.codigo}  -  N° ${kardex.numero}  -  GESTIÓN`,
+        valor: String(kardex.gestion),
+      },
       'center',
     );
     excel.agregarDatoCabecera(worksheet, 6, 1, TOTAL_COLUMNAS, {
@@ -117,7 +120,7 @@ export class KardexExcelService {
       paleta,
     );
 
-    return excel.generar(workbook);
+    return { buffer: await excel.generar(workbook), codigo: kardex.codigo };
   }
 
   /**

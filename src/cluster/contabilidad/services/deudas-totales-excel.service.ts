@@ -15,6 +15,7 @@ import {
 
 const COLUMNAS: ColumnaContable[] = [
   { titulo: 'N°', ancho: 6, alineacion: 'center' },
+  { titulo: 'CÓD. KARDEX', ancho: 14, alineacion: 'center' },
   { titulo: 'ÚLTIMA INTERACCIÓN', ancho: 13, fecha: true },
   { titulo: 'CUENTA', ancho: 30 },
   { titulo: 'NOMBRE Y APELLIDO DEL QUE ACUMULA LA DEUDA', ancho: 32 },
@@ -24,15 +25,18 @@ const COLUMNAS: ColumnaContable[] = [
   { titulo: 'DEUDOR ACTIVO / INACTIVO', ancho: 18, alineacion: 'center' },
 ];
 const TOTAL_COLUMNAS = COLUMNAS.length;
-const COL_IMPORTE_TOTAL = 6;
-const COL_CORPORACION = 7;
-const COL_ESTADO = 8;
+const COL_NOMBRE = 5;
+const COL_IMPORTE = 6;
+const COL_IMPORTE_TOTAL = 7;
+const COL_CORPORACION = 8;
+const COL_ESTADO = 9;
 
 // Actor productivo minero que representa a la propia empresa: sus personas
 // son personal interno, no forman una corporación deudora.
 const ID_ACTOR_EMPRESA = '1';
 
 interface FilaDeuda {
+  codigo: string;
   fecha: string;
   cuenta: string;
   nombre: string;
@@ -87,7 +91,7 @@ export class DeudasTotalesExcelService {
       'RESUMEN DE DEUDAS',
       `PRACTICADO AL ${excel.fechaTexto(hoy)}`,
     );
-    excel.agregarDatoCabecera(worksheet, 5, 1, 4, {
+    excel.agregarDatoCabecera(worksheet, 5, 1, COL_NOMBRE, {
       etiqueta: 'CUENTA',
       valor: filtro.tipo
         ? `Deudores - kardex ${filtro.tipo}`
@@ -96,7 +100,7 @@ export class DeudasTotalesExcelService {
     excel.agregarDatoCabecera(
       worksheet,
       5,
-      5,
+      COL_IMPORTE,
       TOTAL_COLUMNAS,
       {
         etiqueta: 'INACTIVO',
@@ -126,6 +130,7 @@ export class DeudasTotalesExcelService {
           COLUMNAS,
           [
             numero++,
+            f.codigo,
             excel.fecha(f.fecha),
             f.cuenta,
             f.nombre,
@@ -150,7 +155,7 @@ export class DeudasTotalesExcelService {
 
     if (grupos.length === 0) {
       excel.agregarFila(worksheet, fila++, COLUMNAS, [
-        null, null, 'SIN DEUDAS POR COBRAR', '', null, null, '', '',
+        null, '', null, 'SIN DEUDAS POR COBRAR', '', null, null, '', '',
       ]);
     }
 
@@ -161,9 +166,9 @@ export class DeudasTotalesExcelService {
       worksheet,
       fila,
       TOTAL_COLUMNAS,
-      4,
+      COL_NOMBRE,
       'DEUDA TOTAL DE LOS DEUDORES',
-      { 5: deudaTotal, [COL_IMPORTE_TOTAL]: deudaTotal },
+      { [COL_IMPORTE]: deudaTotal, [COL_IMPORTE_TOTAL]: deudaTotal },
       paleta,
     );
 
@@ -206,6 +211,7 @@ export class DeudasTotalesExcelService {
       const clave = actor ? `ACTOR-${actor.id}` : `KARDEX-${kardex.id}`;
       const grupo = grupos.get(clave) ?? { corporacion: actor?.nombre?.toUpperCase() ?? '', filas: [] };
       grupo.filas.push({
+        codigo: kardex.codigo,
         fecha: actividad.ultimaActividad,
         cuenta: this.descripcionCuenta(kardex),
         nombre: this.nombreTitular(kardex),

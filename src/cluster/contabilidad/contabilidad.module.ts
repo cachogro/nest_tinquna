@@ -39,6 +39,7 @@ import { KardexExcelService } from './services/kardex-excel.service';
 import { CajaFlujoExcelService } from './services/caja-flujo-excel.service';
 import { CajaFlujoConsolidadoExcelService } from './services/caja-flujo-consolidado-excel.service';
 import { ContabilidadExcelService } from './services/contabilidad-excel.service';
+import { ContabilidadPdfService } from './services/contabilidad-pdf.service';
 import { DeudasTotalesExcelService } from './services/deudas-totales-excel.service';
 import { ReciboExcelService } from './services/recibo-excel.service';
 import { TraspasoExcelService } from './services/traspaso-excel.service';
@@ -56,6 +57,7 @@ import { Traspaso } from './entities/traspaso.entity';
 import { FondoRendir } from './entities/fondo-rendir.entity';
 import { FondoRendirDetalle } from './entities/fondo-rendir-detalle.entity';
 import { BienDacionPago } from './entities/bien-dacion-pago.entity';
+import { BienDacionPagoGasto } from './entities/bien-dacion-pago-gasto.entity';
 import { PersonaCi } from '../comercio-interno/entities/persona-ci.entity';
 import { RecepcionMineral } from '../comercio-interno/entities/recepcion-mineral/recepcion-mineral.entity';
 import { ValorizacionMineral } from '../comercio-interno/entities/valorizacion/valorizacion-mineral.entity';
@@ -66,6 +68,10 @@ import { VentaLoteService } from './services/venta-lote.service';
 import { VentaLote } from './entities/venta-lote.entity';
 import { PromedioMineral } from '../comercio-interno/entities/promedio/promedio-mineral.entity';
 import { Cliente } from '../parametricas/entities/cliente.entity';
+import { PagoValorizacionController } from './controller/pago-valorizacion.controller';
+import { PagoValorizacionService } from './services/pago-valorizacion.service';
+import { PagoValorizacion } from './entities/pago-valorizacion.entity';
+import { PagoValorizacionDetalle } from './entities/pago-valorizacion-detalle.entity';
 
 @Module({
   controllers: [
@@ -81,6 +87,7 @@ import { Cliente } from '../parametricas/entities/cliente.entity';
     PrestamoPersonalController,
     BoletaPagoController,
     VentaLoteController,
+    PagoValorizacionController,
     // ReciboPdfProcesadoController,
   ],
   providers: [
@@ -99,6 +106,7 @@ import { Cliente } from '../parametricas/entities/cliente.entity';
     CajaFlujoExcelService,
     CajaFlujoConsolidadoExcelService,
     ContabilidadExcelService,
+    ContabilidadPdfService,
     DeudasTotalesExcelService,
     ReciboExcelService,
     TraspasoExcelService,
@@ -109,6 +117,7 @@ import { Cliente } from '../parametricas/entities/cliente.entity';
     BoletaPagoService,
     BoletaPagoPdfService,
     VentaLoteService,
+    PagoValorizacionService,
   ],
   imports: [
     ConfigModule,
@@ -127,6 +136,7 @@ import { Cliente } from '../parametricas/entities/cliente.entity';
         FondoRendir,
         FondoRendirDetalle,
         BienDacionPago,
+        BienDacionPagoGasto,
         PrestamoPersonal,
         MovimientoPrestamo,
         BoletaPago,
@@ -137,11 +147,15 @@ import { Cliente } from '../parametricas/entities/cliente.entity';
         VentaLote,
         PromedioMineral,
         Cliente,
+        PagoValorizacion,
+        PagoValorizacionDetalle,
       ],
       'ci',
     ),
     ParametricasModule,
     forwardRef(() => SecurityModule),
   ],
+  // El dashboard reutiliza la regla de actividad (deudor activo/inactivo).
+  exports: [KardexActividadService],
 })
 export class ContabilidadModule {}

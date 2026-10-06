@@ -266,7 +266,7 @@ export class LibretaBancoService {
     }
     if (linea.kardex.estado === 'CERRADO') {
       throw new BadRequestException(
-        `El movimiento está cargado en el kardex N° ${linea.kardex.numero}, que ya está cerrado: no puede modificarse.`,
+        `El movimiento está cargado en el kardex ${linea.kardex.codigo}, que ya está cerrado: no puede modificarse.`,
       );
     }
     return linea as MovimientoKardex & { kardex: Kardex };
@@ -452,6 +452,8 @@ export class LibretaBancoService {
       idMovimientoKardex?: string | null;
       idTraspaso?: string | null;
       idDestinoGasto?: number | null;
+      /** Bs. por 1 USD, si la cuenta es en USD y quien llama lo conoce. */
+      tipoCambio?: number | null;
       debe: number;
       haber: number;
     },
@@ -485,6 +487,7 @@ export class LibretaBancoService {
         idMovimientoKardex: datos.idMovimientoKardex ?? null,
         idTraspaso: datos.idTraspaso ?? null,
         idDestinoGasto: datos.idDestinoGasto ?? null,
+        tipoCambio: datos.tipoCambio ?? null,
         debe: this.r2(datos.debe),
         haber: this.r2(datos.haber),
         saldo: 0,
@@ -510,6 +513,9 @@ export class LibretaBancoService {
   ): Promise<LibretaBanco> {
     const cuenta = await this.obtenerCuentaActiva(dto.idCuentaBancaria);
     const { debe, haber } = this.debeHaber(dto);
+    // Cuenta en USD: el tipo de cambio es obligatorio aunque no haya kardex
+    // (queda en el movimiento como referencia del equivalente en Bs.).
+    const tipoCambio = resolverTipoCambio(monedaDeCuenta(cuenta), dto.tipoCambio);
     const beneficiario = await this.resolverBeneficiario(dto);
     const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
     // Con persona/actor/cliente: también afecta su kardex abierto (falla si
@@ -522,7 +528,7 @@ export class LibretaBancoService {
       await this.kardexActividadService.validarActivo(kardex);
     }
     const importesKardex = kardex
-      ? this.importesKardex(cuenta, debe, haber, dto.tipoCambio)
+      ? this.importesKardex(cuenta, debe, haber, tipoCambio)
       : null;
     const idFormaPago = kardex ? await this.resolverIdFormaPago(dto.tipoTransaccion) : null;
     const nroTransaccion = dto.nroTransaccion?.trim() || null;
@@ -567,6 +573,7 @@ export class LibretaBancoService {
           concepto,
           idDestinoGasto,
           idMovimientoKardex,
+          tipoCambio,
           debe,
           haber,
         },
@@ -656,14 +663,15 @@ export class LibretaBancoService {
         await this.kardexActividadService.validarActivo(kardexNuevo);
       }
     }
+    // En USD el tipo de cambio es obligatorio también al editar; si no llega
+    // se conserva el que ya tenía el movimiento (o su línea de kardex).
+    const tipoCambio = resolverTipoCambio(
+      monedaDeCuenta(cuenta),
+      dto.tipoCambio ?? mov.tipoCambio ?? linea?.tipoCambio ?? null,
+    );
     const importesKardex =
       linea || kardexNuevo
-        ? this.importesKardex(
-            cuenta,
-            debe,
-            haber,
-            dto.tipoCambio ?? linea?.tipoCambio ?? null,
-          )
+        ? this.importesKardex(cuenta, debe, haber, tipoCambio)
         : null;
     const idFormaPago =
       linea || kardexNuevo ? await this.resolverIdFormaPago(dto.tipoTransaccion) : null;
@@ -737,6 +745,7 @@ export class LibretaBancoService {
         concepto,
         idDestinoGasto,
         idMovimientoKardex,
+        tipoCambio,
         debe,
         haber,
         usuarioUltimaModificacion: user.usuario,

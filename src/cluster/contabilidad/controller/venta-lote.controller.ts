@@ -14,6 +14,7 @@ import { Usuario } from 'src/security/entities/usuario.entity';
 import { PromedioMineral } from 'src/cluster/comercio-interno/entities/promedio/promedio-mineral.entity';
 import {
   CreateVentaLoteDto,
+  EstimarVentaLoteDto,
   FiltroPromediosDisponiblesVentaDto,
   FiltroVentaLoteDto,
   LiquidarVentaLoteDto,
@@ -52,6 +53,31 @@ export class VentaLoteController {
     return this.ventaLoteService.listar(filtro);
   }
 
+  @Get('venta-lote/clientes')
+  @Auth()
+  @ApiOperation({
+    summary: 'Clientes compradores con su cuenta corriente',
+    description:
+      'Todos los clientes activos (primero COMERCIO_INTERNO, luego EXPORTACION) con: anticiposBolivianos (todo lo recibido), liquidadoBolivianos (suma de lotes liquidados), aplicadoBolivianos, anticipoDisponibleBolivianos (recibido que aún no paga ningún lote), saldoBolivianos (positivo = a favor del cliente, se le deben lotes; negativo = el cliente debe), lotes abiertos/liquidados/pagados y saldoProyectadoBolivianos (saldo menos el estimado propio de los lotes sin liquidar). Se calcula desde el kardex CLIENTE.',
+  })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  cuentasClientes() {
+    return this.ventaLoteService.cuentasClientes();
+  }
+
+  @Get('venta-lote/clientes/:idCliente')
+  @Auth()
+  @ApiOperation({
+    summary: 'Cuenta corriente de un cliente comprador',
+    description:
+      'Resumen de la cuenta, sus lotes vigentes (cada uno con lo que la cuenta le paga: en COMERCIO_INTERNO los anticipos pagan los lotes LIQUIDADOS del más antiguo al más nuevo; un lote sin liquidar no recibe nada) y los movimientos de su kardex con saldo corrido.',
+  })
+  @ApiParam({ name: 'idCliente', example: '1' })
+  @ApiNotFoundResponse({ description: 'No existe el cliente.' })
+  cuentaCliente(@Param('idCliente') idCliente: string) {
+    return this.ventaLoteService.cuentaCliente(idCliente);
+  }
+
   @Get('venta-lote/:id')
   @Auth()
   @ApiOperation({ summary: 'Venta de lote con sus recibos de cobro y resumen' })
@@ -84,6 +110,23 @@ export class VentaLoteController {
     @GetUser() user: Usuario,
   ): Promise<VentaLoteConResumen> {
     return this.ventaLoteService.actualizar(id, dto, user);
+  }
+
+  @Patch('venta-lote/:id/monto-estimado')
+  @Auth()
+  @ApiOperation({
+    summary: 'Registrar o corregir el monto estimado de la valorización',
+    description:
+      'Lo que la empresa calcula que vale el lote antes de recibir la liquidación del comprador, en la moneda de la venta. Solo referencial (no mueve kardex ni caja). `montoEstimado: null` quita la estimación. La respuesta trae `diferenciaEstimado` (montoVenta − montoEstimado) cuando la venta está LIQUIDADA.',
+  })
+  @ApiParam({ name: 'id', example: '4' })
+  @ApiBadRequestResponse({ description: 'Monto inválido o venta anulada.' })
+  estimar(
+    @Param('id') id: string,
+    @Body() dto: EstimarVentaLoteDto,
+    @GetUser() user: Usuario,
+  ): Promise<VentaLoteConResumen> {
+    return this.ventaLoteService.estimar(id, dto, user);
   }
 
   @Patch('venta-lote/:id/liquidar')

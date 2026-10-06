@@ -179,13 +179,14 @@ export class CotizacionMineralService {
     // desfases de reloj entre ambos.
     //----------------------------------------------------
     if (vigente !== undefined) {
+      // Mismo criterio que findVigenteByMineral: una dada de baja no es vigente.
       if (vigente) {
         query.andWhere(
-          'NOW() BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
+          'cotizacion.activo = true AND NOW() BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
         );
       } else {
         query.andWhere(
-          'NOW() NOT BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
+          '(cotizacion.activo = false OR NOW() NOT BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal)',
         );
       }
     }

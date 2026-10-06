@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseBoolPipe,
+  ParseEnumPipe,
   ParseIntPipe,
   Patch,
   Post,
@@ -33,12 +34,17 @@ import { Auth, GetUser } from 'src/security/decorators';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { LibretaBancoService } from '../services/libreta-banco.service';
 import { LibretaBancoExcelService } from '../services/libreta-banco-excel.service';
+import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
 import { LibretaBanco } from '../entities/libreta-banco.entity';
 import { PeriodoBanco } from '../entities/periodo-banco.entity';
 import { CreateLibretaBancoDto } from '../dto/libreta-banco/create-libreta-banco.dto';
 import { FiltroLibretaBancoDto } from '../dto/libreta-banco/filtro-libreta-banco.dto';
-import { CerrarPeriodoBancoDto } from '../dto/libreta-banco/cerrar-periodo-banco.dto';
-import { CerrarGestionBancoDto } from '../dto/libreta-banco/cerrar-gestion-banco.dto';
+import { FiltroLibretaBancoReporteDto } from '../dto/libreta-banco/filtro-libreta-banco-reporte.dto';
+import {
+  ACCIONES_PERIODO,
+  AccionPeriodo,
+} from '../dto/movimiento-caja/accion-periodo-caja.dto';
+import { AccionPeriodoBancoDto } from '../dto/libreta-banco/accion-periodo-banco.dto';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
@@ -47,6 +53,7 @@ export class ContabilidadController {
   constructor(
     private readonly libretaBancoService: LibretaBancoService,
     private readonly libretaBancoExcelService: LibretaBancoExcelService,
+    private readonly contabilidadPdfService: ContabilidadPdfService,
   ) {}
 
   //--------------------------- Libreta de bancos ----------------------------
@@ -179,14 +186,11 @@ export class ContabilidadController {
   @Get('libreta-banco/excel')
   @Auth()
   @ApiOperation({
-    summary: 'Exportar la libreta de bancos de una cuenta a Excel',
+    summary: 'Exportar la libreta de bancos de una cuenta a Excel o PDF',
     description:
-      'Genera el .xlsx con el formato del libro físico "LIBRETA DE BANCOS": FECHA, N° DE TRANSACCIÓN, NOMBRES Y APELLIDOS, CONCEPTO y SALDOS (DEBE / HABER / SALDOS). La primera fila es el saldo inicial de la cuenta (o el saldo anterior al rango si se filtra por gestión/mes) y el pie "TOTAL DE SALDO" = suma HABER (incluido el saldo inicial) - suma DEBE. Sin gestión ni mes imprime toda la historia de la cuenta; `mes` requiere `gestion`. Solo movimientos vigentes (activo = true).',
+      'Genera el .xlsx con el formato del libro físico "LIBRETA DE BANCOS": FECHA, N° DE TRANSACCIÓN, NOMBRES Y APELLIDOS, CONCEPTO y SALDOS (DEBE / HABER / SALDOS). La primera fila es el saldo inicial de la cuenta (o el saldo anterior al rango si se filtra por gestión/mes) y el pie "TOTAL DE SALDO" = suma HABER (incluido el saldo inicial) - suma DEBE. Sin gestión ni mes imprime toda la historia de la cuenta; `mes` requiere `gestion`. Solo movimientos vigentes (activo = true). Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
-  @ApiQuery({ name: 'idCuentaBancaria', required: true, type: Number, example: 1 })
-  @ApiQuery({ name: 'gestion', required: false, type: Number, example: 2026 })
-  @ApiQuery({ name: 'mes', required: false, type: Number, example: 8 })
-  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({
     description: 'Cuenta inactiva, filtros inválidos o `mes` sin `gestion`.',
   })
@@ -194,19 +198,15 @@ export class ContabilidadController {
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async exportarLibretaExcel(
-    @Query() filtro: FiltroLibretaBancoDto,
+    @Query() filtro: FiltroLibretaBancoReporteDto,
     @Res() res: Response,
   ): Promise<void> {
     const buffer = await this.libretaBancoExcelService.generar(filtro);
 
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=${this.libretaBancoExcelService.nombreArchivo(filtro)}`,
-      'Content-Length': buffer.length,
-    });
-
-    res.end(buffer);
+    const nombre = this.libretaBancoExcelService
+      .nombreArchivo(filtro)
+      .replace(/\.xlsx$/, '');
+    await this.contabilidadPdfService.enviar(res, buffer, nombre, filtro.formato);
   }
 
   @Get('libreta-banco/detalle/:id')
@@ -251,107 +251,57 @@ export class ContabilidadController {
     return await this.libretaBancoService.listarPeriodos(idCuentaBancaria);
   }
 
-  @Post('libreta-banco/periodo/cerrar')
+  @Post('libreta-banco/periodo/:accion')
   @Auth()
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Cerrar un período mensual',
+    summary: 'Cerrar o reabrir un período mensual o la gestión de una cuenta',
     description:
-      'Sella el mes: sus movimientos quedan inmutables, se fija `saldo_final = saldo_inicial + haberes - debes`, y ese saldo pasa como saldo inicial del mes siguiente. Requiere que el mes anterior ya esté cerrado (contigüidad).',
+      '`accion` = cerrar | reabrir; `alcance` (en el cuerpo) = MES | GESTION. Cerrar MES sella el mes: sus movimientos quedan inmutables, se fija `saldo_final = saldo_inicial + haberes - debes` y ese saldo pasa como saldo inicial del mes siguiente; requiere que el mes anterior ya esté cerrado (contigüidad). Reabrir MES lo vuelve a ABIERTO; requiere que ni el mes siguiente ni la gestión estén cerrados. Cerrar GESTION solo se puede con sus 12 meses cerrados: registra el resumen anual (saldo inicial de enero, totales del año, saldo final de diciembre) y sella el año. Reabrir GESTION la vuelve a ABIERTO; después se pueden reabrir sus meses en orden inverso.',
   })
-  @ApiBody({ type: CerrarPeriodoBancoDto })
+  @ApiParam({ name: 'accion', enum: ACCIONES_PERIODO, example: 'cerrar' })
+  @ApiBody({
+    type: AccionPeriodoBancoDto,
+    examples: {
+      mes: {
+        summary: 'Un mes',
+        value: { idCuentaBancaria: 1, gestion: 2026, mes: 9, alcance: 'MES' },
+      },
+      gestion: {
+        summary: 'La gestión (año)',
+        value: { idCuentaBancaria: 1, gestion: 2026, alcance: 'GESTION' },
+      },
+    },
+  })
   @ApiOkResponse({
-    description: 'Período cerrado correctamente.',
+    description: 'Período o gestión actualizado correctamente.',
     type: PeriodoBanco,
   })
   @ApiBadRequestResponse({
     description:
-      'El período ya está cerrado, o el mes anterior sigue abierto, o la gestión está cerrada.',
+      'Acción o alcance inválidos; el período ya está en ese estado; el mes anterior sigue abierto o el siguiente cerrado; la gestión está cerrada o le faltan meses por cerrar.',
   })
   @ApiNotFoundResponse({
-    description: 'No hay movimientos registrados en ese mes para la cuenta.',
+    description:
+      'No se encontró la cuenta bancaria, el período, el cierre de gestión, o no hay movimientos en ese mes.',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
-  async cerrarPeriodo(
-    @Body() body: CerrarPeriodoBancoDto,
+  async accionPeriodo(
+    @Param('accion', new ParseEnumPipe(AccionPeriodo)) accion: AccionPeriodo,
+    @Body() body: AccionPeriodoBancoDto,
     @GetUser() user: Usuario,
   ): Promise<PeriodoBanco> {
-    return await this.libretaBancoService.cerrarPeriodo(body, user);
-  }
-
-  @Post('libreta-banco/periodo/reabrir')
-  @Auth()
-  @ApiOperation({
-    summary: 'Reabrir un período mensual',
-    description:
-      'Vuelve el mes a ABIERTO. Requiere que el mes siguiente NO esté cerrado y que la gestión NO esté cerrada.',
-  })
-  @ApiBody({ type: CerrarPeriodoBancoDto })
-  @ApiOkResponse({
-    description: 'Período reabierto correctamente.',
-    type: PeriodoBanco,
-  })
-  @ApiBadRequestResponse({
-    description:
-      'El período no está cerrado, o el mes siguiente / la gestión están cerrados.',
-  })
-  @ApiNotFoundResponse({ description: 'No existe el período indicado.' })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
-  async reabrirPeriodo(
-    @Body() body: CerrarPeriodoBancoDto,
-    @GetUser() user: Usuario,
-  ): Promise<PeriodoBanco> {
-    return await this.libretaBancoService.reabrirPeriodo(body, user);
-  }
-
-  @Post('libreta-banco/periodo/cerrar-gestion')
-  @Auth()
-  @ApiOperation({
-    summary: 'Cerrar la gestión (año) de una cuenta',
-    description:
-      'Solo se puede cerrar la gestión cuando sus 12 meses están cerrados. Registra el resumen anual (saldo inicial de enero, totales del año, saldo final de diciembre) y sella el año.',
-  })
-  @ApiBody({ type: CerrarGestionBancoDto })
-  @ApiOkResponse({
-    description: 'Gestión cerrada correctamente.',
-    type: PeriodoBanco,
-  })
-  @ApiBadRequestResponse({
-    description: 'Faltan meses por cerrar en la gestión.',
-  })
-  @ApiNotFoundResponse({ description: 'No se encontró la cuenta bancaria.' })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
-  async cerrarGestion(
-    @Body() body: CerrarGestionBancoDto,
-    @GetUser() user: Usuario,
-  ): Promise<PeriodoBanco> {
-    return await this.libretaBancoService.cerrarGestion(body, user);
-  }
-
-  @Post('libreta-banco/periodo/reabrir-gestion')
-  @Auth()
-  @ApiOperation({
-    summary: 'Reabrir la gestión (año) de una cuenta',
-    description:
-      'Vuelve la gestión a ABIERTO. Después se pueden reabrir los meses de ese año (en orden inverso).',
-  })
-  @ApiBody({ type: CerrarGestionBancoDto })
-  @ApiOkResponse({
-    description: 'Gestión reabierta correctamente.',
-    type: PeriodoBanco,
-  })
-  @ApiBadRequestResponse({ description: 'La gestión no está cerrada.' })
-  @ApiNotFoundResponse({
-    description: 'No existe un cierre de gestión para esa cuenta.',
-  })
-  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
-  async reabrirGestion(
-    @Body() body: CerrarGestionBancoDto,
-    @GetUser() user: Usuario,
-  ): Promise<PeriodoBanco> {
-    return await this.libretaBancoService.reabrirGestion(body, user);
+    const { alcance, mes, ...gestion } = body;
+    if (alcance === 'GESTION') {
+      return accion === AccionPeriodo.CERRAR
+        ? await this.libretaBancoService.cerrarGestion(gestion, user)
+        : await this.libretaBancoService.reabrirGestion(gestion, user);
+    }
+    // Con alcance MES el DTO ya exigió el mes.
+    const periodo = { ...gestion, mes };
+    return accion === AccionPeriodo.CERRAR
+      ? await this.libretaBancoService.cerrarPeriodo(periodo, user)
+      : await this.libretaBancoService.reabrirPeriodo(periodo, user);
   }
 }

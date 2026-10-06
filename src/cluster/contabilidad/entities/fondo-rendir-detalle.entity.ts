@@ -9,6 +9,11 @@ import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
 import { FondoRendir } from './fondo-rendir.entity';
 
+export type TipoFondoRendirDetalle =
+  | 'COMPROBANTE'
+  | 'SIN_COMPROBANTE'
+  | 'SALDO_FAVOR';
+
 /**
  * Línea de justificación de un `FondoRendir`: un gasto puntual con su
  * comprobante (ej. "COMPRA DE CEMENTO - FACTURA 123"). No mueve plata de
@@ -94,4 +99,24 @@ export class FondoRendirDetalle extends Auditoria {
     referencedColumnName: 'id',
   })
   destinoGasto?: DestinoGasto;
+
+  // COMPROBANTE:     gasto con respaldo, cargado a mano (lo normal).
+  // SIN_COMPROBANTE: el fondo se dio por rendido sin cargar comprobantes;
+  //                  la línea cubre el saldo que quedaba pendiente.
+  // SALDO_FAVOR:     excedente de un fondo anterior del mismo destinatario
+  //                  (`idFondoOrigen`) que entra acá como ya justificado.
+  @Column({
+    name: 'tipo',
+    type: 'varchar',
+    length: 20,
+    default: 'COMPROBANTE',
+  })
+  tipo: TipoFondoRendirDetalle;
+
+  @Column({
+    name: 'id_fondo_origen',
+    type: 'bigint',
+    nullable: true,
+  })
+  idFondoOrigen?: string | null;
 }

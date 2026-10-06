@@ -600,6 +600,11 @@ export class ValorizacionMineralService {
         'recibo',
         "recibo.estado <> 'ANULADO'",
       )
+      .leftJoinAndSelect(
+        'valorizacion.pagos',
+        'pago',
+        "pago.estado <> 'ANULADO'",
+      )
       .where('valorizacion.id = :id', { id })
       .getOne();
   }
@@ -716,6 +721,9 @@ export class ValorizacionMineralService {
       const valorizacion = queryRunner.manager.create(ValorizacionMineral, {
         idRecepcionMineral: idRecepcionMineral.toString(),
         idEstadoValorizacion: ESTADO_VALORIZACION_BORRADOR,
+        // Se hereda el laboratorio de la recepción (si tiene); luego puede
+        // cambiarse con el PATCH de la valorización sin afectar la recepción.
+        idLaboratorio: recepcion.idLaboratorio ?? undefined,
         anticipo: recepcion.anticipo ?? 0,
         pesoBrutoHumedoKilogramos: recepcion.balanzaL,
         totalValorLiquidoVentaBolivianos: 0,
@@ -1063,6 +1071,12 @@ export class ValorizacionMineralService {
         'valorizacion.recibos',
         'recibo',
         "recibo.estado <> 'ANULADO'",
+      )
+      // Pago vigente del líquido pagable (sin recibo): vacío = falta pagar.
+      .leftJoinAndSelect(
+        'valorizacion.pagos',
+        'pago',
+        "pago.estado <> 'ANULADO'",
       );
 
     //---------------------------------------------------------
@@ -1076,6 +1090,7 @@ export class ValorizacionMineralService {
         OR persona.apellidoPaterno ILIKE :busqueda
         OR persona.apellidoMaterno ILIKE :busqueda
         OR persona.numeroDocumento ILIKE :busqueda
+        OR recepcion.nombresApellidos ILIKE :busqueda
         OR recepcion.codigoOperacion ILIKE :busqueda
       )`,
         {

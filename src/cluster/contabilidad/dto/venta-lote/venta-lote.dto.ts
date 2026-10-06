@@ -9,6 +9,7 @@ import {
   IsPositive,
   IsString,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateVentaLoteDto {
@@ -76,6 +77,20 @@ export class UpdateVentaLoteDto {
   observaciones?: string;
 }
 
+export class EstimarVentaLoteDto {
+  @ApiProperty({
+    example: 820000,
+    nullable: true,
+    description:
+      'Monto que la empresa estima que vale el lote, en la moneda de la venta. Solo para comparar con la liquidación del comprador. null = quitar la estimación.',
+  })
+  @ValidateIf((_, valor) => valor !== null)
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 }, { message: 'El monto estimado debe tener hasta 2 decimales.' })
+  @IsPositive({ message: 'El monto estimado debe ser mayor a 0.' })
+  montoEstimado: number | null;
+}
+
 export class LiquidarVentaLoteDto {
   @ApiProperty({
     example: 850000,
@@ -116,6 +131,14 @@ export class FiltroVentaLoteDto {
   @IsOptional()
   @IsString()
   idCliente?: string;
+
+  @ApiPropertyOptional({
+    enum: ['COMERCIO_INTERNO', 'EXPORTACION'],
+    description: 'Modalidad de venta del cliente comprador.',
+  })
+  @IsOptional()
+  @IsIn(['COMERCIO_INTERNO', 'EXPORTACION'])
+  modalidad?: 'COMERCIO_INTERNO' | 'EXPORTACION';
 
   @Type(() => Number)
   @IsOptional()

@@ -84,6 +84,18 @@ export class VentaLote extends Auditoria {
   })
   totalEfectivoInvertido: number;
 
+  // Estimación propia de la valorización, en la moneda de la venta. Solo para
+  // comparar contra la liquidación del comprador: no mueve kardex ni caja.
+  @Column({
+    name: 'monto_estimado',
+    type: 'numeric',
+    precision: 16,
+    scale: 2,
+    nullable: true,
+    transformer: new ColumnNumericTransformer(),
+  })
+  montoEstimado?: number | null;
+
   // Liquidación final (neto) del comprador, en la moneda de la venta.
   @Column({
     name: 'monto_venta',

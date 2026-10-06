@@ -150,7 +150,7 @@ export class CreateLibretaBancoDto {
   @ApiPropertyOptional({
     example: 6.96,
     description:
-      'Tipo de cambio (Bs. por 1 USD). Obligatorio solo si la cuenta es en USD y hay persona/actor/cliente: el kardex lleva su saldo en Bs. y se convierte con este valor.',
+      'Tipo de cambio (Bs. por 1 USD). Obligatorio si la cuenta es en USD; se ignora en Bs. Queda guardado en el movimiento como referencia y, si hay persona/actor/cliente, es el que convierte el importe a Bs. en su kardex.',
   })
   @IsOptional()
   @Type(() => Number)

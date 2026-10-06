@@ -2,12 +2,14 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
+import { FormatoReporteDto } from '../reporte/formato-reporte.dto';
+
 /**
  * Filtro del Excel "RENDICIÓN DE CUENTAS": un destinatario (persona o
  * actor, excluyentes) + una gestión. Con `mes` genera el reporte mensual de
  * ese mes; sin `mes`, el anual (los 12 meses de la gestión).
  */
-export class FiltroFondoRendirExcelDto {
+export class FiltroFondoRendirExcelDto extends FormatoReporteDto {
   @ApiPropertyOptional({ example: '20', description: 'Id de la persona destinataria.' })
   @IsOptional()
   @IsString()

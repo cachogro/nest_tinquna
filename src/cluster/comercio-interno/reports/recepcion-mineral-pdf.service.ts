@@ -1,3 +1,4 @@
+import { proveedorDeRecepcion } from 'src/cluster/comercio-interno/recepcion-proveedor.util';
 import { Injectable } from '@nestjs/common';
 const PDFDocument = require('pdfkit-table');
 import { join } from 'path';
@@ -278,7 +279,7 @@ export class RecepcionMineralReportePdfService {
       dataOtros.push({
         col1: index + 1,
         col2: registro.codigoOperacion,
-        col3: this.nombreCompleto(registro.persona),
+        col3: this.nombreCompleto(proveedorDeRecepcion(registro)),
         col4: `${registro.numeroSacos ?? ''}`,
         col5: this.formatearNumero(registro.balanzaL),
         col6: this.formatearEntero(registro.anticipo),

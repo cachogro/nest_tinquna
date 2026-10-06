@@ -392,6 +392,7 @@ export class ReciboService {
 
     const venta = await this.ventaLoteRepository.findOne({
       where: { id: String(dto.idVentaLote) },
+      relations: { cliente: true },
     });
     if (!venta || !venta.activo) {
       throw new NotFoundException('No se encontró la venta de lote indicada.');
@@ -406,7 +407,11 @@ export class ReciboService {
       );
     }
 
-    if (venta.estado === 'LIQUIDADA' && venta.montoVentaBolivianos != null) {
+    // El tope por lote solo aplica a exportación: en comercio interno el
+    // dinero va a la cuenta corriente del cliente y paga los lotes que se
+    // vayan liquidando, así que puede superar lo que falta de este lote.
+    const cobraPorLote = venta.cliente?.modalidadVenta === 'EXPORTACION';
+    if (cobraPorLote && venta.estado === 'LIQUIDADA' && venta.montoVentaBolivianos != null) {
       const moneda: MonedaCaja = dto.moneda ?? 'BS';
       const montoBs = aBolivianos(
         Number(dto.montoTotal),
@@ -1345,7 +1350,12 @@ export class ReciboService {
   async buscarPorId(id: string): Promise<Recibo> {
     const recibo = await this.reciboRepository.findOne({
       where: { id },
-      relations: RELACIONES,
+      // La recepción (con su muestrero) se imprime en el PDF del recibo de
+      // anticipo: ver recibo-recepcion.util.ts.
+      relations: {
+        ...RELACIONES,
+        recepcionMineral: { personalInterno: true },
+      },
     });
     if (!recibo) {
       throw new NotFoundException('No se encontró el recibo solicitado.');

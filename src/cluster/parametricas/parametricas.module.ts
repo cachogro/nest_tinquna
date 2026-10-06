@@ -43,6 +43,8 @@ import { CodificacionLote } from './entities/codificacion-lote.entity';
 import { DestinoGastoService } from './services/destino-gasto.service';
 import { CodificacionLoteService } from './services/codificacion-lote.service';
 import { LugarAcopio } from './entities/lugar-acopio.entity';
+import { LugarAcopioService } from './services/lugar-acopio.service';
+import { FormaPagoService } from './services/forma-pago.service';
 import { Caja } from './entities/caja.entity';
 import { CajaService } from './services/caja.service';
 import { Cliente } from './entities/cliente.entity';
@@ -67,6 +69,8 @@ import { ClienteService } from './services/cliente.service';
     ClienteService,
     DestinoGastoService,
     CodificacionLoteService,
+    LugarAcopioService,
+    FormaPagoService,
   ],
   imports: [
     ConfigModule,

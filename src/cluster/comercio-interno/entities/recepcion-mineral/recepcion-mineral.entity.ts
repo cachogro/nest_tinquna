@@ -10,7 +10,9 @@ import {
 } from 'typeorm';
 import { Codificacion } from 'src/cluster/parametricas/entities/codificacion.entity';
 import { EstadoRegistro } from 'src/cluster/parametricas/entities/estado-registro.entity';
+import { Laboratorio } from 'src/cluster/parametricas/entities/laboratorio.entity';
 import { PersonaCi } from '../persona-ci.entity';
+import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { Recibo } from 'src/cluster/contabilidad/entities/recibo.entity';
 //import { RecepcionMineralDetalle } from './recepcion-mineral-detalle.entity';
 import { ValorizacionMineral } from '../valorizacion/valorizacion-mineral.entity';
@@ -61,24 +63,53 @@ export class RecepcionMineral extends Auditoria {
   codificacion: Codificacion;
 
   // ============================
-  // Persona (Proveedor)
+  // Proveedor: persona registrada, actor productivo o externo (solo nombre).
+  // A lo sumo uno de idPersona / idActorProductivoMinero; con ambos en null
+  // el proveedor es un externo y se identifica por nombresApellidos. A qué
+  // kardex va el dinero se decide recién al procesar el recibo.
   // ============================
 
   @Column({
     name: 'id_persona',
     type: 'bigint',
-    nullable: false,
+    nullable: true,
   })
-  idPersona: string;
+  idPersona?: string | null;
 
   @ManyToOne(() => PersonaCi, {
-    nullable: false,
+    nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
     name: 'id_persona',
   })
-  persona: PersonaCi;
+  persona?: PersonaCi | null;
+
+  @Column({
+    name: 'id_actor_productivo_minero',
+    type: 'bigint',
+    nullable: true,
+  })
+  idActorProductivoMinero?: string | null;
+
+  @ManyToOne(() => ActorProductivoMinero, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_actor_productivo_minero',
+  })
+  actorProductivoMinero?: ActorProductivoMinero | null;
+
+  // Nombre del proveedor tal como se registró (también para persona y
+  // actor). null en las recepciones anteriores: se lee de la persona.
+  @Column({
+    name: 'nombres_apellidos',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  nombresApellidos?: string | null;
 
   // ============================
   // Datos de Recepción
@@ -176,6 +207,30 @@ export class RecepcionMineral extends Auditoria {
     nullable: true,
   })
   lugarAcopio?: string;
+
+  // ============================
+  // Laboratorio
+  // ============================
+
+  // Laboratorio al que se envía la muestra, registrado ya desde la recepción.
+  // Opcional. Al crear el borrador de la valorización se copia a
+  // valorizacion_mineral.id_laboratorio; desde ahí cada uno se edita por
+  // separado (cambiarlo en la valorización no modifica la recepción).
+  @Column({
+    name: 'id_laboratorio',
+    type: 'bigint',
+    nullable: true,
+  })
+  idLaboratorio?: string | null;
+
+  @ManyToOne(() => Laboratorio, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_laboratorio',
+  })
+  laboratorio?: Laboratorio | null;
 
   @Column({
     name: 'observaciones',

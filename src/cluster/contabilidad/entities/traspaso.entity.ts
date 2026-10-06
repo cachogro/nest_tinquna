@@ -81,6 +81,18 @@ export class Traspaso extends Auditoria {
   })
   moneda: MonedaCaja;
 
+  // Bs. por 1 USD. Obligatorio si moneda = USD; null en BS (y en los
+  // traspasos en USD anteriores a la 084). Es solo referencial: ambos lados
+  // del traspaso se mueven en la moneda de la cuenta.
+  @Column({
+    name: 'tipo_cambio',
+    type: 'numeric',
+    precision: 12,
+    scale: 4,
+    nullable: true,
+  })
+  tipoCambio?: number | null;
+
   @Column({
     name: 'id_cuenta_bancaria',
     type: 'int',

@@ -35,6 +35,7 @@ import { ValorizacionMineralPdfService } from './services/valorizacion-mineral-p
 import { ValorizacionEntregadoService } from './services/valorizacion-entregado.service';
 import { ValorizacionMineralReportesService } from './reports/valorizacion-mineral-reportes.service';
 import { ValorizacionMineralReporteExcelService } from './reports/valorizacion-mineral-reporte-excel.service';
+import { PromedioMineralReporteExcelService } from './reports/promedio-mineral-reporte-excel.service';
 
 @Module({
   providers: [
@@ -50,6 +51,7 @@ import { ValorizacionMineralReporteExcelService } from './reports/valorizacion-m
     PromedioMineralService,
     ValorizacionMineralReportesService,
     ValorizacionMineralReporteExcelService,
+    PromedioMineralReporteExcelService,
   ],
   controllers: [
     ComercioInternoController,

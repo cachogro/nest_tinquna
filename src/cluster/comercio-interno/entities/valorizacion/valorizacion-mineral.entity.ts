@@ -18,6 +18,7 @@ import { ValorizacionCalculoAporte } from './valorizacion-calculo-aporte.entity'
 import { RecepcionMineral } from '../recepcion-mineral/recepcion-mineral.entity';
 import { ApiProperty } from '@nestjs/swagger';
 import { Recibo } from 'src/cluster/contabilidad/entities/recibo.entity';
+import { PagoValorizacion } from 'src/cluster/contabilidad/entities/pago-valorizacion.entity';
 
 @Entity({
   name: 'valorizacion_mineral',
@@ -422,6 +423,12 @@ export class ValorizacionMineral extends Auditoria {
   // vigente (BORRADOR/PROCESADO); los ANULADOS quedan como historial.
   @OneToMany(() => Recibo, (recibo) => recibo.valorizacionMineral)
   recibos?: Recibo[];
+
+  // Pago del líquido pagable (contabilidad.pago_valorizacion): transacción
+  // interna sin recibo. Solo uno vigente (REGISTRADO); los ANULADOS quedan
+  // como historial.
+  @OneToMany(() => PagoValorizacion, (pago) => pago.valorizacionMineral)
+  pagos?: PagoValorizacion[];
 
   /**
    * Codificación con la que se valoriza: la propia si se cambió, si no la de

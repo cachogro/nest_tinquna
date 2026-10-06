@@ -67,7 +67,7 @@ export class KardexActividadService {
     const actividad = (await this.actividades([kardex])).get(String(kardex.id));
     if (actividad?.estado === 'INACTIVO') {
       throw new BadRequestException(
-        `El kardex N° ${kardex.numero} (${kardex.tipo}) está INACTIVO desde el ${this.texto(actividad.inactivoDesde)}: ` +
+        `El kardex ${kardex.codigo} (${kardex.tipo}) está INACTIVO desde el ${this.texto(actividad.inactivoDesde)}: ` +
           `${actividad.diasSinActividad} días sin movimientos (límite ${actividad.diasInactividad}). ` +
           'Un operador o administrador debe reactivarlo antes de registrar nuevas transacciones.',
       );

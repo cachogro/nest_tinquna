@@ -94,6 +94,20 @@ export class CreateTraspasoDto {
   @IsPositive({ message: 'El monto debe ser mayor a 0.' })
   monto: number;
 
+  @ApiPropertyOptional({
+    example: 6.96,
+    description:
+      'Tipo de cambio (Bs. por 1 USD). Obligatorio si la cuenta bancaria es en USD; se ignora si es en BS.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 4 },
+    { message: 'El tipo de cambio debe ser numérico con hasta 4 decimales.' },
+  )
+  @IsPositive({ message: 'El tipo de cambio debe ser mayor a 0.' })
+  tipoCambio?: number;
+
   @ApiProperty({
     example: '7',
     description:

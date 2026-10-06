@@ -6,7 +6,7 @@ import { PersonaCi } from './persona-ci.entity';
 
 @Entity({
   name: 'persona_persona_tipo',
-  schema: 'comercio_interno',
+  schema: 'parametrica',
 })
 export class PersonaPersonaTipo extends Auditoria {
   @PrimaryColumn({

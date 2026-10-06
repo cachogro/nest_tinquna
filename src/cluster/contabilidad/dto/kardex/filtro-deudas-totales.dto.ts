@@ -1,7 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional } from 'class-validator';
 
-export class FiltroDeudasTotalesDto {
+import { FormatoReporteDto } from '../reporte/formato-reporte.dto';
+
+export class FiltroDeudasTotalesDto extends FormatoReporteDto {
   @ApiPropertyOptional({
     enum: ['ACTOR', 'ASOCIADO', 'PERSONAL', 'CLIENTE'],
     description: 'Acota el reporte a un tipo de kardex. Sin valor: todos.',

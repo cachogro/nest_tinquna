@@ -284,6 +284,19 @@ export class LibretaBanco extends Auditoria {
   })
   haber: number;
 
+  // Bs. por 1 USD, solo en cuentas en USD (null en Bs.). Referencial: debe /
+  // haber / saldo van en la moneda de la cuenta. Obligatorio en los
+  // movimientos manuales en USD; los que nacen de un recibo o de una línea
+  // de kardex pueden no traerlo.
+  @Column({
+    name: 'tipo_cambio',
+    type: 'numeric',
+    precision: 12,
+    scale: 4,
+    nullable: true,
+  })
+  tipoCambio?: number | null;
+
   @Column({
     name: 'saldo',
     type: 'numeric',

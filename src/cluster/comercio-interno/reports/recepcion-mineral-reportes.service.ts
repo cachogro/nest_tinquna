@@ -13,10 +13,9 @@ import { FiltroReporteEstadoDto } from '../dto/reportes/filtro-reporte-estado.dt
 import { FiltroReporteCicloDto } from '../dto/reportes/filtro-reporte-ciclo.dto';
 import { FiltroReporteAnticiposDto } from '../dto/reportes/filtro-reporte-anticipos.dto';
 
-// SUM(recepcion.balanzaL - recepcion.balanzaT): "balanza L" (llegada/bruto) y
-// "balanza T" (tara) son las únicas columnas de peso que existen hoy; no hay
-// una columna "neto" propia, así que el neto se deriva de estas dos.
-const EXPR_PESO_NETO = 'recepcion.balanzaL - recepcion.balanzaT';
+// Kg recibidos = Balanza L, igual que la valorización (pesoBrutoHumedoKilogramos)
+// y el dashboard. Balanza T no es una tara: restarla daba 20 - 18 = 2 kg.
+const EXPR_PESO_NETO = 'recepcion.balanzaL';
 
 const TRUNC_POR_GRANULARIDAD: Record<string, string> = {
   dia: 'day',
@@ -328,7 +327,8 @@ export class RecepcionMineralReportesService {
 
     const query = this.recepcionRepository
       .createQueryBuilder('recepcion')
-      .innerJoin('recepcion.persona', 'persona')
+      // leftJoin: el proveedor puede ser un actor o un externo (sin persona).
+      .leftJoin('recepcion.persona', 'persona')
       .where('recepcion.fechaRecepcion ::timestamptz >= :desde', { desde })
       .andWhere('recepcion.fechaRecepcion ::timestamptz <= :hasta', {
         hasta,
@@ -342,7 +342,7 @@ export class RecepcionMineralReportesService {
     query
       .select('recepcion.idPersona', 'idPersona')
       .addSelect(
-        `CONCAT(persona.nombres, ' ', persona.apellidoPaterno, ' ', COALESCE(persona.apellidoMaterno, ''))`,
+        `COALESCE(NULLIF(TRIM(CONCAT(persona.nombres, ' ', persona.apellidoPaterno, ' ', COALESCE(persona.apellidoMaterno, ''))), ''), MAX(recepcion.nombresApellidos))`,
         'proveedor',
       )
       .addSelect('COUNT(*)', 'cantidadAnticipos')
@@ -351,6 +351,10 @@ export class RecepcionMineralReportesService {
       .addGroupBy('persona.nombres')
       .addGroupBy('persona.apellidoPaterno')
       .addGroupBy('persona.apellidoMaterno')
+      // Sin persona, cada actor/externo se agrupa por su nombre.
+      .addGroupBy(
+        'CASE WHEN recepcion.idPersona IS NULL THEN recepcion.nombresApellidos END',
+      )
       .orderBy('SUM(recepcion.anticipo)', 'DESC');
 
     const filas = await query.getRawMany<{
@@ -378,7 +382,7 @@ export class RecepcionMineralReportesService {
 
     const query = this.recepcionRepository
       .createQueryBuilder('recepcion')
-      .innerJoin('recepcion.persona', 'persona')
+      .leftJoin('recepcion.persona', 'persona')
       .innerJoin('recepcion.valorizaciones', 'valorizacion')
       .where('recepcion.fechaRecepcion ::timestamptz >= :desde', { desde })
       .andWhere('recepcion.fechaRecepcion ::timestamptz <= :hasta', {
@@ -397,7 +401,7 @@ export class RecepcionMineralReportesService {
       .select('recepcion.id', 'idRecepcion')
       .addSelect('recepcion.codigoOperacion', 'codigoOperacion')
       .addSelect(
-        `CONCAT(persona.nombres, ' ', persona.apellidoPaterno, ' ', COALESCE(persona.apellidoMaterno, ''))`,
+        `COALESCE(NULLIF(TRIM(CONCAT(persona.nombres, ' ', persona.apellidoPaterno, ' ', COALESCE(persona.apellidoMaterno, ''))), ''), recepcion.nombresApellidos)`,
         'proveedor',
       )
       .addSelect('COALESCE(recepcion.anticipo, 0)', 'anticipoRecepcion')

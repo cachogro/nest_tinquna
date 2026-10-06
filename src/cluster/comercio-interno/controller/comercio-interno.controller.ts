@@ -797,18 +797,14 @@ export class ComercioInternoController {
   @Get('recepcion_mineral/pdf/:id')
   @Auth()
   @ApiOperation({
-    summary: 'Generar el PDF del recibo de una recepción de mineral',
+    summary: 'Generar el comprobante RM- de una recepción de mineral (PDF)',
+    description:
+      'Constancia de que el proveedor dejó su mineral. Se emite para TODA recepción, tenga o no anticipo, y no lleva montos: si hubo anticipo, el dinero va aparte en el recibo de EGRESO (serie C) de contabilidad. El número es el mismo correlativo de la recepción (ICC-0045 -> RM-0045). Hoja carta horizontal con 3 copias (Original, Copia 1, Copia 2), mismo formato que `GET /contabilidad/recibo2/:id/pdf`.',
   })
   @ApiParam({
     name: 'id',
     description: 'Identificador de la recepción.',
     example: '25',
-  })
-  @ApiQuery({
-    name: 'formato',
-    required: false,
-    enum: ['ticket', 'carta'],
-    description: 'Formato del recibo (default: ticket).',
   })
   @ApiOkResponse({
     description: 'PDF generado correctamente.',
@@ -824,14 +820,15 @@ export class ComercioInternoController {
   })
   async descargarPdf(
     @Param('id') id: string,
-    @Query('formato') formato: 'ticket' | 'carta' = 'ticket',
+    @GetUser() user: Usuario,
     @Res() res: Response,
   ) {
-    const pdf = await this.comercioInternoService.generarReciboPdf(id, formato);
+    const { pdf, numero } =
+      await this.comercioInternoService.generarComprobanteRecepcionPdf(id, user);
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename=Recibo-${id}.pdf`,
+      'Content-Disposition': `inline; filename=Recepcion-${numero}.pdf`,
       'Content-Length': pdf.length,
     });
 

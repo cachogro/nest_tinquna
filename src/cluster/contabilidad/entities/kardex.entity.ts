@@ -119,6 +119,17 @@ export class Kardex extends Auditoria {
   })
   numero: number;
 
+  // Código único y legible: K<tipo>-<correlativo>, ej. "KA-001" (ver
+  // generarCodigoKardex). Cada sigla (KA, KS, KP, KC) lleva su propia
+  // numeración, en orden de creación; distinta de `numero`, que es el N° de
+  // libro del destinatario. Lo asigna KardexService al abrir / cerrar.
+  @Column({
+    name: 'codigo',
+    type: 'varchar',
+    length: 20,
+  })
+  codigo: string;
+
   @Column({
     name: 'gestion',
     type: 'int',

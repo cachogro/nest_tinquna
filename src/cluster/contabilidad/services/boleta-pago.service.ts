@@ -207,7 +207,12 @@ export class BoletaPagoService {
         salarioMensual: persona.salarioMensual != null ? this.r2(persona.salarioMensual) : null,
       },
       kardex: kardex
-        ? { id: kardex.id, numero: kardex.numero, saldoActual: this.r2(kardex.saldoActual) }
+        ? {
+            id: kardex.id,
+            codigo: kardex.codigo,
+            numero: kardex.numero,
+            saldoActual: this.r2(kardex.saldoActual),
+          }
         : null,
       prestamos,
       totalDescuentoSugerido: this.r2(

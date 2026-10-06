@@ -27,6 +27,15 @@ export class FiltrosKardexDto extends PaginacionQueryDto {
   gestion?: number;
 
   @ApiPropertyOptional({
+    example: 'KA-001',
+    description:
+      'Código del kardex, completo o parcial (sin distinguir mayúsculas). "KA-001" trae ese kardex; "KA" trae todos los de ACTOR.',
+  })
+  @IsOptional()
+  @IsString()
+  codigo?: string;
+
+  @ApiPropertyOptional({
     example: '2',
     description: 'Acota el listado al kardex (todos los N°) de un actor puntual.',
   })
@@ -51,13 +60,13 @@ export class FiltrosKardexDto extends PaginacionQueryDto {
   idCliente?: string;
 
   // `busqueda` se hereda de PaginacionQueryDto: busca por nombre del actor,
-  // nombre/apellidos de la persona o descripción del kardex.
+  // nombre/apellidos de la persona, descripción o código del kardex.
 
   @ApiPropertyOptional({
-    enum: ['id', 'numero', 'gestion', 'estado', 'fechaApertura'],
+    enum: ['id', 'codigo', 'numero', 'gestion', 'estado', 'fechaApertura'],
     description: 'Columna de ordenamiento (default: fechaApertura).',
   })
   @IsOptional()
-  @IsIn(['id', 'numero', 'gestion', 'estado', 'fechaApertura'])
+  @IsIn(['id', 'codigo', 'numero', 'gestion', 'estado', 'fechaApertura'])
   orderBy = 'fechaApertura';
 }

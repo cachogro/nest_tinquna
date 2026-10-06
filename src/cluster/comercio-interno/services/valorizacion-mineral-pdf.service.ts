@@ -1,3 +1,4 @@
+import { proveedorDeRecepcion } from 'src/cluster/comercio-interno/recepcion-proveedor.util';
 import { Injectable } from '@nestjs/common';
 const PDFDocument = require('pdfkit-table');
 import { join } from 'path';
@@ -159,7 +160,7 @@ export class ValorizacionMineralPdfService {
     ancho: number,
   ) {
     const recepcion = valorizacion.recepcionMineral;
-    const persona = recepcion?.persona;
+    const persona = proveedorDeRecepcion(recepcion);
 
     const producto =
       (valorizacion.detalles ?? [])
@@ -538,7 +539,7 @@ export class ValorizacionMineralPdfService {
     ancho: number,
     liquidador?: Usuario,
   ) {
-    const persona = valorizacion.recepcionMineral?.persona;
+    const persona = proveedorDeRecepcion(valorizacion.recepcionMineral);
 
     const nombreLiquidador = liquidador?.persona
       ? this.nombreCompleto(liquidador.persona)
@@ -688,7 +689,7 @@ export class ValorizacionMineralPdfService {
     ancho: number,
   ) {
     const recepcion = valorizacion.recepcionMineral;
-    const persona = recepcion?.persona;
+    const persona = proveedorDeRecepcion(recepcion);
 
     const producto =
       (valorizacion.detalles ?? [])
@@ -1351,7 +1352,7 @@ export class ValorizacionMineralPdfService {
     ancho: number,
     liquidador?: Usuario,
   ) {
-    const persona = valorizacion.recepcionMineral?.persona;
+    const persona = proveedorDeRecepcion(valorizacion.recepcionMineral);
 
     const nombreLiquidador = liquidador?.persona
       ? this.nombreCompleto(liquidador.persona)
@@ -1432,7 +1433,7 @@ export class ValorizacionMineralPdfService {
     ancho: number,
   ) {
     const recepcion = valorizacion.recepcionMineral;
-    const persona = recepcion?.persona;
+    const persona = proveedorDeRecepcion(recepcion);
 
     const producto =
       (valorizacion.detalles ?? [])
@@ -1795,7 +1796,7 @@ export class ValorizacionMineralPdfService {
     margen: number,
     ancho: number,
   ) {
-    const persona = valorizacion.recepcionMineral?.persona;
+    const persona = proveedorDeRecepcion(valorizacion.recepcionMineral);
 
     const mitad = ancho / 2;
     const yLinea = doc.y + 18;

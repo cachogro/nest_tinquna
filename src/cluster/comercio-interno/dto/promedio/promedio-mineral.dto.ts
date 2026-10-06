@@ -32,9 +32,14 @@ export class CreatePromedioMineralDto {
   @MaxLength(150)
   descripcion?: string;
 
-  @ApiPropertyOptional({ example: '2026-07-03', description: 'YYYY-MM-DD. Por defecto hoy.' })
+  @ApiPropertyOptional({
+    example: '2026-07-03',
+    description: 'YYYY-MM-DD. Por defecto hoy.',
+  })
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe tener formato YYYY-MM-DD.' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'fecha debe tener formato YYYY-MM-DD.',
+  })
   fecha?: string;
 
   @ApiPropertyOptional({ maxLength: 255 })
@@ -77,7 +82,9 @@ export class UpdatePromedioMineralDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe tener formato YYYY-MM-DD.' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'fecha debe tener formato YYYY-MM-DD.',
+  })
   fecha?: string;
 
   @ApiPropertyOptional({ maxLength: 255 })
@@ -101,7 +108,9 @@ export class UpdatePromedioMineralDto {
 }
 
 export class FiltrosPromedioMineralDto extends PaginacionQueryDto {
-  @ApiPropertyOptional({ description: 'Filtra por código del promedio (PRM-0001).' })
+  @ApiPropertyOptional({
+    description: 'Filtra por código del promedio (PRM-0001).',
+  })
   @IsOptional()
   @IsString()
   codigo?: string;
@@ -111,15 +120,106 @@ export class FiltrosPromedioMineralDto extends PaginacionQueryDto {
   orderBy = 'id';
 }
 
-export class FiltrosDisponiblesPromedioDto extends PaginacionQueryDto {
-  @ApiPropertyOptional({ description: 'Solo esta codificación (ICC, AC, ...).' })
+export type PeriodoReportePromedio = 'diario' | 'semanal' | 'mensual';
+
+export const ESTADOS_VENTA_REPORTE_PROMEDIO = [
+  'todos',
+  'sin_vender',
+  'vendidos',
+  'venta_abierta',
+  'liquidados',
+  'anulados',
+] as const;
+export type EstadoVentaReportePromedio =
+  (typeof ESTADOS_VENTA_REPORTE_PROMEDIO)[number];
+
+export class FiltroReportePromedioDto {
+  @ApiPropertyOptional({
+    enum: ['diario', 'semanal', 'mensual'],
+    default: 'diario',
+    description:
+      'diario = solo la fecha indicada; semanal = lunes a domingo de la semana ' +
+      'que contiene la fecha; mensual = el mes completo de la fecha.',
+  })
+  @IsOptional()
+  @IsIn(['diario', 'semanal', 'mensual'])
+  periodo: PeriodoReportePromedio = 'diario';
+
+  @ApiPropertyOptional({
+    example: '2026-07-03',
+    description:
+      'Fecha de referencia del período (YYYY-MM-DD). Por defecto hoy.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'fecha debe tener formato YYYY-MM-DD.',
+  })
+  fecha?: string;
+
+  @ApiPropertyOptional({
+    example: '1',
+    description:
+      'Solo los lotes de esta codificación de lote (MC, TM, C, RV...).',
+  })
+  @IsOptional()
+  @IsNumberString()
+  idCodificacionLote?: string;
+
+  @ApiPropertyOptional({
+    example: 'MC',
+    description:
+      'Solo los lotes de esta codificación de lote, por código. No distingue mayúsculas.',
+  })
+  @IsOptional()
+  @IsString()
+  codificacionLote?: string;
+
+  @ApiPropertyOptional({
+    example: 3,
+    description:
+      'Solo los lotes que contienen valorizaciones de esta codificación ' +
+      '(ICC, AC...), según la codificación con la que se valorizó.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   idCodificacion?: number;
 
   @ApiPropertyOptional({
-    description: 'Solo esta codificación por su código (ej. ICC, AC). No distingue mayúsculas.',
+    example: 'ICC',
+    description:
+      'Igual que idCodificacion, pero por código. No distingue mayúsculas.',
+  })
+  @IsOptional()
+  @IsString()
+  codificacion?: string;
+
+  @ApiPropertyOptional({
+    enum: [...ESTADOS_VENTA_REPORTE_PROMEDIO],
+    default: 'todos',
+    description:
+      'todos = lotes activos (vendidos o no); sin_vender = sin venta vigente ' +
+      '(faltantes por vender); vendidos = venta ABIERTA o LIQUIDADA; ' +
+      'venta_abierta = vendido pendiente de liquidar; liquidados = venta LIQUIDADA; ' +
+      'anulados = promedios anulados.',
+  })
+  @IsOptional()
+  @IsIn(ESTADOS_VENTA_REPORTE_PROMEDIO)
+  estado: EstadoVentaReportePromedio = 'todos';
+}
+
+export class FiltrosDisponiblesPromedioDto extends PaginacionQueryDto {
+  @ApiPropertyOptional({
+    description: 'Solo esta codificación (ICC, AC, ...).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  idCodificacion?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Solo esta codificación por su código (ej. ICC, AC). No distingue mayúsculas.',
     example: 'ICC',
   })
   @IsOptional()
@@ -157,7 +257,12 @@ export class FilaDisponiblePromedioDto {
   humedadPorcentaje: number | null;
   // Valor neto de venta de la valorización, en Bs (total_valor_neto_venta_bolivianos).
   valorNetoVentaBolivianos: number;
-  leyes: { idMineral: string; mineral: string | null; ley: number; unidad: string | null }[];
+  leyes: {
+    idMineral: string;
+    mineral: string | null;
+    ley: number;
+    unidad: string | null;
+  }[];
   idEstadoValorizacion: number | null;
   estadoValorizacion: string | null;
   entregado: boolean;

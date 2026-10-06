@@ -20,7 +20,7 @@ import { TraspasoPaginadoDto } from '../dto/traspaso/traspaso-paginado.dto';
 import { FiltroTraspasoExcelDto } from '../dto/traspaso/filtro-traspaso-excel.dto';
 import { MovimientoCajaService } from './movimiento-caja.service';
 import { LibretaBancoService } from './libreta-banco.service';
-import { monedaDeCuenta } from '../moneda.util';
+import { monedaDeCuenta, resolverTipoCambio } from '../moneda.util';
 import { resolverPersonaAutorizo } from '../persona-autorizo.util';
 
 const RELACIONES = {
@@ -133,6 +133,7 @@ export class TraspasoService {
   ): Promise<Traspaso> {
     const cuentaBancaria = await this.obtenerCuentaBancaria(dto.idCuentaBancaria);
     const moneda = monedaDeCuenta(cuentaBancaria);
+    const tipoCambio = resolverTipoCambio(moneda, dto.tipoCambio);
 
     // Ambos lados deben estar aperturados antes de aceptar el traspaso: no
     // habría desde qué saldo arrastrar en ninguno de los dos.
@@ -163,6 +164,7 @@ export class TraspasoService {
           fecha: dto.fecha,
           idCaja: cajaEmpresa.id,
           moneda,
+          tipoCambio,
           idCuentaBancaria: cuentaBancaria.id,
           nroComprobante,
           concepto,
@@ -203,6 +205,7 @@ export class TraspasoService {
           idDestinoGasto,
           nombresApellidos: `TRASPASO ${dto.tipo} - ${cajaEmpresa.nombre}`,
           idTraspaso: traspaso.id,
+          tipoCambio,
           debe: esDeposito ? 0 : monto,
           haber: esDeposito ? monto : 0,
         },
@@ -218,7 +221,7 @@ export class TraspasoService {
 
   /**
    * Solo permite corregir fecha / concepto / N° de comprobante / destino del
-   * gasto / monto:
+   * gasto / monto / tipo de cambio:
    * `tipo` e `idCuentaBancaria` quedan fijos (cambiarlos exigiría borrar y
    * recrear los dos movimientos ya posteados; la caja de flujo siempre es
    * la de la empresa, no se puede cambiar). Falla si alguno de los dos
@@ -284,6 +287,10 @@ export class TraspasoService {
             dto.idPersonaAutorizo,
             'el traspaso',
           );
+    // La cuenta no cambia en un update, así que la moneda tampoco: en USD el
+    // tipo de cambio se exige también acá (los traspasos en USD anteriores a
+    // la 084 no lo tienen y hay que completarlo al editarlos).
+    const tipoCambio = resolverTipoCambio(traspaso.moneda, dto.tipoCambio);
     const monto = this.r2(Number(dto.monto));
     const concepto = dto.concepto.trim();
     const nroComprobante = dto.nroComprobante?.trim() || null;
@@ -295,6 +302,7 @@ export class TraspasoService {
         concepto,
         nroComprobante,
         monto,
+        tipoCambio,
         idDestinoGasto,
         personaAutorizo,
         usuarioUltimaModificacion: user.usuario,
@@ -314,6 +322,7 @@ export class TraspasoService {
         nroTransaccion: nroComprobante,
         concepto,
         idDestinoGasto,
+        tipoCambio,
         debe: esDeposito ? 0 : monto,
         haber: esDeposito ? monto : 0,
         usuarioUltimaModificacion: user.usuario,

@@ -10,6 +10,9 @@ import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { Municipio } from './municipio.entity';
 import { TipoActorProductivoMinero } from './tipo-actor-productivo-minero.entity';
 
+export const MODALIDADES_VENTA_CLIENTE = ['COMERCIO_INTERNO', 'EXPORTACION'] as const;
+export type ModalidadVentaCliente = (typeof MODALIDADES_VENTA_CLIENTE)[number];
+
 /**
  * Comprador del mineral ya adquirido a los actores productivos mineros
  * (comercializadora, ingenio comprador, exportadora, etc.). Es la
@@ -54,6 +57,16 @@ export class Cliente extends Auditoria {
     referencedColumnName: 'id',
   })
   tipoActorProductivoMinero?: TipoActorProductivoMinero;
+
+  // Cómo se le cobra. COMERCIO_INTERNO: cuenta corriente (sus anticipos van
+  // pagando los lotes a medida que se liquidan). EXPORTACION: lote por lote.
+  @Column({
+    name: 'modalidad_venta',
+    type: 'varchar',
+    length: 20,
+    default: 'COMERCIO_INTERNO',
+  })
+  modalidadVenta: ModalidadVentaCliente;
 
   @Column({
     name: 'direccion',

@@ -1,3 +1,4 @@
+import { proveedorDeRecepcion } from 'src/cluster/comercio-interno/recepcion-proveedor.util';
 import {
   BadRequestException,
   Injectable,
@@ -120,6 +121,7 @@ export class PromedioMineralService {
         `(persona.nombres ILIKE :busqueda
           OR persona.apellidoPaterno ILIKE :busqueda
           OR persona.apellidoMaterno ILIKE :busqueda
+          OR recepcion.nombresApellidos ILIKE :busqueda
           OR recepcion.codigoOperacion ILIKE :busqueda)`,
         { busqueda: `%${busqueda}%` },
       );
@@ -144,7 +146,7 @@ export class PromedioMineralService {
         codigoOperacion: v.recepcionMineral?.codigoOperacion ?? null,
         codificacion: v.codificacionEfectiva()?.codigo ?? null,
         codificacionRecepcion: v.recepcionMineral?.codificacion?.codigo ?? null,
-        proveedor: this.nombreCompleto(v.recepcionMineral?.persona),
+        proveedor: this.nombreCompleto(proveedorDeRecepcion(v.recepcionMineral)),
         numeroSacos: v.recepcionMineral?.numeroSacos ?? null,
         pesoKg: this.pesoDe(v),
         humedadPorcentaje: this.humedadDe(v),

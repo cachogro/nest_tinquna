@@ -14,12 +14,12 @@ export class FiltroBienDacionPagoDto {
   idActorProductivoMinero?: string;
 
   @ApiPropertyOptional({
-    enum: ['EN_POSESION', 'VENDIDO', 'DEVUELTO'],
+    enum: ['EN_POSESION', 'TOMADO_EN_PAGO', 'VENDIDO', 'DEVUELTO'],
     description: 'Filtrar por estado.',
   })
   @IsOptional()
-  @IsIn(['EN_POSESION', 'VENDIDO', 'DEVUELTO'])
-  estado?: 'EN_POSESION' | 'VENDIDO' | 'DEVUELTO';
+  @IsIn(['EN_POSESION', 'TOMADO_EN_PAGO', 'VENDIDO', 'DEVUELTO'])
+  estado?: 'EN_POSESION' | 'TOMADO_EN_PAGO' | 'VENDIDO' | 'DEVUELTO';
 
   @ApiPropertyOptional({ example: '2026-01-01', description: 'Fecha de recepción inicial (YYYY-MM-DD), inclusive.' })
   @IsOptional()

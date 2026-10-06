@@ -84,6 +84,7 @@ export class ClienteService {
       idTipoActorProductivoMinero: createClienteDto.idTipoActorProductivoMinero
         ? String(createClienteDto.idTipoActorProductivoMinero)
         : undefined,
+      modalidadVenta: createClienteDto.modalidadVenta ?? 'COMERCIO_INTERNO',
       nit: createClienteDto.nit?.trim(),
       observaciones: createClienteDto.observaciones?.trim(),
       // Si el front no envía la fecha de inicio de operaciones, se toma la
@@ -140,6 +141,10 @@ export class ClienteService {
     cliente.idTipoActorProductivoMinero = updateClienteDto.idTipoActorProductivoMinero
       ? String(updateClienteDto.idTipoActorProductivoMinero)
       : undefined;
+    // Solo cambia si el front la envía; si no, se conserva la registrada.
+    if (updateClienteDto.modalidadVenta) {
+      cliente.modalidadVenta = updateClienteDto.modalidadVenta;
+    }
     cliente.nit = updateClienteDto.nit?.trim();
     cliente.observaciones = updateClienteDto.observaciones?.trim();
     // Solo se actualiza si el front la envía; si llega vacía se conserva la

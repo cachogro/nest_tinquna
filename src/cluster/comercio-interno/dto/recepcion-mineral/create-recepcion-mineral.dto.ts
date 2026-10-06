@@ -26,15 +26,43 @@ export class CreateRecepcionMineralDto {
   })
   idCodificacion: string;
 
-  @ApiProperty({
-    description: 'Identificador del proveedor.',
+  // Proveedor: se envía UNO de los tres (persona, actor productivo o nombre
+  // de un externo). El kardex se decide después, al procesar el recibo.
+  @ApiPropertyOptional({
+    description:
+      'Proveedor como persona registrada (incluye personal interno). Excluyente con idActorProductivoMinero.',
     example: '15',
   })
-  @IsString()
-  @IsNotEmpty({
-    message: 'El proveedor es obligatorio.',
+  @IsOptional()
+  @IsString({
+    message: 'El proveedor no es válido.',
   })
-  idPersona: string;
+  idPersona?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Proveedor como actor productivo minero. Excluyente con idPersona.',
+    example: '4',
+  })
+  @IsOptional()
+  @IsString({
+    message: 'El actor productivo no es válido.',
+  })
+  idActorProductivoMinero?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Nombre y apellido del proveedor cuando es un externo sin registro. Con idPersona o idActorProductivoMinero se ignora: el nombre se toma del registro.',
+    example: 'JUAN MAMANI QUISPE',
+  })
+  @IsOptional()
+  @IsString({
+    message: 'El nombre del proveedor no es válido.',
+  })
+  @MaxLength(255, {
+    message: 'El nombre del proveedor no puede exceder los 255 caracteres.',
+  })
+  nombresApellidos?: string | null;
 
   @ApiPropertyOptional({
     description:
@@ -157,6 +185,18 @@ export class CreateRecepcionMineralDto {
     message: 'El lugar de acopio no puede superar los 100 caracteres.',
   })
   lugarAcopio?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Identificador del laboratorio (GET /parametricas/laboratorio). Es opcional; al actualizar, enviar null lo quita.',
+    example: '1',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString({
+    message: 'El laboratorio no es válido.',
+  })
+  idLaboratorio?: string | null;
 
   @ApiPropertyOptional({
     description: 'Observaciones adicionales.',

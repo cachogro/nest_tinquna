@@ -12,7 +12,7 @@ import { PersonaPersonaTipo } from './persona-persona-tipo.entity';
 import { RecepcionMineral } from './recepcion-mineral/recepcion-mineral.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 
-@Entity({ name: 'persona_ci', schema: 'comercio_interno' })
+@Entity({ name: 'persona_ci', schema: 'parametrica' })
 export class PersonaCi extends Auditoria {
   @PrimaryGeneratedColumn({
     type: 'bigint',

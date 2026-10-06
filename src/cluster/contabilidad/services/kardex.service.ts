@@ -5,14 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, FindOptionsWhere, Repository } from 'typeorm';
+import { DataSource, EntityManager, FindOptionsWhere, Repository } from 'typeorm';
 
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
-import { Kardex } from '../entities/kardex.entity';
+import { Kardex, TipoKardex } from '../entities/kardex.entity';
+import { generarCodigoKardex } from '../kardex-codigo.util';
 import { AbrirKardexDto } from '../dto/kardex/abrir-kardex.dto';
 import { FiltrosKardexDto } from '../dto/kardex/filtros-kardex.dto';
 import { KardexPaginadoDto } from '../dto/kardex/kardex-paginado.dto';
@@ -168,6 +169,28 @@ export class KardexService {
     }
   }
 
+  /**
+   * Siguiente código del tipo (cada sigla KA, KS, KP, KC lleva su propia
+   * numeración): toma el número más alto ya usado en los códigos de ese tipo
+   * y le suma 1. Debe llamarse dentro de la transacción que inserta el
+   * kardex: el bloqueo evita que dos altas simultáneas tomen el mismo código.
+   */
+  private async siguienteCodigo(
+    manager: EntityManager,
+    tipo: TipoKardex,
+  ): Promise<string> {
+    await manager.query(
+      `SELECT pg_advisory_xact_lock(hashtext('contabilidad.kardex.codigo'))`,
+    );
+    const [{ max }] = await manager.query(
+      `SELECT COALESCE(MAX(SUBSTRING(codigo FROM '[0-9]+$')::int), 0) AS max
+         FROM contabilidad.kardex
+        WHERE tipo = $1`,
+      [tipo],
+    );
+    return generarCodigoKardex(tipo, Number(max ?? 0) + 1);
+  }
+
   // ------------------------------------------------------------------ CRUD
   async abrir(dto: AbrirKardexDto, user: Usuario): Promise<Kardex> {
     await this.validarDestinatario(dto);
@@ -191,25 +214,30 @@ export class KardexService {
     const saldoInicial = dto.saldoInicial ?? 0;
     const esPersonaOAsociado = dto.tipo === 'PERSONAL' || dto.tipo === 'ASOCIADO';
 
-    const kardex = this.kardexRepository.create({
-      tipo: dto.tipo,
-      idActorProductivoMinero:
-        dto.tipo === 'ACTOR' ? String(dto.idActorProductivoMinero) : null,
-      idPersona: esPersonaOAsociado ? String(dto.idPersona) : null,
-      idCliente: dto.tipo === 'CLIENTE' ? String(dto.idCliente) : null,
-      numero: 1,
-      gestion: dto.gestion ?? this.gestionActual(),
-      descripcion: this.normalizar(dto.descripcion),
-      estado: 'ABIERTO',
-      saldoInicial,
-      saldoActual: saldoInicial,
-      saldoCierre: null,
-      idKardexAnterior: null,
-      fechaApertura: this.hoy(),
-      usuarioRegistro: user.usuario,
+    const guardado = await this.dataSource.transaction(async (manager) => {
+      const codigo = await this.siguienteCodigo(manager, dto.tipo);
+      return manager.save(
+        manager.create(Kardex, {
+          tipo: dto.tipo,
+          idActorProductivoMinero:
+            dto.tipo === 'ACTOR' ? String(dto.idActorProductivoMinero) : null,
+          idPersona: esPersonaOAsociado ? String(dto.idPersona) : null,
+          idCliente: dto.tipo === 'CLIENTE' ? String(dto.idCliente) : null,
+          numero: 1,
+          codigo,
+          gestion: dto.gestion ?? this.gestionActual(),
+          descripcion: this.normalizar(dto.descripcion),
+          estado: 'ABIERTO',
+          saldoInicial,
+          saldoActual: saldoInicial,
+          saldoCierre: null,
+          idKardexAnterior: null,
+          fechaApertura: this.hoy(),
+          usuarioRegistro: user.usuario,
+        }),
+      );
     });
 
-    const guardado = await this.kardexRepository.save(kardex);
     return this.kardexRepository.findOne({
       where: { id: guardado.id },
       relations: this.relaciones,
@@ -226,7 +254,7 @@ export class KardexService {
     }
     if (kardex.estado === 'CERRADO') {
       throw new BadRequestException(
-        `El kardex N° ${kardex.numero} ya está cerrado.`,
+        `El kardex ${kardex.codigo} ya está cerrado.`,
       );
     }
 
@@ -241,6 +269,7 @@ export class KardexService {
         usuarioUltimaModificacion: user.usuario,
       });
 
+      const codigo = await this.siguienteCodigo(manager, kardex.tipo);
       const nuevo = await manager.save(
         manager.create(Kardex, {
           tipo: kardex.tipo,
@@ -248,6 +277,9 @@ export class KardexService {
           idPersona: kardex.idPersona,
           idCliente: kardex.idCliente,
           numero: kardex.numero + 1,
+          // El kardex que se genera al cerrar es uno nuevo: toma el siguiente
+          // código de su sigla, igual que uno abierto a mano.
+          codigo,
           gestion: this.gestionActual(),
           descripcion: kardex.descripcion,
           estado: 'ABIERTO',
@@ -294,7 +326,7 @@ export class KardexService {
           siguiente.estado === 'CERRADO';
         if (tuvoActividad) {
           throw new BadRequestException(
-            `No se puede reabrir: el kardex N° ${siguiente.numero} ya tiene movimientos. Reabrí y regularizá ese primero.`,
+            `No se puede reabrir: el kardex ${siguiente.codigo} ya tiene movimientos. Reabrí y regularizá ese primero.`,
           );
         }
         await manager.delete(Kardex, siguiente.id);
@@ -369,6 +401,7 @@ export class KardexService {
       tipo,
       estado,
       gestion,
+      codigo,
       idActorProductivoMinero,
       idPersona,
       idCliente,
@@ -392,6 +425,12 @@ export class KardexService {
     if (gestion) {
       query.andWhere('kardex.gestion = :gestion', { gestion });
     }
+    if (codigo) {
+      // Parcial: "KA" trae todos los de actor; "KA-001" ese kardex.
+      query.andWhere('kardex.codigo ILIKE :codigo', {
+        codigo: `%${codigo.trim()}%`,
+      });
+    }
     if (idActorProductivoMinero) {
       query.andWhere('kardex.idActorProductivoMinero = :idActor', {
         idActor: idActorProductivoMinero,
@@ -412,6 +451,7 @@ export class KardexService {
           OR persona.apellidoMaterno ILIKE :busqueda
           OR cliente.nombre ILIKE :busqueda
           OR kardex.descripcion ILIKE :busqueda
+          OR kardex.codigo ILIKE :busqueda
         )`,
         { busqueda: `%${busqueda}%` },
       );
@@ -421,6 +461,7 @@ export class KardexService {
       query,
       {
         id: 'kardex.id',
+        codigo: 'kardex.codigo',
         numero: 'kardex.numero',
         gestion: 'kardex.gestion',
         estado: 'kardex.estado',

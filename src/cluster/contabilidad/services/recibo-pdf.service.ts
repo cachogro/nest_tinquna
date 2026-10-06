@@ -8,6 +8,10 @@ import { Recibo } from '../entities/recibo.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { montoEnLetras } from 'src/common/utils/numero-a-letras.util';
 import { aBolivianos } from '../moneda.util';
+import {
+  conceptoConRecepcion,
+  muestreroRecepcionRecibo,
+} from '../recibo-recepcion.util';
 
 const LOGO_PATH = join(process.cwd(), 'uploads', 'logo.png');
 
@@ -66,8 +70,10 @@ export class ReciboPdfService {
     const pdf = await this.generarPdf(
       recibo,
       usuarioActual,
-      recibo.concepto,
-      false,
+      conceptoConRecepcion(recibo),
+      // Con el resumen de la recepción el concepto puede ocupar más de una
+      // línea: se imprime como texto de varias líneas.
+      !!recibo.recepcionMineral,
     );
     await this.registrarPrimeraImpresionSiCorresponde(recibo.id);
     return pdf;
@@ -357,6 +363,18 @@ export class ReciboPdfService {
     const yFirmas = yTop + alto - pad - 32;
     const mitad = anchoInterno / 2;
 
+    // --- Muestrero (solo recibo del anticipo de una recepción; el resto de
+    // sus datos va resumido en "Por concepto de") ---
+    const muestrero = muestreroRecepcionRecibo(recibo);
+    if (muestrero) {
+      const yMuestrero = y + 16;
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .text('Muestrero', xi, yMuestrero, { width: 50 });
+      this.lineaPuntosConTexto(doc, xi + 50, yMuestrero, 190, muestrero);
+    }
+
     doc.font('Helvetica').fontSize(7);
     doc
       .moveTo(xi + 10, yFirmas)
@@ -535,9 +553,10 @@ export class ReciboPdfService {
    * `detalles` (BORRADOR/ANULADO), devuelve solo el concepto tal cual.
    */
   private textoConDesglose(recibo: Recibo): string {
+    const concepto = conceptoConRecepcion(recibo);
     const detalles = recibo.detalles ?? [];
     if (detalles.length === 0) {
-      return recibo.concepto;
+      return concepto;
     }
 
     const partes = detalles.map((detalle) => {
@@ -548,7 +567,10 @@ export class ReciboPdfService {
       return `${monto} en efectivo`;
     });
 
-    return `${recibo.concepto}: ${this.unirConY(partes)}`;
+    // Con el resumen de la recepción el concepto ya termina en "etiqueta:
+    // valor": otro ":" se leería como parte de ese dato.
+    const separador = recibo.recepcionMineral ? ' — ' : ': ';
+    return `${concepto}${separador}${this.unirConY(partes)}`;
   }
 
   private unirConY(items: string[]): string {

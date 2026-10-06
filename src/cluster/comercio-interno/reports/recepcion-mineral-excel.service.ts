@@ -1,3 +1,4 @@
+import { proveedorDeRecepcion } from 'src/cluster/comercio-interno/recepcion-proveedor.util';
 import { Injectable } from '@nestjs/common';
 import { Workbook } from 'exceljs';
 import { ExcelService } from 'src/common/excel/excel.service';
@@ -70,9 +71,13 @@ export class RecepcionMineralExcelService {
 
           registro.codigoOperacion,
 
-          `${registro.persona?.nombres ?? ''} ${
-            registro.persona?.apellidoPaterno ?? ''
-          } ${registro.persona?.apellidoMaterno ?? ''}`,
+          [
+            proveedorDeRecepcion(registro)?.nombres,
+            proveedorDeRecepcion(registro)?.apellidoPaterno,
+            proveedorDeRecepcion(registro)?.apellidoMaterno,
+          ]
+            .filter(Boolean)
+            .join(' '),
 
           registro.numeroSacos,
 

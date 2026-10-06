@@ -31,10 +31,12 @@ import { Auth, GetUser } from 'src/security/decorators';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { FondoRendirService } from '../services/fondo-rendir.service';
 import { FondoRendirExcelService } from '../services/fondo-rendir-excel.service';
+import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
 import { FondoRendir } from '../entities/fondo-rendir.entity';
 import { CreateFondoRendirDto } from '../dto/fondo-rendir/create-fondo-rendir.dto';
 import { CreateFondoRendirDetalleDto } from '../dto/fondo-rendir/create-fondo-rendir-detalle.dto';
 import { FiltroFondoRendirDto } from '../dto/fondo-rendir/filtro-fondo-rendir.dto';
+import { ReponerFondoRendirDto } from '../dto/fondo-rendir/reponer-fondo-rendir.dto';
 import { FiltroFondoRendirExcelDto } from '../dto/fondo-rendir/filtro-fondo-rendir-excel.dto';
 
 @ApiTags('Contabilidad')
@@ -44,6 +46,7 @@ export class FondoRendirController {
   constructor(
     private readonly fondoRendirService: FondoRendirService,
     private readonly fondoRendirExcelService: FondoRendirExcelService,
+    private readonly contabilidadPdfService: ContabilidadPdfService,
   ) {}
 
   @Post('fondo-rendir')
@@ -52,7 +55,7 @@ export class FondoRendirController {
   @ApiOperation({
     summary: 'Entregar un fondo a rendir cuentas',
     description:
-      'Entrega una plata puntual a una persona o a un actor productivo minero (excluyentes) para un propósito concreto (ej. comprar materiales). Genera en el mismo paso el recibo de EGRESO real que mueve la plata (efectivo -> caja de flujo; medio bancario -> libreta de bancos, mismo criterio que un recibo común) y queda en estado PENDIENTE. `fechaHoraEntrega` (fecha y hora reales del registro, con hora) la asigna el servidor automáticamente, no se envía: `fecha` sigue siendo la fecha de negocio (editable, sin hora). A diferencia del kardex de anticipos, esto NO genera automáticamente una deuda en el kardex del destinatario: el fondo se justifica de a poco con `POST /contabilidad/fondo-rendir/detalle`, y solo si queda un saldo sin justificar, un administrador puede cargarlo manualmente al kardex con `POST /contabilidad/fondo-rendir/:id/cerrar-con-deuda`.',
+      'Entrega una plata puntual a una persona o a un actor productivo minero (excluyentes) para un propósito concreto (ej. comprar materiales). Genera en el mismo paso el recibo de EGRESO real que mueve la plata (efectivo -> caja de flujo; medio bancario -> libreta de bancos, mismo criterio que un recibo común) y queda en estado PENDIENTE. Si el destinatario tenía saldo a favor de fondos anteriores (justificó de más y no se le repuso), ese saldo entra automáticamente a este fondo como ya justificado (línea SALDO_FAVOR) y el fondo de origen pasa a RENDIDO_TOTAL. `fechaHoraEntrega` (fecha y hora reales del registro, con hora) la asigna el servidor automáticamente, no se envía: `fecha` sigue siendo la fecha de negocio (editable, sin hora). A diferencia del kardex de anticipos, esto NO genera automáticamente una deuda en el kardex del destinatario: el fondo se justifica de a poco con `POST /contabilidad/fondo-rendir/detalle`, y solo si queda un saldo sin justificar, un administrador puede cargarlo manualmente al kardex con `POST /contabilidad/fondo-rendir/:id/cerrar-con-deuda`.',
   })
   @ApiBody({
     type: CreateFondoRendirDto,
@@ -175,6 +178,94 @@ export class FondoRendirController {
     return await this.fondoRendirService.cerrarConDeuda(id, user);
   }
 
+  @Post('fondo-rendir/:id/rendir-sin-comprobantes')
+  @Auth()
+  @ApiOperation({
+    summary: 'Dar por rendido un fondo sin cargar comprobantes',
+    description:
+      'Agrega una línea de tipo SIN_COMPROBANTE por todo el saldo pendiente y deja el fondo en RENDIDO_TOTAL. No mueve plata ni toca el kardex. Sirve con el fondo PENDIENTE (nada justificado) o RENDIDO_PARCIAL (cubre lo que faltaba). Se deshace anulando esa línea. Falla si el fondo no tiene saldo pendiente o está CERRADO_CON_DEUDA.',
+  })
+  @ApiParam({ name: 'id', description: 'Id del fondo a rendir.', example: '4' })
+  @ApiOkResponse({ description: 'Fondo en RENDIDO_TOTAL.', type: FondoRendir })
+  @ApiBadRequestResponse({ description: 'El fondo está cerrado o no tiene saldo pendiente.' })
+  @ApiNotFoundResponse({ description: 'No se encontró el fondo a rendir.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async rendirSinComprobantes(@Param('id') id: string, @GetUser() user: Usuario) {
+    return await this.fondoRendirService.rendirSinComprobantes(id, user);
+  }
+
+  @Post('fondo-rendir/:id/reponer')
+  @Auth()
+  @ApiOperation({
+    summary: 'Reponer al destinatario el excedente de un fondo rendido en exceso',
+    description:
+      'Cuando se justificó más de lo entregado (el destinatario puso plata de su bolsillo), le devuelve la diferencia: genera un recibo de EGRESO real por `montoPorReponer` (efectivo -> caja de flujo; medio bancario -> libreta de bancos) con concepto "DEVOLUCIÓN POR EXCESO EN RENDICIÓN" y deja el fondo en RENDIDO_TOTAL (`montoRepuesto`, `idReciboReposicion`, `fechaReposicion`). El monto no se envía: siempre es todo lo que falta reponer. Después de esto el fondo no admite cambios en sus comprobantes.',
+  })
+  @ApiParam({ name: 'id', description: 'Id del fondo a rendir.', example: '4' })
+  @ApiBody({
+    type: ReponerFondoRendirDto,
+    examples: {
+      efectivo: {
+        summary: 'Devolución en efectivo',
+        value: { fecha: '2026-10-02', idFormaPago: 1, idPersonaAutorizo: '7' },
+      },
+    },
+  })
+  @ApiOkResponse({ description: 'Fondo con el excedente repuesto.', type: FondoRendir })
+  @ApiBadRequestResponse({
+    description: 'El fondo no tiene excedente por reponer, o la caja/cuenta bancaria no está aperturada.',
+  })
+  @ApiNotFoundResponse({ description: 'No se encontró el fondo, el destino del gasto, o quien autoriza.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async reponer(
+    @Param('id') id: string,
+    @Body() body: ReponerFondoRendirDto,
+    @GetUser() user: Usuario,
+  ) {
+    return await this.fondoRendirService.reponer(id, body, user);
+  }
+
+  @Post('fondo-rendir/:id/aplicar-saldo-favor')
+  @Auth()
+  @ApiOperation({
+    summary: 'Aplicar a un fondo el saldo a favor de fondos anteriores del destinatario',
+    description:
+      'Si el destinatario justificó de más en fondos anteriores y no se le repuso, ese excedente entra a este fondo como ya justificado: por cada fondo de origen agrega una línea SALDO_FAVOR y deja al de origen en RENDIDO_TOTAL (`montoCompensado`, `idFondoCompensacion`). No mueve plata. Al ENTREGAR un fondo nuevo esto ocurre automáticamente; este endpoint queda para aplicarlo a un fondo ya entregado. Solo con el fondo PENDIENTE o RENDIDO_PARCIAL.',
+  })
+  @ApiParam({ name: 'id', description: 'Id del fondo que recibe el saldo a favor.', example: '5' })
+  @ApiOkResponse({ description: 'Fondo con el saldo a favor aplicado.', type: FondoRendir })
+  @ApiBadRequestResponse({
+    description: 'El fondo no está pendiente/parcial, o el destinatario no tiene saldo a favor.',
+  })
+  @ApiNotFoundResponse({ description: 'No se encontró el fondo a rendir.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async aplicarSaldoFavor(@Param('id') id: string, @GetUser() user: Usuario) {
+    return await this.fondoRendirService.aplicarSaldoFavor(id, user);
+  }
+
+  @Get('fondo-rendir/saldo-favor')
+  @Auth()
+  @ApiOperation({
+    summary: 'Saldo a favor de un destinatario en sus fondos a rendir',
+    description:
+      'Suma lo que la empresa todavía le debe reponer al destinatario (fondos RENDIDO_EN_EXCESO sin reponer ni compensar), con el detalle por fondo. Sirve para avisar, antes de entregarle un fondo nuevo, cuánto entrará como ya justificado.',
+  })
+  @ApiQuery({ name: 'idPersona', required: false, type: String })
+  @ApiQuery({ name: 'idActorProductivoMinero', required: false, type: String })
+  @ApiOkResponse({ description: 'Saldo a favor obtenido correctamente.' })
+  @ApiBadRequestResponse({ description: 'Falta el destinatario, o se indicaron ambos.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async saldoFavor(
+    @Query('idPersona') idPersona?: string,
+    @Query('idActorProductivoMinero') idActorProductivoMinero?: string,
+  ) {
+    return await this.fondoRendirService.saldoFavor({ idPersona, idActorProductivoMinero });
+  }
+
   @Get('fondo-rendir')
   @Auth()
   @ApiOperation({
@@ -203,15 +294,11 @@ export class FondoRendirController {
   @Get('fondo-rendir/excel')
   @Auth()
   @ApiOperation({
-    summary: 'Exportar la rendición de cuentas de un destinatario a Excel',
+    summary: 'Exportar la rendición de cuentas de un destinatario a Excel o PDF',
     description:
-      'Genera el .xlsx "RENDICIÓN DE CUENTAS" de una persona o un actor productivo minero (excluyentes), mezclando cronológicamente sus entregas de fondo (columna CARGO) y todas sus líneas de justificación (columna DESCARGO, de cualquiera de sus fondos, no solo los abiertos en el período) con saldo corriente, igual formato que el modelo físico de la empresa. Con `mes` es el reporte MENSUAL de ese mes; sin `mes`, el ANUAL (toda la gestión). Al final marca "POR REPONER A" (si se justificó de más) o "SALDO PENDIENTE POR RENDIR" (si falta justificar), según corresponda.',
+      'Genera el .xlsx "RENDICIÓN DE CUENTAS" de una persona o un actor productivo minero (excluyentes), mezclando cronológicamente sus entregas de fondo (columna CARGO) y todas sus líneas de justificación (columna DESCARGO, de cualquiera de sus fondos, no solo los abiertos en el período) con saldo corriente, igual formato que el modelo físico de la empresa. Con `mes` es el reporte MENSUAL de ese mes; sin `mes`, el ANUAL (toda la gestión). Al final marca "POR REPONER A" (si se justificó de más) o "SALDO PENDIENTE POR RENDIR" (si falta justificar), según corresponda. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
-  @ApiQuery({ name: 'idPersona', required: false, type: String })
-  @ApiQuery({ name: 'idActorProductivoMinero', required: false, type: String })
-  @ApiQuery({ name: 'gestion', required: true, type: Number, example: 2026 })
-  @ApiQuery({ name: 'mes', required: false, type: Number, example: 3 })
-  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({
     description: 'Falta el destinatario, o se indicaron ambos (idPersona e idActorProductivoMinero) a la vez.',
   })
@@ -229,14 +316,12 @@ export class FondoRendirController {
       ? `${filtro.gestion}-${String(filtro.mes).padStart(2, '0')}`
       : `${filtro.gestion}-anual`;
 
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=rendicion-cuentas-${destinatario}-${periodo}.xlsx`,
-      'Content-Length': buffer.length,
-    });
-
-    res.end(buffer);
+    await this.contabilidadPdfService.enviar(
+      res,
+      buffer,
+      `rendicion-cuentas-${destinatario}-${periodo}`,
+      filtro.formato,
+    );
   }
 
   @Get('fondo-rendir/:id')

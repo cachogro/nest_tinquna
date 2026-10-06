@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
@@ -16,6 +16,7 @@ import { FondoRendirDetalle } from '../entities/fondo-rendir-detalle.entity';
 import { CreateFondoRendirDto } from '../dto/fondo-rendir/create-fondo-rendir.dto';
 import { CreateFondoRendirDetalleDto } from '../dto/fondo-rendir/create-fondo-rendir-detalle.dto';
 import { FiltroFondoRendirDto } from '../dto/fondo-rendir/filtro-fondo-rendir.dto';
+import { ReponerFondoRendirDto } from '../dto/fondo-rendir/reponer-fondo-rendir.dto';
 import { ReciboService } from './recibo.service';
 import { MovimientoKardexService } from './movimiento-kardex.service';
 import { KardexActividadService } from './kardex-actividad.service';
@@ -25,8 +26,13 @@ const RELACIONES = {
   actorProductivoMinero: true,
   destinoGasto: true,
   recibo: true,
+  reciboReposicion: true,
   movimientoKardexCierre: true,
 } as const;
+
+/** Lo que define a quién pertenece un fondo y cuánto de su excedente ya se saldó. */
+type FondoSaldable = Pick<FondoRendir, 'montoEntregado' | 'montoRepuesto' | 'montoCompensado'>;
+type Destinatario = Pick<FondoRendir, 'idPersona' | 'idActorProductivoMinero'>;
 
 /**
  * Fondo a rendir cuentas (ver `FondoRendir`): entrega puntual de plata a una
@@ -34,6 +40,13 @@ const RELACIONES = {
  * va justificando con comprobantes (`FondoRendirDetalle`). La entrega
  * siempre respalda un recibo de EGRESO real (vía `ReciboService`, mismo
  * mecanismo de caja/banco que cualquier recibo); justificar no mueve plata.
+ *
+ * Cómo se cierra cada caso:
+ *   - Justificó de menos: `cerrarConDeuda` (el saldo va a su kardex) o
+ *     `rendirSinComprobantes` (se da por rendido tal cual).
+ *   - Justificó de más: `reponer` (se le devuelve con un recibo de egreso) o,
+ *     si no se le devuelve, `aplicarSaldoFavor` (el excedente entra como ya
+ *     justificado en su siguiente fondo; es automático al entregarlo).
  */
 @Injectable()
 export class FondoRendirService {
@@ -144,9 +157,15 @@ export class FondoRendirService {
     });
   }
 
-  /** Suma de las líneas activas de un fondo. */
-  private async montoJustificado(idFondoRendir: string): Promise<number> {
-    const { total } = await this.detalleRepository
+  /** Suma de las líneas activas de un fondo (dentro de `manager` si se está en una transacción). */
+  private async montoJustificado(
+    idFondoRendir: string,
+    manager?: EntityManager,
+  ): Promise<number> {
+    const repo = manager
+      ? manager.getRepository(FondoRendirDetalle)
+      : this.detalleRepository;
+    const { total } = await repo
       .createQueryBuilder('d')
       .select('COALESCE(SUM(d.monto), 0)', 'total')
       .where('d.idFondoRendir = :id', { id: idFondoRendir })
@@ -155,30 +174,129 @@ export class FondoRendirService {
     return this.r2(total);
   }
 
-  private estadoSegunJustificado(
-    montoEntregado: number,
-    montoJustificado: number,
-  ): EstadoFondoRendir {
-    if (montoJustificado <= 0) return 'PENDIENTE';
-    if (montoJustificado < montoEntregado) return 'RENDIDO_PARCIAL';
-    if (montoJustificado === montoEntregado) return 'RENDIDO_TOTAL';
-    return 'RENDIDO_EN_EXCESO';
-  }
-
   /**
    * `saldoPendiente` (el destinatario le debe a la empresa) y
    * `montoPorReponer` (la empresa le debe a él, adelantó de su bolsillo) son
-   * mutuamente excluyentes: uno de los dos siempre es 0.
+   * mutuamente excluyentes: uno de los dos siempre es 0. Del excedente se
+   * descuenta lo que ya se le devolvió (`montoRepuesto`) y lo que se aplicó
+   * como saldo a favor en un fondo posterior (`montoCompensado`).
    */
   private saldos(
-    montoEntregado: number,
+    fondo: FondoSaldable,
     montoJustificado: number,
   ): { saldoPendiente: number; montoPorReponer: number } {
-    const diferencia = this.r2(montoEntregado - montoJustificado);
-    return {
-      saldoPendiente: diferencia > 0 ? diferencia : 0,
-      montoPorReponer: diferencia < 0 ? this.r2(-diferencia) : 0,
-    };
+    const diferencia = this.r2(Number(fondo.montoEntregado) - montoJustificado);
+    if (diferencia >= 0) {
+      return { saldoPendiente: diferencia, montoPorReponer: 0 };
+    }
+    const porReponer = this.r2(
+      -diferencia - Number(fondo.montoRepuesto ?? 0) - Number(fondo.montoCompensado ?? 0),
+    );
+    return { saldoPendiente: 0, montoPorReponer: porReponer > 0 ? porReponer : 0 };
+  }
+
+  private estadoSegunJustificado(
+    fondo: FondoSaldable,
+    montoJustificado: number,
+  ): EstadoFondoRendir {
+    if (montoJustificado <= 0) return 'PENDIENTE';
+    const { saldoPendiente, montoPorReponer } = this.saldos(fondo, montoJustificado);
+    if (saldoPendiente > 0) return 'RENDIDO_PARCIAL';
+    // Excedente ya repuesto o compensado => no queda nada pendiente de ningún lado.
+    return montoPorReponer > 0 ? 'RENDIDO_EN_EXCESO' : 'RENDIDO_TOTAL';
+  }
+
+  /** true si el excedente del fondo ya se repuso o se aplicó a otro fondo. */
+  private excedenteSaldado(fondo: FondoSaldable): boolean {
+    return Number(fondo.montoRepuesto ?? 0) > 0 || Number(fondo.montoCompensado ?? 0) > 0;
+  }
+
+  /**
+   * Con el excedente ya repuesto/compensado, cambiar los comprobantes
+   * descuadraría esa devolución: el fondo queda congelado.
+   */
+  private validarExcedenteSinSaldar(fondo: FondoSaldable): void {
+    if (this.excedenteSaldado(fondo)) {
+      throw new BadRequestException(
+        'El excedente de este fondo ya se repuso o se aplicó como saldo a favor en otro fondo: no admite cambios en sus comprobantes.',
+      );
+    }
+  }
+
+  /**
+   * Fondos del destinatario que siguen RENDIDO_EN_EXCESO (la empresa todavía
+   * le debe), con lo que falta reponer de cada uno, del más antiguo al más
+   * nuevo. `excluirId` deja afuera al fondo que va a recibir ese saldo.
+   */
+  private async fondosConSaldoFavor(
+    destinatario: Destinatario,
+    excluirId?: string,
+    manager?: EntityManager,
+  ): Promise<Array<{ fondo: FondoRendir; montoPorReponer: number }>> {
+    const repo = manager ? manager.getRepository(FondoRendir) : this.fondoRepository;
+    const candidatos = await repo.find({
+      where: {
+        estado: 'RENDIDO_EN_EXCESO',
+        ...(destinatario.idPersona
+          ? { idPersona: destinatario.idPersona }
+          : { idActorProductivoMinero: destinatario.idActorProductivoMinero }),
+      },
+      order: { id: 'ASC' },
+    });
+    const conSaldo: Array<{ fondo: FondoRendir; montoPorReponer: number }> = [];
+    for (const fondo of candidatos) {
+      if (fondo.id === excluirId) continue;
+      const justificado = await this.montoJustificado(fondo.id, manager);
+      const { montoPorReponer } = this.saldos(fondo, justificado);
+      if (montoPorReponer > 0) {
+        conSaldo.push({ fondo, montoPorReponer });
+      }
+    }
+    return conSaldo;
+  }
+
+  /**
+   * Pasa el saldo a favor de los fondos anteriores del destinatario al fondo
+   * `destino`: por cada uno agrega una línea SALDO_FAVOR ya justificada y
+   * deja al de origen en RENDIDO_TOTAL (excedente compensado). No mueve
+   * plata. Devuelve el total aplicado (0 si no tenía saldo a favor).
+   */
+  private async aplicarSaldoFavorEnTransaccion(
+    manager: EntityManager,
+    destino: FondoRendir,
+    user: Usuario,
+  ): Promise<number> {
+    const origenes = await this.fondosConSaldoFavor(destino, destino.id, manager);
+    let aplicado = 0;
+    for (const { fondo: origen, montoPorReponer } of origenes) {
+      await manager.save(
+        manager.create(FondoRendirDetalle, {
+          idFondoRendir: destino.id,
+          fecha: destino.fecha,
+          concepto: `SALDO A FAVOR DEL FONDO A RENDIR N° ${origen.id} (${origen.concepto})`.slice(0, 255),
+          monto: montoPorReponer,
+          tipo: 'SALDO_FAVOR',
+          idFondoOrigen: origen.id,
+          idDestinoGasto: origen.idDestinoGasto ?? null,
+          usuarioRegistro: user.usuario,
+        }),
+      );
+      await manager.update(FondoRendir, origen.id, {
+        montoCompensado: this.r2(Number(origen.montoCompensado ?? 0) + montoPorReponer),
+        idFondoCompensacion: destino.id,
+        estado: 'RENDIDO_TOTAL',
+        usuarioUltimaModificacion: user.usuario,
+      });
+      aplicado = this.r2(aplicado + montoPorReponer);
+    }
+    if (aplicado > 0) {
+      const justificado = await this.montoJustificado(destino.id, manager);
+      await manager.update(FondoRendir, destino.id, {
+        estado: this.estadoSegunJustificado(destino, justificado),
+        usuarioUltimaModificacion: user.usuario,
+      });
+    }
+    return aplicado;
   }
 
   // ------------------------------------------------------------------ CRUD
@@ -234,9 +352,15 @@ export class FondoRendirService {
       estado: 'PENDIENTE',
       usuarioRegistro: user.usuario,
     });
-    const guardado = await this.fondoRepository.save(fondo);
+    // Si el destinatario tenía saldo a favor de fondos anteriores (justificó
+    // de más y no se le repuso), entra a este fondo como ya justificado.
+    const idFondo = await this.dataSource.transaction(async (manager) => {
+      const guardado = await manager.save(fondo);
+      await this.aplicarSaldoFavorEnTransaccion(manager, guardado, user);
+      return guardado.id;
+    });
 
-    return this.buscarPorId(guardado.id);
+    return this.buscarPorId(idFondo);
   }
 
   /**
@@ -257,6 +381,7 @@ export class FondoRendirService {
         'El fondo ya está cerrado con cargo a kardex: no admite más justificaciones.',
       );
     }
+    this.validarExcedenteSinSaldar(fondo);
 
     let lineaExistente: FondoRendirDetalle | null = null;
     if (dto.id) {
@@ -266,6 +391,11 @@ export class FondoRendirService {
       if (!lineaExistente || lineaExistente.idFondoRendir !== fondo.id) {
         throw new NotFoundException(
           'No se encontró la línea de justificación indicada para este fondo.',
+        );
+      }
+      if (lineaExistente.tipo !== 'COMPROBANTE') {
+        throw new BadRequestException(
+          'Esta línea la generó el sistema (saldo a favor o rendido sin comprobantes): no se puede editar.',
         );
       }
     }
@@ -308,7 +438,7 @@ export class FondoRendirService {
     // esta edición.
     const justificadoFinal = await this.montoJustificado(fondo.id);
     await this.fondoRepository.update(fondo.id, {
-      estado: this.estadoSegunJustificado(Number(fondo.montoEntregado), justificadoFinal),
+      estado: this.estadoSegunJustificado(fondo, justificadoFinal),
       usuarioUltimaModificacion: user.usuario,
     });
 
@@ -332,6 +462,12 @@ export class FondoRendirService {
         'El fondo ya está cerrado con cargo a kardex: no se puede modificar.',
       );
     }
+    this.validarExcedenteSinSaldar(fondo);
+    if (linea.tipo === 'SALDO_FAVOR') {
+      throw new BadRequestException(
+        'Esta línea es el saldo a favor de un fondo anterior ya compensado: no se puede anular.',
+      );
+    }
 
     await this.detalleRepository.update(linea.id, {
       activo,
@@ -340,7 +476,7 @@ export class FondoRendirService {
 
     const justificado = await this.montoJustificado(fondo.id);
     await this.fondoRepository.update(fondo.id, {
-      estado: this.estadoSegunJustificado(Number(fondo.montoEntregado), justificado),
+      estado: this.estadoSegunJustificado(fondo, justificado),
       usuarioUltimaModificacion: user.usuario,
     });
 
@@ -365,10 +501,7 @@ export class FondoRendirService {
     }
 
     const justificado = await this.montoJustificado(fondo.id);
-    const { saldoPendiente, montoPorReponer } = this.saldos(
-      Number(fondo.montoEntregado),
-      justificado,
-    );
+    const { saldoPendiente, montoPorReponer } = this.saldos(fondo, justificado);
     if (saldoPendiente <= 0) {
       throw new BadRequestException(
         montoPorReponer > 0
@@ -413,6 +546,158 @@ export class FondoRendirService {
     });
   }
 
+  /**
+   * Da por rendido el fondo SIN cargar comprobantes: agrega una línea
+   * SIN_COMPROBANTE por todo el saldo pendiente y el fondo queda en
+   * RENDIDO_TOTAL. No mueve plata ni toca el kardex. Sirve con el fondo
+   * PENDIENTE (nada justificado) o RENDIDO_PARCIAL (cubre lo que faltaba).
+   * Se deshace anulando esa línea.
+   */
+  async rendirSinComprobantes(id: string, user: Usuario) {
+    const fondo = await this.fondoRepository.findOne({ where: { id } });
+    if (!fondo) {
+      throw new NotFoundException('No se encontró el fondo a rendir.');
+    }
+    if (fondo.estado === 'CERRADO_CON_DEUDA') {
+      throw new BadRequestException('El fondo ya está cerrado con cargo a kardex.');
+    }
+    const justificado = await this.montoJustificado(fondo.id);
+    const { saldoPendiente } = this.saldos(fondo, justificado);
+    if (saldoPendiente <= 0) {
+      throw new BadRequestException(
+        'Este fondo no tiene saldo pendiente de justificar: ya está rendido.',
+      );
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(
+        manager.create(FondoRendirDetalle, {
+          idFondoRendir: fondo.id,
+          fecha: this.hoy(),
+          concepto: 'RENDIDO SIN COMPROBANTES',
+          monto: saldoPendiente,
+          tipo: 'SIN_COMPROBANTE',
+          idDestinoGasto: fondo.idDestinoGasto ?? null,
+          usuarioRegistro: user.usuario,
+        }),
+      );
+      await manager.update(FondoRendir, fondo.id, {
+        estado: 'RENDIDO_TOTAL',
+        usuarioUltimaModificacion: user.usuario,
+      });
+    });
+
+    return this.buscarPorId(fondo.id);
+  }
+
+  /**
+   * Le devuelve al destinatario el excedente de un fondo RENDIDO_EN_EXCESO
+   * (lo que puso de su bolsillo): genera un recibo de EGRESO real por
+   * `montoPorReponer` — efectivo sale de la caja de flujo, medio bancario
+   * de la libreta, igual que la entrega — con concepto de devolución, y deja
+   * el fondo en RENDIDO_TOTAL. Recibo y fondo van en la misma transacción.
+   */
+  async reponer(id: string, dto: ReponerFondoRendirDto, user: Usuario) {
+    const fondo = await this.fondoRepository.findOne({ where: { id } });
+    if (!fondo) {
+      throw new NotFoundException('No se encontró el fondo a rendir.');
+    }
+    const justificado = await this.montoJustificado(fondo.id);
+    const { montoPorReponer } = this.saldos(fondo, justificado);
+    if (montoPorReponer <= 0) {
+      throw new BadRequestException(
+        'Este fondo no tiene excedente por reponer al destinatario.',
+      );
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      const recibo = await this.reciboService.generarEnTransaccion(
+        manager,
+        {
+          tipo: 'EGRESO',
+          fecha: dto.fecha,
+          montoTotal: montoPorReponer,
+          concepto: `DEVOLUCIÓN POR EXCESO EN RENDICIÓN - FONDO A RENDIR N° ${fondo.id} (${fondo.concepto})`.slice(0, 255),
+          idFormaPago: dto.idFormaPago,
+          idCuentaBancaria: dto.idCuentaBancaria,
+          nroComprobante: dto.nroComprobante,
+          idPersona: fondo.idPersona ?? undefined,
+          idActorProductivoMinero: fondo.idActorProductivoMinero ?? undefined,
+          idPersonaAutorizo: dto.idPersonaAutorizo,
+          detalles: [
+            {
+              destino: 'EFECTIVO',
+              monto: montoPorReponer,
+              idDestinoGasto: dto.idDestinoGasto ?? fondo.idDestinoGasto ?? undefined,
+            },
+          ],
+        },
+        user,
+      );
+
+      await manager.update(FondoRendir, fondo.id, {
+        montoRepuesto: this.r2(Number(fondo.montoRepuesto ?? 0) + montoPorReponer),
+        idReciboReposicion: recibo.id,
+        fechaReposicion: dto.fecha,
+        estado: 'RENDIDO_TOTAL',
+        usuarioUltimaModificacion: user.usuario,
+      });
+    });
+
+    return this.buscarPorId(fondo.id);
+  }
+
+  /**
+   * Aplica a este fondo el saldo a favor que el destinatario arrastra de
+   * fondos anteriores. Al entregar un fondo nuevo esto ya ocurre solo; el
+   * endpoint queda para los fondos entregados antes de que existiera la
+   * regla. Solo con el fondo PENDIENTE o RENDIDO_PARCIAL.
+   */
+  async aplicarSaldoFavor(id: string, user: Usuario) {
+    const fondo = await this.fondoRepository.findOne({ where: { id } });
+    if (!fondo) {
+      throw new NotFoundException('No se encontró el fondo a rendir.');
+    }
+    if (fondo.estado !== 'PENDIENTE' && fondo.estado !== 'RENDIDO_PARCIAL') {
+      throw new BadRequestException(
+        'Solo se puede aplicar saldo a favor a un fondo pendiente o rendido parcialmente.',
+      );
+    }
+
+    const aplicado = await this.dataSource.transaction((manager) =>
+      this.aplicarSaldoFavorEnTransaccion(manager, fondo, user),
+    );
+    if (aplicado <= 0) {
+      throw new BadRequestException(
+        'El destinatario no tiene saldo a favor de fondos anteriores.',
+      );
+    }
+
+    return this.buscarPorId(fondo.id);
+  }
+
+  /** Saldo a favor del destinatario (lo que la empresa aún le debe reponer), con el detalle por fondo. */
+  async saldoFavor(filtro: { idPersona?: string; idActorProductivoMinero?: string }) {
+    if (!filtro.idPersona === !filtro.idActorProductivoMinero) {
+      throw new BadRequestException(
+        'Debe indicar idPersona o idActorProductivoMinero (solo uno).',
+      );
+    }
+    const fondos = await this.fondosConSaldoFavor({
+      idPersona: filtro.idPersona ?? null,
+      idActorProductivoMinero: filtro.idActorProductivoMinero ?? null,
+    });
+    return {
+      saldoFavor: this.r2(fondos.reduce((s, f) => s + f.montoPorReponer, 0)),
+      fondos: fondos.map(({ fondo, montoPorReponer }) => ({
+        id: fondo.id,
+        fecha: fondo.fecha,
+        concepto: fondo.concepto,
+        montoPorReponer,
+      })),
+    };
+  }
+
   private hoy(): string {
     return new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
   }
@@ -426,10 +711,22 @@ export class FondoRendirService {
       throw new NotFoundException('No se encontró el fondo a rendir.');
     }
     const montoJustificado = await this.montoJustificado(fondo.id);
+    // Lo que el destinatario tiene a favor en OTROS fondos y se podría
+    // aplicar a este (solo tiene sentido mientras le falte justificar).
+    const saldoFavorDisponible =
+      fondo.estado === 'PENDIENTE' || fondo.estado === 'RENDIDO_PARCIAL'
+        ? this.r2(
+            (await this.fondosConSaldoFavor(fondo, fondo.id)).reduce(
+              (s, f) => s + f.montoPorReponer,
+              0,
+            ),
+          )
+        : 0;
     return {
       ...fondo,
       montoJustificado,
-      ...this.saldos(Number(fondo.montoEntregado), montoJustificado),
+      ...this.saldos(fondo, montoJustificado),
+      saldoFavorDisponible,
     };
   }
 
@@ -445,6 +742,9 @@ export class FondoRendirService {
       // Solo lo que necesita la bandeja para imprimir el recibo de entrega.
       .leftJoin('f.recibo', 'rec')
       .addSelect(['rec.id', 'rec.serie', 'rec.numero', 'rec.estado'])
+      // Ídem para el recibo de devolución del excedente, si lo hubo.
+      .leftJoin('f.reciboReposicion', 'rrep')
+      .addSelect(['rrep.id', 'rrep.serie', 'rrep.numero', 'rrep.estado'])
       // usuarioRegistro tiene select:false en Auditoria; la bandeja muestra
       // quién generó cada fondo (igual que en recibos y traspasos).
       .addSelect('f.usuarioRegistro');
@@ -495,7 +795,7 @@ export class FondoRendirService {
       return {
         ...f,
         montoJustificado,
-        ...this.saldos(Number(f.montoEntregado), montoJustificado),
+        ...this.saldos(f, montoJustificado),
       };
     });
 

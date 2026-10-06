@@ -1,5 +1,9 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsString, Length } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
+import {
+  CATEGORIAS_DESTINO_GASTO,
+  CategoriaDestinoGasto,
+} from '../../entities/destino-gasto.entity';
 
 export class CreateDestinoGastoDto {
   @ApiProperty({
@@ -17,4 +21,13 @@ export class CreateDestinoGastoDto {
   })
   @IsBoolean({ message: 'esEgreso debe ser verdadero o falso.' })
   esEgreso: boolean;
+
+  @ApiPropertyOptional({
+    enum: CATEGORIAS_DESTINO_GASTO,
+    description:
+      'Cómo cuenta en la ganancia estimada. Sin valor: GASTO_OPERATIVO si es egreso, OTRO_INGRESO si es ingreso.',
+  })
+  @IsOptional()
+  @IsIn(CATEGORIAS_DESTINO_GASTO, { message: 'La categoría no es válida.' })
+  categoria?: CategoriaDestinoGasto;
 }

@@ -9,6 +9,9 @@ import { IsInt } from 'class-validator';
  * de mineral. Todo lo demás (laboratorio, pesos, económicos, detalles,
  * aportes) se completa después mediante:
  *   PATCH /comercio_interno/valorizacion_mineral/:id
+ *
+ * El laboratorio nace precargado con el de la recepción (si tiene) y puede
+ * cambiarse con ese mismo PATCH.
  */
 export class CreateValorizacionMineralDto {
   @ApiProperty({

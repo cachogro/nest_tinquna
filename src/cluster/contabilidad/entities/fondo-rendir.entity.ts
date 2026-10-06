@@ -46,7 +46,11 @@ export type EstadoFondoRendir =
  *                      plata propia; la empresa le debe la diferencia
  *                      ("por reponer"), al revés de los tres estados
  *                      anteriores (ahí el destinatario le debe a la
- *                      empresa). Ver `montoPorReponer` en el service.
+ *                      empresa). Ver `montoPorReponer` en el service. Sale
+ *                      de este estado (a RENDIDO_TOTAL) cuando el excedente
+ *                      se le repone con un recibo (`montoRepuesto`) o se le
+ *                      aplica como saldo a favor en un fondo posterior
+ *                      (`montoCompensado`).
  *   CERRADO_CON_DEUDA: el saldo sin justificar ya se cargó al kardex
  *                      (terminal, no admite más justificaciones).
  */
@@ -188,6 +192,60 @@ export class FondoRendir extends Auditoria {
     referencedColumnName: 'id',
   })
   movimientoKardexCierre?: MovimientoKardex;
+
+  // Excedente (justificado > entregado) ya devuelto al destinatario con un
+  // recibo de EGRESO (`reciboReposicion`): sale de caja o de la libreta.
+  @Column({
+    name: 'monto_repuesto',
+    type: 'numeric',
+    precision: 16,
+    scale: 2,
+    default: 0,
+  })
+  montoRepuesto: number;
+
+  @Column({
+    name: 'id_recibo_reposicion',
+    type: 'bigint',
+    nullable: true,
+  })
+  idReciboReposicion?: string | null;
+
+  @ManyToOne(() => Recibo, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+  })
+  @JoinColumn({
+    name: 'id_recibo_reposicion',
+    referencedColumnName: 'id',
+  })
+  reciboReposicion?: Recibo;
+
+  @Column({
+    name: 'fecha_reposicion',
+    type: 'date',
+    nullable: true,
+  })
+  fechaReposicion?: string | null;
+
+  // Excedente que NO se devolvió y se aplicó como ya justificado en un fondo
+  // posterior del mismo destinatario (`idFondoCompensacion`), donde figura
+  // como una línea de tipo SALDO_FAVOR.
+  @Column({
+    name: 'monto_compensado',
+    type: 'numeric',
+    precision: 16,
+    scale: 2,
+    default: 0,
+  })
+  montoCompensado: number;
+
+  @Column({
+    name: 'id_fondo_compensacion',
+    type: 'bigint',
+    nullable: true,
+  })
+  idFondoCompensacion?: string | null;
 
   @OneToMany(() => FondoRendirDetalle, (detalle) => detalle.fondoRendir)
   detalles?: FondoRendirDetalle[];

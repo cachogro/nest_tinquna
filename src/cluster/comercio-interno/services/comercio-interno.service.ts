@@ -18,6 +18,8 @@ import { PersonaCi } from '../entities/persona-ci.entity';
 import { PersonaTipo } from '../../parametricas/entities/persona-tipo.entity';
 import { RecepcionMineral } from '../entities/recepcion-mineral/recepcion-mineral.entity';
 import { EstadoRegistro } from 'src/cluster/parametricas/entities/estado-registro.entity';
+import { Laboratorio } from 'src/cluster/parametricas/entities/laboratorio.entity';
+import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { ConfigService } from '@nestjs/config';
 import { CreateRecepcionMineralDto } from '../dto/recepcion-mineral/create-recepcion-mineral.dto';
 import { UpdateRecepcionMineralDto } from '../dto/recepcion-mineral/update-recepcion-mineral.dto';
@@ -49,6 +51,9 @@ export class ComercioInternoService {
 
     @InjectRepository(EstadoRegistro, 'ci')
     private readonly estadoRepository: Repository<EstadoRegistro>,
+
+    @InjectRepository(Laboratorio, 'ci')
+    private readonly laboratorioRepository: Repository<Laboratorio>,
 
     private readonly reciboPdfService: ReciboRecepcionMineralPdfService,
 
@@ -174,8 +179,10 @@ export class ComercioInternoService {
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('recepcion.actorProductivoMinero', 'actorProveedor')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.estado', 'estado')
+      .leftJoinAndSelect('recepcion.laboratorio', 'laboratorio')
       .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'")
       // .leftJoinAndSelect(
       //   'recepcion.detalles',
@@ -249,18 +256,114 @@ export class ComercioInternoService {
   }
 
   /**
+   * Resuelve quién deja el mineral: persona registrada, actor productivo o
+   * un externo identificado solo por su nombre. Devuelve los tres campos tal
+   * como se guardan (a lo sumo un id; el nombre siempre presente).
+   */
+  private async resolverProveedor(dto: CreateRecepcionMineralDto): Promise<{
+    idPersona: string | null;
+    idActorProductivoMinero: string | null;
+    nombresApellidos: string;
+  }> {
+    const idPersona = dto.idPersona ? String(dto.idPersona) : null;
+    const idActor = dto.idActorProductivoMinero
+      ? String(dto.idActorProductivoMinero)
+      : null;
+
+    if (idPersona && idActor) {
+      throw new BadRequestException(
+        'El proveedor es una persona o un actor productivo, no ambos.',
+      );
+    }
+
+    if (idPersona) {
+      const persona = await this.validarPersona(idPersona);
+      return {
+        idPersona,
+        idActorProductivoMinero: null,
+        nombresApellidos: [
+          persona.nombres,
+          persona.apellidoPaterno,
+          persona.apellidoMaterno,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .trim()
+          .toUpperCase(),
+      };
+    }
+
+    if (idActor) {
+      const actor = await this.dataSource.manager.findOne(
+        ActorProductivoMinero,
+        { where: { id: idActor, activo: true } },
+      );
+      if (!actor) {
+        throw new NotFoundException(
+          'El actor productivo seleccionado no existe.',
+        );
+      }
+      return {
+        idPersona: null,
+        idActorProductivoMinero: idActor,
+        nombresApellidos: (actor.nombre ?? '').trim().toUpperCase(),
+      };
+    }
+
+    const nombre = (dto.nombresApellidos ?? '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toUpperCase();
+    if (!nombre) {
+      throw new BadRequestException(
+        'Debe indicar el proveedor: una persona, un actor productivo o el nombre de un externo.',
+      );
+    }
+    return {
+      idPersona: null,
+      idActorProductivoMinero: null,
+      nombresApellidos: nombre,
+    };
+  }
+
+  private async validarLaboratorio(idLaboratorio: string): Promise<void> {
+    const laboratorio = await this.laboratorioRepository.findOne({
+      where: {
+        id: idLaboratorio,
+        activo: true,
+      },
+    });
+
+    if (!laboratorio) {
+      throw new NotFoundException('El laboratorio seleccionado no existe.');
+    }
+  }
+
+  /**
    * Si la recepción ya tiene un recibo de anticipo vigente (BORRADOR o
-   * PROCESADO), no se puede cambiar el monto ni la persona: el recibo se
+   * PROCESADO), no se puede cambiar el monto ni el proveedor: el recibo se
    * generó con esos datos.
    */
   private async validarAnticipoSinReciboVigente(
     recepcion: RecepcionMineral,
     nuevoAnticipo: number,
-    nuevoIdPersona: string,
+    nuevoProveedor: {
+      idPersona: string | null;
+      idActorProductivoMinero: string | null;
+      nombresApellidos: string;
+    },
   ): Promise<void> {
+    const mismoProveedor =
+      String(recepcion.idPersona ?? '') ===
+        String(nuevoProveedor.idPersona ?? '') &&
+      String(recepcion.idActorProductivoMinero ?? '') ===
+        String(nuevoProveedor.idActorProductivoMinero ?? '') &&
+      // Entre externos, el proveedor es el nombre.
+      (!!recepcion.idPersona ||
+        !!recepcion.idActorProductivoMinero ||
+        (recepcion.nombresApellidos ?? '') === nuevoProveedor.nombresApellidos);
     const cambio =
-      Number(recepcion.anticipo ?? 0) !== nuevoAnticipo ||
-      String(recepcion.idPersona) !== String(nuevoIdPersona);
+      Number(recepcion.anticipo ?? 0) !== nuevoAnticipo || !mismoProveedor;
     if (!cambio) return;
 
     const recibo = await this.dataSource.manager.findOne(Recibo, {
@@ -271,7 +374,7 @@ export class ComercioInternoService {
     });
     if (recibo) {
       throw new BadRequestException(
-        `El anticipo ya tiene el recibo ${recibo.serie}-${recibo.numero} (${recibo.estado}): no se puede modificar el monto ni la persona.${recibo.estado === 'BORRADOR' ? ' Anule el recibo primero.' : ''}`,
+        `El anticipo ya tiene el recibo ${recibo.serie}-${recibo.numero} (${recibo.estado}): no se puede modificar el monto ni el proveedor.${recibo.estado === 'BORRADOR' ? ' Anule el recibo primero.' : ''}`,
       );
     }
   }
@@ -282,7 +385,6 @@ export class ComercioInternoService {
   ): Promise<RecepcionMineral> {
     const {
       idCodificacion,
-      idPersona,
       numeroSacos,
       balanzaL,
       balanzaT,
@@ -293,14 +395,20 @@ export class ComercioInternoService {
       fechaRecepcion,
       observaciones,
       lugarAcopio,
+      idLaboratorio,
       // detalles,
     } = createDto;
 
     // Validar codificación
     const codificacion = await this.validarCodificacion(idCodificacion);
 
-    // Validar persona
-    await this.validarPersona(idPersona);
+    // Validar proveedor (persona, actor productivo o externo)
+    const proveedor = await this.resolverProveedor(createDto);
+
+    // Validar laboratorio (opcional)
+    if (idLaboratorio) {
+      await this.validarLaboratorio(idLaboratorio);
+    }
 
     // Validar detalle
     //await this.validarDetalleRecepcion(idCodificacion, detalles);
@@ -324,7 +432,7 @@ export class ComercioInternoService {
         correlativo: correlativo.toString(),
         codigoOperacion,
         idCodificacion,
-        idPersona,
+        ...proveedor,
         numeroSacos: numeroSacos ?? 0,
         balanzaL,
         balanzaT,
@@ -334,6 +442,7 @@ export class ComercioInternoService {
         //totalValorBruto,
         fechaRecepcion,
         lugarAcopio,
+        idLaboratorio: idLaboratorio || null,
         observaciones,
         idEstado: 1,
         usuarioRegistro: user.usuario,
@@ -366,7 +475,6 @@ export class ComercioInternoService {
     const {
       id,
       idCodificacion,
-      idPersona,
       numeroSacos,
       balanzaL,
       balanzaT,
@@ -377,6 +485,7 @@ export class ComercioInternoService {
       fechaRecepcion,
       observaciones,
       lugarAcopio,
+      idLaboratorio,
       //detalles,
     } = updateDto;
 
@@ -389,14 +498,19 @@ export class ComercioInternoService {
     // Validar codificación
     const codificacion = await this.validarCodificacion(idCodificacion);
 
-    // Validar persona
-    await this.validarPersona(idPersona);
+    // Validar proveedor (persona, actor productivo o externo)
+    const proveedor = await this.resolverProveedor(updateDto);
 
-    // Anticipo/persona bloqueados si ya hay un recibo vigente
+    // Validar laboratorio (opcional)
+    if (idLaboratorio) {
+      await this.validarLaboratorio(idLaboratorio);
+    }
+
+    // Anticipo/proveedor bloqueados si ya hay un recibo vigente
     await this.validarAnticipoSinReciboVigente(
       recepcion,
       Number(anticipo ?? recepcion.anticipo ?? 0),
-      idPersona,
+      proveedor,
     );
 
     // Validar detalle
@@ -418,7 +532,7 @@ export class ComercioInternoService {
         idCodificacion,
         codigoOperacion,
 
-        idPersona,
+        ...proveedor,
         numeroSacos: numeroSacos ?? 0,
         balanzaL,
         balanzaT,
@@ -428,6 +542,8 @@ export class ComercioInternoService {
         // totalValorBruto,
         fechaRecepcion,
         lugarAcopio,
+        // undefined = no se toca; null o '' = se quita el laboratorio
+        idLaboratorio: idLaboratorio === undefined ? undefined : idLaboratorio || null,
         observaciones,
         usuarioUltimaModificacion: user.usuario,
       });
@@ -516,9 +632,11 @@ export class ComercioInternoService {
     const query = this.recepcionRepository
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('recepcion.actorProductivoMinero', 'actorProveedor')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.estado', 'estado')
+      .leftJoinAndSelect('recepcion.laboratorio', 'laboratorio')
       .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'");
 
     // .leftJoinAndSelect(
@@ -543,6 +661,7 @@ export class ComercioInternoService {
         OR persona.apellidoPaterno ILIKE :busqueda
         OR persona.apellidoMaterno ILIKE :busqueda
         OR persona.numeroDocumento ILIKE :busqueda
+        OR recepcion.nombresApellidos ILIKE :busqueda
       )`,
         {
           busqueda: `%${busqueda}%`,
@@ -615,7 +734,6 @@ export class ComercioInternoService {
       orderBy,
       orderDirection,
     );
-    console.log('query', query);
     return query;
   }
 
@@ -624,27 +742,33 @@ export class ComercioInternoService {
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('recepcion.actorProductivoMinero', 'actorProveedor')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.estado', 'estado')
+      .leftJoinAndSelect('recepcion.laboratorio', 'laboratorio')
       .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'")
       // .leftJoinAndSelect('recepcion.estado', 'estado')
       .where('recepcion.id = :id', { id })
       .getOne();
   }
 
-  async generarReciboPdf(
+  /**
+   * Comprobante RM- de la recepción (constancia de entrega del mineral, sin
+   * montos). Se emite para toda recepción, tenga o no anticipo.
+   */
+  async generarComprobanteRecepcionPdf(
     id: string,
-    formato: 'ticket' | 'carta' = 'ticket',
-  ): Promise<Buffer> {
+    user: Usuario,
+  ): Promise<{ pdf: Buffer; numero: string }> {
     const recepcion = await this.buscarregistroById(id);
-    console.log('recepcion', recepcion);
 
     if (!recepcion) {
       throw new NotFoundException('La recepción no existe.');
     }
 
-    return formato === 'carta'
-      ? this.reciboPdfService.generarPdfhojaCarta(recepcion)
-      : this.reciboPdfService.generarPdftikeadora(recepcion);
+    return {
+      pdf: await this.reciboPdfService.generar(recepcion, user),
+      numero: this.reciboPdfService.numeroComprobante(recepcion),
+    };
   }
 }

@@ -65,14 +65,15 @@ export class TipoCalculoValorizacionService {
     updateDto: UpdateTipoCalculoValorizacionDto,
     user: Usuario,
   ): Promise<TipoCalculoValorizacion> {
-    const tipoCalculo = await this.obtenerTipoCalculo(updateDto.id);
+    const id = updateDto.id!;
+    const tipoCalculo = await this.obtenerTipoCalculo(id);
 
     const duplicado = await this.tipoCalculoRepository
       .createQueryBuilder('tipoCalculo')
       .where('LOWER(tipoCalculo.descripcion) = LOWER(:descripcion)', {
         descripcion: updateDto.descripcion.trim(),
       })
-      .andWhere('tipoCalculo.id <> :id', { id: updateDto.id })
+      .andWhere('tipoCalculo.id <> :id', { id })
       .getOne();
 
     if (duplicado) {

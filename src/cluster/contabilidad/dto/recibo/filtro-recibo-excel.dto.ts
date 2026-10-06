@@ -1,12 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
 
+import { FormatoReporteDto } from '../reporte/formato-reporte.dto';
+
 /**
  * Filtros del reporte Excel de recibos: los mismos de la bandeja
  * (`FiltrosReciboDto`) pero sin paginación ni orden, porque el reporte
  * imprime todos los recibos que cumplan los filtros en orden cronológico.
  */
-export class FiltroReciboExcelDto {
+export class FiltroReciboExcelDto extends FormatoReporteDto {
   @ApiPropertyOptional({ enum: ['INGRESO', 'EGRESO'], example: 'EGRESO' })
   @IsOptional()
   @IsIn(['INGRESO', 'EGRESO'], { message: 'El tipo debe ser INGRESO o EGRESO.' })

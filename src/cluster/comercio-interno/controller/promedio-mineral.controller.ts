@@ -7,8 +7,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
 
 import { Auth, GetUser } from 'src/security/decorators';
 import { Usuario } from 'src/security/entities/usuario.entity';
@@ -18,17 +20,48 @@ import {
   CreatePromedioMineralDto,
   DisponiblesPromedioPaginadoDto,
   FiltrosDisponiblesPromedioDto,
+  FiltroReportePromedioDto,
   FiltrosPromedioMineralDto,
   PromediosMineralPaginadosDto,
   UpdatePromedioMineralDto,
 } from '../dto/promedio/promedio-mineral.dto';
 import { PromedioMineralService } from '../services/promedio-mineral.service';
+import { PromedioMineralReporteExcelService } from '../reports/promedio-mineral-reporte-excel.service';
 
 @ApiTags('Promedios de Mineral')
 @Controller('comercio_interno')
 @ApiBearerAuth()
 export class PromedioMineralController {
-  constructor(private readonly promedioService: PromedioMineralService) {}
+  constructor(
+    private readonly promedioService: PromedioMineralService,
+    private readonly reporteExcelService: PromedioMineralReporteExcelService,
+  ) {}
+
+  @Get('promedio_mineral/reporte/excel')
+  @Auth()
+  @ApiOperation({
+    summary: 'Reporte de promedios (Excel) diario, semanal o mensual',
+    description:
+      'Promedios activos cuya fecha cae en el período. Hoja "Resumen" con una ' +
+      'fila por lote y hoja "Detalle" con un bloque por lote como PROMEDIOS.xlsx ' +
+      '(TOTAL Kg, ley promedio ponderada, valorizaciones y TOTAL DE EFECTIVO INVERTIDO).',
+  })
+  async reporteExcel(
+    @Query() filtros: FiltroReportePromedioDto,
+    @Res() res: Response,
+  ) {
+    const { buffer, nombreArchivo } =
+      await this.reporteExcelService.generar(filtros);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=${nombreArchivo}`,
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
 
   @Get('promedio_mineral/disponibles')
   @Auth()

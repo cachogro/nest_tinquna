@@ -46,6 +46,7 @@ export class DestinoGastoService {
       this.destinoGastoRepository.create({
         nombre,
         esEgreso: dto.esEgreso,
+        categoria: dto.categoria ?? (dto.esEgreso ? 'GASTO_OPERATIVO' : 'OTRO_INGRESO'),
         usuarioRegistro: user.usuario,
       }),
     );
@@ -58,6 +59,8 @@ export class DestinoGastoService {
 
     destino.nombre = nombre;
     destino.esEgreso = dto.esEgreso;
+    // Solo cambia si el front la envía; si no, se conserva la registrada.
+    if (dto.categoria) destino.categoria = dto.categoria;
     destino.usuarioUltimaModificacion = user.usuario;
     return await this.destinoGastoRepository.save(destino);
   }
