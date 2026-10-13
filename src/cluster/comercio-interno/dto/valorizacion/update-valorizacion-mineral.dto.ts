@@ -90,11 +90,6 @@ export class UpdateValorizacionMineralDto {
   @IsNumber()
   pesoBrutoSecoKilogramos?: number;
 
-  // @ApiPropertyOptional({ example: 621.0 })
-  // @IsOptional()
-  // @IsNumber()
-  // pesoNetoHumedoKilogramos?: number;
-
   @ApiPropertyOptional({ example: 615.0 })
   @IsOptional()
   @IsNumber()

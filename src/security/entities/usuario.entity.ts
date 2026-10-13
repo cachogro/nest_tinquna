@@ -3,7 +3,6 @@ import {
   Entity,
   Column,
   PrimaryGeneratedColumn,
-  ManyToOne,
   JoinColumn,
   OneToMany,
   ManyToMany,
@@ -72,9 +71,6 @@ export class Usuario extends Auditoria {
   @OneToOne(() => Persona, { eager: true })
   @JoinColumn({ name: 'id_persona', referencedColumnName: 'id' })
   persona?: Persona;
-
-  // @OneToMany(() => UsuarioRol, (usuarioRol) => usuarioRol.usuario)
-  // usuarioRoles?: UsuarioRol[];
 
   @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.usuario)
   refreshTokens?: RefreshToken[];

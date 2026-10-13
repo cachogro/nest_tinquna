@@ -14,7 +14,6 @@ import { Laboratorio } from 'src/cluster/parametricas/entities/laboratorio.entit
 import { PersonaCi } from '../persona-ci.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { Recibo } from 'src/cluster/contabilidad/entities/recibo.entity';
-//import { RecepcionMineralDetalle } from './recepcion-mineral-detalle.entity';
 import { ValorizacionMineral } from '../valorizacion/valorizacion-mineral.entity';
 
 @Entity({
@@ -180,15 +179,6 @@ export class RecepcionMineral extends Auditoria {
   })
   personalInterno: PersonaCi;
 
-  // @Column({
-  //   name: 'total_valor_bruto',
-  //   type: 'numeric',
-  //   precision: 14,
-  //   scale: 2,
-  //   nullable: true,
-  // })
-  // totalValorBruto?: number;
-
   @Column({
     name: 'fecha_de_entrega',
     type: 'varchar',
@@ -239,15 +229,6 @@ export class RecepcionMineral extends Auditoria {
     nullable: true,
   })
   observaciones?: string;
-
-  // @OneToMany(
-  //   () => RecepcionMineralDetalle,
-  //   (detalle) => detalle.recepcionMineral,
-  //   {
-  //     eager: false,
-  //   },
-  // )
-  // detalles?: RecepcionMineralDetalle[];
 
   @OneToMany(
     () => ValorizacionMineral,

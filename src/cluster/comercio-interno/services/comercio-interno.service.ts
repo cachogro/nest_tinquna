@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -9,7 +8,6 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
   In,
-  QueryRunner,
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
@@ -26,7 +24,6 @@ import { UpdateRecepcionMineralDto } from '../dto/recepcion-mineral/update-recep
 import { EstadoRecepcion } from 'src/cluster/enum/estado-recepcion.enum';
 import { FiltrosRegistroMineralDto } from '../dto/recepcion-mineral/filtros-registro-mineral.dto';
 import { CreateRecepcionMineralDetalleDto } from '../dto/recepcion-mineral/create-recepcion-mineral-detalle.dto';
-//import { RecepcionMineralDetalle } from '../entities/recepcion-mineral/recepcion-mineral-detalle.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { RegistrosMineralPaginadosDto } from '../dto/recepcion-mineral/registro-mineral-paginado.dto';
 import { ReciboRecepcionMineralPdfService } from './recibo-pdf-recepcion-mineral.service';
@@ -92,9 +89,6 @@ export class ComercioInternoService {
         id: idCodificacion,
         activo: true,
       },
-      // relations: {
-      //   minerales: true,
-      // },
     });
 
     if (!codificacion) {
@@ -135,43 +129,6 @@ export class ComercioInternoService {
     }
   }
 
-  // private async guardarDetalleRecepcion(
-  //   queryRunner: QueryRunner,
-  //   idRecepcion: string,
-  //   detalles: CreateRecepcionMineralDetalleDto[],
-  //   user: Usuario,
-  // ): Promise<void> {
-  //   const registros = detalles.map((detalle) =>
-  //     queryRunner.manager.create(RecepcionMineralDetalle, {
-  //       idRecepcionMineral: idRecepcion,
-  //       idMineral: detalle.idMineral.toString(),
-  //       ley: detalle.ley,
-  //       leyUnidad: detalle.leyUnidad,
-  //       usuarioRegistro: user.usuario,
-  //     }),
-  //   );
-
-  //   await queryRunner.manager.save(registros);
-  // }
-
-  // private async inactivarDetalleRecepcion(
-  //   queryRunner: QueryRunner,
-  //   idRecepcion: string,
-  //   user: Usuario,
-  // ): Promise<void> {
-  //   await queryRunner.manager.update(
-  //     RecepcionMineralDetalle,
-  //     {
-  //       idRecepcionMineral: idRecepcion,
-  //       activo: true,
-  //     },
-  //     {
-  //       activo: false,
-  //       usuarioUltimaModificacion: user.usuario,
-  //     },
-  //   );
-  // }
-
   private async obtenerRecepcionCompleta(
     id: string,
   ): Promise<RecepcionMineral> {
@@ -184,25 +141,10 @@ export class ComercioInternoService {
       .leftJoinAndSelect('recepcion.estado', 'estado')
       .leftJoinAndSelect('recepcion.laboratorio', 'laboratorio')
       .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'")
-      // .leftJoinAndSelect(
-      //   'recepcion.detalles',
-      //   'detalle',
-      //   'detalle.activo = :activo',
-      //   { activo: true },
-      // )
-      // .leftJoinAndSelect('detalle.mineral', 'mineral')
       .where('recepcion.id = :id', { id })
       .getOne();
   }
 
-  /// crear regitross
-
-  // private actualizarCodigoOperacion(
-  //   recepcion: RecepcionMineral,
-  //   codigo: string,
-  // ): string {
-  //   return this.generarCodigoOperacion(codigo, Number(recepcion.correlativo));
-  // }
 
   private async obtenerRecepcion(id: string): Promise<RecepcionMineral> {
     const recepcion = await this.recepcionRepository.findOne({
@@ -450,13 +392,6 @@ export class ComercioInternoService {
 
       const registro = await queryRunner.manager.save(recepcion);
 
-      // await this.guardarDetalleRecepcion(
-      //   queryRunner,
-      //   registro.id,
-      //   detalles,
-      //   user,
-      // );
-
       await queryRunner.commitTransaction();
 
       return await this.obtenerRecepcionCompleta(registro.id);
@@ -548,15 +483,6 @@ export class ComercioInternoService {
         usuarioUltimaModificacion: user.usuario,
       });
 
-      // await this.inactivarDetalleRecepcion(queryRunner, id.toString(), user);
-
-      // await this.guardarDetalleRecepcion(
-      //   queryRunner,
-      //   id.toString(),
-      //   detalles,
-      //   user,
-      // );
-
       await queryRunner.commitTransaction();
 
       return await this.obtenerRecepcionCompleta(id);
@@ -638,17 +564,6 @@ export class ComercioInternoService {
       .leftJoinAndSelect('recepcion.estado', 'estado')
       .leftJoinAndSelect('recepcion.laboratorio', 'laboratorio')
       .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'");
-
-    // .leftJoinAndSelect(
-    //   'recepcion.detalles',
-    //   'detalle',
-    //   'detalle.activo = :activoDetalle',
-    //   {
-    //     activoDetalle: true,
-    //   },
-    // )
-
-    //.leftJoinAndSelect('detalle.mineral', 'mineral');
 
     //---------------------------------------------------------
     // Búsqueda
@@ -747,7 +662,6 @@ export class ComercioInternoService {
       .leftJoinAndSelect('recepcion.estado', 'estado')
       .leftJoinAndSelect('recepcion.laboratorio', 'laboratorio')
       .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'")
-      // .leftJoinAndSelect('recepcion.estado', 'estado')
       .where('recepcion.id = :id', { id })
       .getOne();
   }

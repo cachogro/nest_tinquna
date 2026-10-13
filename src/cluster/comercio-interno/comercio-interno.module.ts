@@ -17,11 +17,9 @@ import { ParametricasModule } from '../parametricas/parametricas.module';
 
 import { RecepcionMineral } from './entities/recepcion-mineral/recepcion-mineral.entity';
 import { PersonaPersonaTipo } from './entities/persona-persona-tipo.entity';
-import { PersonaTipo } from '../parametricas/entities/persona-tipo.entity';
 import { PersonaCiService } from './services/persona-ci.service';
 import { PersonaCi } from './entities/persona-ci.entity';
 import { ConfigModule } from '@nestjs/config';
-//import { RecepcionMineralDetalle } from './entities/recepcion-mineral/recepcion-mineral-detalle.entity';
 import { RecepcionMineralExcelService } from './reports/recepcion-mineral-excel.service';
 import { RecepcionMineralReportePdfService } from './reports/recepcion-mineral-pdf.service';
 import { CommonModule } from 'src/common/common.module';

@@ -60,13 +60,11 @@ export class AuthService {
     loginUsuarioDto: LoginUsuarioDto,
     meta?: SolicitudMeta,
   ): Promise<{
-    //ciudadania: boolean;
     user: Usuario;
     token: string;
     refreshToken: string;
   }> {
     const { usuario, contrasena } = loginUsuarioDto;
-    // console.log(loginUsuarioDto);
     const userLogged: Usuario = await this.usuarioRepository.findOne({
       where: { usuario: usuario },
       select: {

@@ -87,7 +87,6 @@ export class PersonaCiService {
 
   // En persona-ci.service.ts
 
-  //import { Usuario } from 'src/auth/entities/usuario.entity'; // ajusta ruta
 
   async create(
     createPersonaDto: CreatePersonaCiDto,

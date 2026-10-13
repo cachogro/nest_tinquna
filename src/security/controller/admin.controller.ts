@@ -5,17 +5,14 @@ import {
   HttpStatus,
   Param,
   ParseBoolPipe,
-  ParseIntPipe,
   Patch,
   Post,
   Put,
   Query,
-  Req,
 } from '@nestjs/common';
 
 import {
   ApiTags,
-  ApiHeader,
   ApiBody,
   ApiBearerAuth,
   ApiOperation,
@@ -40,7 +37,6 @@ import { CreateUsuarioDto } from '../dto/usuario/create-usuario.dto';
 import { UpdateUsuarioDto } from '../dto/usuario/update-usuario.dto';
 import { Auth, GetUser } from '../decorators';
 import { ValidRoles } from '../enums/valid-roles';
-import { Rol } from '../entities/rol.entity';
 import { RolResponseDto } from '../dto/roles-response.dto';
 import { FiltrosListarUsuariosDto } from '../dto/filtros-listar-usuarios.dto';
 import { UsuarioResponseDto } from '../dto/usuario/usuario-response.dto';
@@ -200,14 +196,6 @@ export class AdministradorController {
     return await this.$usuario.listarPaginado(filtros);
   }
 
-  // @Patch('cambiar_estado_usuario/:id')
-  // async cambiarEstadoUsuario(
-  //   @Param('id') id: string,
-  //   @Body('activo', ParseBoolPipe) activo: boolean, // Valida que el body contenga un booleano real
-  // ) {
-  //   return this.$usuario.cambiarEstado(id, activo);
-  // }
-
   @Get('roles')
   @Auth()
   @ApiOperation({
@@ -229,23 +217,6 @@ export class AdministradorController {
   findAllRoles(@GetUser() user: Usuario): Promise<RolResponseDto[]> {
     return this.$usuario.findAllRolesByAdmin(user);
   }
-
-  //   @Patch('cambiar_estado_usuario/:id')
-  //   @Auth(ValidRoles.administrador)
-  //   @ApiResponse({
-  //     status: 201,
-  //     description: 'Servicio para cambiar de estado un usuario',
-  //   })
-  //   changeStateUser(
-  //     @Param('id') id: string,
-  //     @Body('activo', ParseBoolPipe) activo: boolean,
-  //     @GetUser() user: Usuario,
-  //   ) {
-  //     return this.$usuario.cambiarEstadoUser(id, activo, user);
-  //   }
-
-  //   import { Patch, Param, Body, ParseBoolPipe, HttpStatus } from '@nestjs/common';
-  // import { EstadoUsuarioResponseDto } from './dto/estado-usuario-response.dto';
 
   @Patch('cambiar_estado_usuario/:id')
   @Auth(ValidRoles.administrador)

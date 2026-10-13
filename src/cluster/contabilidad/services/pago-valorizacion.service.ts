@@ -31,7 +31,6 @@ import {
 import { resolverPersonaAutorizo } from '../persona-autorizo.util';
 import { validarMonedaCuenta } from '../moneda.util';
 import {
-  FORMAS_PAGO_BANCARIAS,
   MedioPagoResuelto,
   resolverMediosPago,
 } from '../medios-pago.util';

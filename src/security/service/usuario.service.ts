@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -16,22 +15,11 @@ import { UsuarioRol } from '../entities/usuario-rol.entity';
 import { CreateUsuarioDto } from '../dto/usuario/create-usuario.dto';
 import { UpdateUsuarioDto } from '../dto/usuario/update-usuario.dto';
 import { Persona } from '../entities/persona.entity';
-import { RolPermiso } from '../entities/rol-permiso.entity';
-import { Permiso } from '../entities/permiso.entity';
-import { PersonaService } from './persona.service';
 import { RolResponseDto } from '../dto/roles-response.dto';
 import { FiltrosListarUsuariosDto } from '../dto/filtros-listar-usuarios.dto';
 import { UsuariosPaginadosDto } from '../dto/usuario/usuario-paginacion.dto';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
 import { paginarConJoinMultiple } from 'src/common/utils/paginar-relacion-multiple.util';
-
-interface FiltrosListarUsuarios {
-  page: number;
-  limit: number;
-  busqueda?: string;
-  idRol?: number;
-  activo?: boolean;
-}
 
 @Injectable()
 export class UsuarioService {

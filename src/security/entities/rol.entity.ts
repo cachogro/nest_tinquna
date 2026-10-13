@@ -1,5 +1,4 @@
 import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
-import { UsuarioRol } from './usuario-rol.entity';
 import { RolPermiso } from './rol-permiso.entity';
 
 @Entity({ name: 'rol', schema: 'seguridad' })

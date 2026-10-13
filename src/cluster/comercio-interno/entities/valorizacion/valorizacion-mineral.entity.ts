@@ -153,15 +153,6 @@ export class ValorizacionMineral extends Auditoria {
   })
   pesoBrutoSecoKilogramos?: number;
 
-  // @Column({
-  //   name: 'peso_neto_humedo_kilogramos',
-  //   type: 'numeric',
-  //   precision: 15,
-  //   scale: 5,
-  //   nullable: true,
-  // })
-  // pesoNetoHumedoKilogramos?: number;
-
   @Column({
     name: 'peso_neto_seco_kilogramos',
     type: 'numeric',

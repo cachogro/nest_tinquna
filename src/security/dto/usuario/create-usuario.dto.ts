@@ -5,7 +5,6 @@ import {
   IsNotEmpty,
   IsOptional,
   ValidateNested,
-  IsInt,
   IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';

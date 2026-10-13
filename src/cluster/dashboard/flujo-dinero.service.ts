@@ -7,8 +7,7 @@ import { FiltroDashboardDto } from './dto/filtro-dashboard.dto';
 
 const LIMITE_CUENTAS = 8;
 
-/** Categorías que entran en la ganancia estimada (el resto es solo flujo). */
-const CATEGORIAS_GASTO: CategoriaPlanCuentas[] = ['GASTO_OPERATIVO', 'SUELDOS'];
+/** Junto con GASTO_OPERATIVO y SUELDOS, lo que entra en la ganancia estimada (el resto es solo flujo). */
 const CATEGORIA_OTRO_INGRESO: CategoriaPlanCuentas = 'OTRO_INGRESO';
 
 export interface IngresoEgreso {

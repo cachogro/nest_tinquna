@@ -62,12 +62,6 @@ export class LaboratorioService {
     updateLaboratorioDto: UpdateLaboratorioDto,
     user: Usuario,
   ): Promise<Laboratorio> {
-    // const laboratorio = await this.laboratorioRepository.findOne({
-    //   where: {
-    //     id: updateLaboratorioDto.id.toString(),
-    //     activo: true,
-    //   },
-    // });
     const laboratorio = await this.obtenerLaboratorio(
       updateLaboratorioDto.id.toString(),
     );
@@ -118,9 +112,6 @@ export class LaboratorioService {
 
   async findAllLaboratorio(): Promise<Laboratorio[]> {
     return await this.laboratorioRepository.find({
-      // where: {
-      //   activo: true,
-      // },
       order: {
         nombre: 'ASC',
       },

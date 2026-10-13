@@ -286,10 +286,6 @@ export class ReciboController {
     @Body() body: CreateReciboDto,
     @GetUser() user: Usuario,
   ): Promise<Recibo> {
-    console.log(
-      'POST /contabilidad/recibo body:',
-      JSON.stringify(body, null, 2),
-    );
     return await this.reciboService.generar(body, user);
   }
 
@@ -367,10 +363,6 @@ export class ReciboController {
     @Body() body: ProcesarReciboDto,
     @GetUser() user: Usuario,
   ): Promise<Recibo> {
-    console.log(
-      `PATCH /contabilidad/recibo/${id}/procesar body:`,
-      JSON.stringify(body, null, 2),
-    );
     return await this.reciboService.procesar(id, body, user);
   }
 

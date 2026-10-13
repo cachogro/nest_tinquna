@@ -24,7 +24,6 @@ import { PrestamoPersonal } from './entities/prestamo-personal.entity';
 import { MovimientoPrestamo } from './entities/movimiento-prestamo.entity';
 import { BoletaPago } from './entities/boleta-pago.entity';
 import { ReportePlanCuentasService } from './services/reporte-plan-cuentas.service';
-//import { ReciboPdfProcesadoController } from './controller/recibo-pdf-procesado.controller';
 import { LibretaBancoService } from './services/libreta-banco.service';
 import { KardexService } from './services/kardex.service';
 import { MovimientoKardexService } from './services/movimiento-kardex.service';

@@ -55,7 +55,6 @@ import { ActorProdMineroService } from '../services/actor-productivo-minero.serv
 import { ActorProductivoMinero } from '../entities/actor-productivo-minero.entity';
 import { Cliente } from '../entities/cliente.entity';
 import { ClienteService } from '../services/cliente.service';
-import { CreateClienteDto } from '../dto/cliente/create-cliente.dto';
 import { UpdateClienteDto } from '../dto/cliente/update-cliente.dto';
 import { FiltrosClienteDto } from '../dto/cliente/filtros-cliente.dto';
 import { ClientesPaginadosDto } from '../dto/cliente/cliente-paginacion.dto';
@@ -65,7 +64,6 @@ import { Laboratorio } from '../entities/laboratorio.entity';
 import { CreateLaboratorioDto } from '../dto/laboratorio/create-laboratorio.dto';
 import { UpdateLaboratorioDto } from '../dto/laboratorio/update-laboratorio.dto';
 import { LaboratorioService } from '../services/laboratorio.service';
-import { CambiarEstadoLaboratorioDto } from '../dto/laboratorio/cambiar-estado-laboratorio.dto';
 import { EstadoValorizacion } from '../entities/estado-valorizacion.entity';
 import { EstadoRegistro } from '../entities/estado-registro.entity';
 import { EntidadAporte } from '../entities/entidad-aporte.entity';

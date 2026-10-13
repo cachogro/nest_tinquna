@@ -1,6 +1,6 @@
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 
-import { IsString, IsOptional, IsNumber, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreatePersonaDto } from '../create-persona.dto';
 

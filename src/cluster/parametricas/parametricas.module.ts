@@ -10,7 +10,6 @@ import { ParametricasService } from './services/parametricas.service';
 import { TipoDocumento } from './entities/tipo_documento.entity';
 import { LugarEmisionDocumento } from './entities/lugar_emision_documento.entity';
 import { PersonaTipo } from './entities/persona-tipo.entity';
-import { RecepcionMineral } from '../comercio-interno/entities/recepcion-mineral/recepcion-mineral.entity';
 import { EstadoRegistro } from './entities/estado-registro.entity';
 import { ConfigModule } from '@nestjs/config';
 import { CotizacionMineralService } from './services/cotizacion-mineral.service';

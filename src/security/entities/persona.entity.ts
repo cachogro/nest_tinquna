@@ -1,8 +1,6 @@
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
 import { Usuario } from './usuario.entity';
-import { IsDateString } from 'class-validator';
-import { Type } from 'class-transformer';
 
 @Entity({ name: 'persona', schema: 'seguridad' })
 export class Persona extends Auditoria {

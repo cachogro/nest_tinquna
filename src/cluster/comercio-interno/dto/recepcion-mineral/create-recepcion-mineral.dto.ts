@@ -1,9 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 import {
-  ArrayMinSize,
-  IsArray,
-  IsDateString,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -11,9 +7,7 @@ import {
   IsString,
   Matches,
   MaxLength,
-  ValidateNested,
 } from 'class-validator';
-import { CreateRecepcionMineralDetalleDto } from './create-recepcion-mineral-detalle.dto';
 
 export class CreateRecepcionMineralDto {
   @ApiProperty({
@@ -147,18 +141,6 @@ export class CreateRecepcionMineralDto {
     message: 'El proveedor es obligatorio.',
   })
   idPersonalInterno: string;
-  // @ApiPropertyOptional({
-  //   description: 'Valor bruto referencial de la compra.',
-  //   example: 98500.75,
-  // })
-  // @IsOptional()
-  // @IsNumber(
-  //   {},
-  //   {
-  //     message: 'El valor bruto debe ser un número válido.',
-  //   },
-  // )
-  // totalValorBruto?: number;
 
   @ApiProperty({
     description: 'Fecha de la transacción.',
@@ -209,16 +191,4 @@ export class CreateRecepcionMineralDto {
   })
   observaciones?: string;
 
-  // @IsArray({
-  //   message: 'Debe enviar el detalle de minerales.',
-  // })
-  // @ArrayMinSize(1, {
-  //   message: 'Debe registrar al menos un mineral.',
-  // })
-  // @ValidateNested({
-  //   each: true,
-  // })
-  // @IsOptional()
-  // @Type(() => CreateRecepcionMineralDetalleDto)
-  // detalles: CreateRecepcionMineralDetalleDto[];
 }

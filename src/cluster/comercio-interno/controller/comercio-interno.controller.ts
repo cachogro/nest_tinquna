@@ -2,14 +2,11 @@ import {
   Body,
   Controller,
   Get,
-  HttpCode,
-  HttpStatus,
   Param,
   ParseBoolPipe,
   ParseIntPipe,
   Patch,
   Post,
-  Put,
   Query,
   Res,
 } from '@nestjs/common';
@@ -38,7 +35,6 @@ import { RolesModules } from 'src/security/enums/valid-roles';
 import { PersonaCiService } from '../services/persona-ci.service';
 import { PersonaCi } from '../entities/persona-ci.entity';
 import { UpdatePersonaCiDto } from '../dto/persona-ci/update-persona-ci.dto';
-import { CreatePersonaCiDto } from '../dto/persona-ci/create-persona-ci.dto';
 import { UpdateRecepcionMineralDto } from '../dto/recepcion-mineral/update-recepcion-mineral.dto';
 import { RecepcionMineral } from '../entities/recepcion-mineral/recepcion-mineral.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
@@ -365,7 +361,6 @@ export class ComercioInternoController {
     body: CreateRecepcionMineralDto | UpdateRecepcionMineralDto,
     @GetUser() user: Usuario,
   ): Promise<RecepcionMineral> {
-    console.log('data recibida', body);
     if ('id' in body && body.id) {
       return await this.comercioInternoService.update(body, user);
     }

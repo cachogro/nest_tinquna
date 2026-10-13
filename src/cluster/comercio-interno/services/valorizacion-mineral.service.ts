@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   Injectable,
@@ -637,7 +636,6 @@ export class ValorizacionMineralService {
    * asociada esté en APROBADO o REMUESTREO. Una vez TRANZADO, queda bloqueada.
    */
   private validarValorizacionEditable(valorizacion: ValorizacionMineral): void {
-    //console.log('dsadas', valorizacion.recepcionMineral.idEstado);
     if (
       !ESTADOS_RECEPCION_VALORIZABLES.includes(
         Number(valorizacion.recepcionMineral.idEstado),
@@ -764,8 +762,6 @@ export class ValorizacionMineralService {
     user: Usuario,
   ): Promise<ValorizacionMineral> {
     const valorizacion = await this.obtenerValorizacionParaEditar(id);
-    // console.log('valorizacion new  ', dto);
-    // console.log('valorizacion old ', valorizacion);
     this.validarValorizacionEditable(valorizacion);
 
     if (dto.idLaboratorio !== undefined) {
@@ -892,10 +888,6 @@ export class ValorizacionMineralService {
       }
 
       await queryRunner.commitTransaction();
-      // console.log(
-      //   'commit transaction',
-      //   await this.obtenerValorizacionCompleta(id),
-      // );
       return await this.obtenerValorizacionCompleta(id);
     } catch (error) {
       await queryRunner.rollbackTransaction();

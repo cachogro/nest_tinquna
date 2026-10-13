@@ -1,5 +1,5 @@
 import { Auditoria } from 'src/common/entities/auditoria.entity';
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn, Unique } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
 
 @Entity({
   name: 'estado_valorizacion',

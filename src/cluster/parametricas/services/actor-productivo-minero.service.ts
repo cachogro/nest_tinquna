@@ -30,32 +30,6 @@ export class ActorProdMineroService {
     private readonly municipioRepository: Repository<Municipio>,
   ) {}
 
-  // async create(
-  //   createIngenioDto: CreateIngenioDto,
-  //   user: Usuario,
-  // ): Promise<ActorProductivoMinero> {
-  //   const existe = await this.actorProdMineroRepository
-  //     .createQueryBuilder('ingenio')
-  //     .where('LOWER(ingenio.nombre) = LOWER(:nombre)', {
-  //       nombre: createIngenioDto.nombre.trim(),
-  //     })
-  //     .getOne();
-
-  //   if (existe) {
-  //     throw new ConflictException(
-  //       `Ya existe un ingenio registrado con el nombre "${createIngenioDto.nombre}".`,
-  //     );
-  //   }
-
-  //   const ingenio = this.actorProdMineroRepository.create({
-  //     nombre: createIngenioDto.nombre.trim(),
-  //     direccion: createIngenioDto.direccion.trim(),
-  //     telefono: createIngenioDto.telefono?.trim(),
-  //     usuarioRegistro: user.usuario,
-  //   });
-
-  //   return await this.actorProdMineroRepository.save(ingenio);
-  // }
 
   async create(
     createActorDto: CreateActorProductivoMineroDto,
