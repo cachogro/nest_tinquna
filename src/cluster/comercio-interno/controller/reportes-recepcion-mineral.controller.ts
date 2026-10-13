@@ -7,7 +7,8 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { Auth } from 'src/security/decorators';
+import { Auth, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { RecepcionMineralReportesService } from '../reports/recepcion-mineral-reportes.service';
 import { FiltroReporteProduccionDto } from '../dto/reportes/filtro-reporte-produccion.dto';
 import { FiltroReporteProveedorDto } from '../dto/reportes/filtro-reporte-proveedor.dto';
@@ -57,6 +58,7 @@ const QUERY_PERIODO = [
 @ApiTags('Reportes de Recepción de Mineral')
 @Controller('comercio_interno/reportes/recepcion_mineral')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.comercioInternoApi)
 export class ReportesRecepcionMineralController {
   constructor(
     private readonly reportesService: RecepcionMineralReportesService,

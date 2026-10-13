@@ -12,7 +12,8 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { CodificacionLote } from 'src/cluster/parametricas/entities/codificacion-lote.entity';
 import { PromedioMineral } from '../entities/promedio/promedio-mineral.entity';
@@ -31,6 +32,7 @@ import { PromedioMineralReporteExcelService } from '../reports/promedio-mineral-
 @ApiTags('Promedios de Mineral')
 @Controller('comercio_interno')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.comercioInternoApi)
 export class PromedioMineralController {
   constructor(
     private readonly promedioService: PromedioMineralService,

@@ -116,7 +116,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Verificar estado de autenticación',
     description:
-      'Retorna el usuario autenticado (válido para verificar token).',
+      'Retorna el usuario autenticado (válido para verificar token) con sus permisos de pantalla actualizados.',
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -125,7 +125,7 @@ export class AuthController {
   })
   @ApiUnauthorizedResponse({ description: 'Token inválido o ausente.' })
   checkAuthStatus(@GetUser() user: Usuario) {
-    return user;
+    return this.$usuario.estadoSesion(user);
   }
 
   @Get('private')

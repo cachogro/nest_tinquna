@@ -12,6 +12,7 @@ import {
   conceptoConRecepcion,
   muestreroRecepcionRecibo,
 } from '../recibo-recepcion.util';
+import { fechaConHoraEmision } from '../fecha-hora.util';
 
 const LOGO_PATH = join(process.cwd(), 'uploads', 'logo.png');
 
@@ -302,10 +303,17 @@ export class ReciboPdfService {
     }
 
     // --- Efectivo / Cheque / Banco + Fecha ---
-    const codigoFormaPago = recibo.formaPago?.codigo ?? null;
-    const esEfectivo = codigoFormaPago === 'EFECTIVO';
-    const esCheque = codigoFormaPago === 'CHEQUE';
-    const esBanco = !!codigoFormaPago && !esEfectivo && !esCheque;
+    // Pago mixto (efectivo + QR, etc.): se marca cada casillero que
+    // corresponda y se detalla cuánto salió por cada medio.
+    const pagosMixtos = this.pagosMixtos(recibo);
+    const codigosFormaPago = pagosMixtos.length
+      ? pagosMixtos.map((p) => p.formaPago?.codigo ?? null)
+      : [recibo.formaPago?.codigo ?? null];
+    const esEfectivo = codigosFormaPago.includes('EFECTIVO');
+    const esCheque = codigosFormaPago.includes('CHEQUE');
+    const esBanco = codigosFormaPago.some(
+      (codigo) => !!codigo && codigo !== 'EFECTIVO' && codigo !== 'CHEQUE',
+    );
 
     const anchoCasillero = anchoInterno / 3;
     this.casillero(doc, xi, y, anchoCasillero, 'Efectivo.º', esEfectivo);
@@ -333,11 +341,31 @@ export class ReciboPdfService {
       doc,
       xi + 40,
       y,
-      200,
-      this.formatearFechaLarga(recibo.fecha),
+      240,
+      fechaConHoraEmision(
+        this.formatearFechaLarga(recibo.fecha),
+        recibo.fecha,
+        recibo.fechaHoraGeneracion,
+      ),
     );
 
-    if (esBanco) {
+    if (pagosMixtos.length) {
+      const simbolo = recibo.moneda === 'USD' ? '$us' : 'Bs';
+      const detallePagos = pagosMixtos
+        .map((p) =>
+          [
+            `${p.formaPago?.nombre ?? ''} ${simbolo} ${this.formatearMonto(p.monto)}`,
+            p.nroComprobante && `Comp. ${p.nroComprobante}`,
+          ]
+            .filter(Boolean)
+            .join(' '),
+        )
+        .join(' + ');
+      doc
+        .font('Helvetica')
+        .fontSize(7)
+        .text(detallePagos, xi + 250, y + 1, { width: anchoInterno - 250 });
+    } else if (esBanco) {
       const banco =
         recibo.cuentaBancaria?.entidadFinanciera?.sigla ??
         recibo.cuentaBancaria?.entidadFinanciera?.nombre ??
@@ -531,6 +559,14 @@ export class ReciboPdfService {
       nombre: (recibo.nombresApellidos ?? '').toUpperCase(),
       ci: recibo.persona?.numeroDocumento ?? '',
     };
+  }
+
+  /** Medios de un pago mixto, en orden; vacío si se pagó por un solo medio. */
+  private pagosMixtos(recibo: Recibo) {
+    const pagos = (recibo.pagos ?? []).filter((p) => p.activo !== false);
+    return pagos.length > 1
+      ? [...pagos].sort((a, b) => a.orden - b.orden)
+      : [];
   }
 
   private formatearMonto(monto: number): string {

@@ -92,4 +92,11 @@ export class Usuario extends Auditoria {
     },
   })
   roles: Rol[];
+
+  /**
+   * Códigos de permiso de pantalla del usuario (según sus roles). No es una
+   * columna: se completa al iniciar sesión y en "auth/check-status" para que
+   * el front arme el menú, las rutas y los botones.
+   */
+  permisos?: string[];
 }

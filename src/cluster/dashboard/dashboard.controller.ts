@@ -49,7 +49,7 @@ export class DashboardController {
       'Bs/$us (todas las cuentas unificadas) más el total en Bs. Los $us sin tipo de cambio ' +
       'van aparte en `usdSinTipoCambio` y no entran al total en Bs. `ganancia` = utilidad de ' +
       'los lotes liquidados en el período + otros ingresos − gastos operativos − sueldos, ' +
-      'según la categoría de cada destino de gasto. Sin fechas: mes actual.',
+      'según la categoría de cada plan de cuentas. Sin fechas: mes actual.',
   })
   @ApiBadRequestResponse({ description: 'Fechas inválidas o fechaDesde posterior a fechaHasta.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })

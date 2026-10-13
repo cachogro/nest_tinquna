@@ -71,11 +71,11 @@ export class ReciboDetalleDto {
   @ApiPropertyOptional({
     example: 8,
     description:
-      'Id del destino del gasto (parametrica.destino_gasto) que clasifica esta porción. Se aplica tanto a la línea de kardex como al movimiento de caja de flujo que genera esta línea (cada línea puede tener un destino distinto).',
+      'Id del plan de cuentas (parametrica.plan_cuentas) que clasifica esta porción. Se aplica tanto a la línea de kardex como al movimiento de caja de flujo que genera esta línea (cada línea puede tener un destino distinto).',
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 }

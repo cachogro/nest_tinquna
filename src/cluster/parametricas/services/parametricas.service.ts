@@ -14,7 +14,7 @@ import { EstadoRegistro } from '../entities/estado-registro.entity';
 import { EstadoValorizacion } from '../entities/estado-valorizacion.entity';
 import { FormaPago } from '../entities/forma-pago.entity';
 import { KardexSubcuenta } from '../entities/kardex-subcuenta.entity';
-import { DestinoGasto } from '../entities/destino-gasto.entity';
+import { PlanCuentas } from '../entities/plan-cuentas.entity';
 import { LugarAcopio } from '../entities/lugar-acopio.entity';
 
 @Injectable()
@@ -47,8 +47,8 @@ export class ParametricasService {
     @InjectRepository(KardexSubcuenta, 'ci')
     private readonly kardexSubcuentaRepository: Repository<KardexSubcuenta>,
 
-    @InjectRepository(DestinoGasto, 'ci')
-    private readonly destinoGastoRepository: Repository<DestinoGasto>,
+    @InjectRepository(PlanCuentas, 'ci')
+    private readonly planCuentasRepository: Repository<PlanCuentas>,
 
     @InjectRepository(LugarAcopio, 'ci')
     private readonly lugarAcopioRepository: Repository<LugarAcopio>,
@@ -132,8 +132,8 @@ export class ParametricasService {
     });
   }
 
-  async findAllDestinoGasto(): Promise<DestinoGasto[]> {
-    return await this.destinoGastoRepository.find({
+  async findAllPlanCuentas(): Promise<PlanCuentas[]> {
+    return await this.planCuentasRepository.find({
       where: { activo: true },
       order: { nombre: 'ASC' },
     });

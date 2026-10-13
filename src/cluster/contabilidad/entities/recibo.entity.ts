@@ -17,6 +17,7 @@ import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
 import { MovimientoCaja } from './movimiento-caja.entity';
 import { LibretaBanco } from './libreta-banco.entity';
 import { ReciboDetalle } from './recibo-detalle.entity';
+import { ReciboPago } from './recibo-pago.entity';
 import { MonedaCaja } from './periodo-caja.entity';
 import { PersonaAutorizo } from '../persona-autorizo.util';
 import { VentaLote } from './venta-lote.entity';
@@ -31,7 +32,7 @@ export type EstadoRecibo = 'BORRADOR' | 'PROCESADO' | 'ANULADO';
  * el registro maestro de la empresa). El monto se subdivide (ver
  * ReciboDetalle) entre kardex PERSONAL / kardex de un ACTOR / EFECTIVO
  * directo, y cada línea genera su propio movimiento en la caja de flujo con
- * su propio destino_gasto (ver ReciboDetalle.idDestinoGasto). Las líneas
+ * su propio plan_cuentas (ver ReciboDetalle.idPlanCuentas). Las líneas
  * PERSONAL/ACTOR postean HABER en ese kardex (salda deuda) y un INGRESO en
  * caja (valor recuperado por la empresa); las líneas EFECTIVO no tocan
  * ningún kardex, pero generan un EGRESO en caja (dinero que realmente
@@ -344,4 +345,10 @@ export class Recibo extends Auditoria {
 
   @OneToMany(() => ReciboDetalle, (detalle) => detalle.recibo)
   detalles?: ReciboDetalle[];
+
+  // Medios de un pago MIXTO (dos o más: efectivo + QR, etc.). Vacío cuando
+  // se pagó por un solo medio: ese vive en idFormaPago / idCuentaBancaria /
+  // nroComprobante, que en un pago mixto guardan los del primero.
+  @OneToMany(() => ReciboPago, (pago) => pago.recibo)
+  pagos?: ReciboPago[];
 }

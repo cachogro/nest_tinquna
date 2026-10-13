@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -13,6 +14,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { MedioPagoDto } from '../medio-pago.dto';
 
 export const DESTINOS_KARDEX_PAGO = ['PERSONAL', 'ACTOR', 'CLIENTE'] as const;
 export type DestinoKardexPago = (typeof DESTINOS_KARDEX_PAGO)[number];
@@ -97,12 +99,28 @@ export class CreatePagoValorizacionDto {
   })
   nroComprobante?: string;
 
-  @ApiPropertyOptional({ example: 12, description: 'Destino del gasto (de egreso).' })
+  @ApiPropertyOptional({
+    type: [MedioPagoDto],
+    description:
+      'Pago MIXTO: los medios por los que sale el dinero (por ejemplo, la mitad en efectivo y el resto por QR). La suma de los montos debe ser igual a lo que se paga (líquido − abonos). Si se envía, reemplaza a `idFormaPago` / `idCuentaBancaria` / `nroComprobante`, que quedan con los datos del primer medio. Con un solo medio no hace falta: alcanza con esos tres campos.',
+    example: [
+      { idFormaPago: 1, monto: 500 },
+      { idFormaPago: 2, monto: 500, idCuentaBancaria: 1, nroComprobante: '4613159797' },
+    ],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Los medios de pago deben ser una lista.' })
+  @ArrayMinSize(1, { message: 'Indicá al menos un medio de pago.' })
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  pagos?: MedioPagoDto[];
+
+  @ApiPropertyOptional({ example: 12, description: 'Plan de cuentas (de egreso).' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 
   @ApiProperty({
     example: '7',

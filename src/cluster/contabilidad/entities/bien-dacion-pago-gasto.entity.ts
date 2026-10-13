@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { BienDacionPago } from './bien-dacion-pago.entity';
 import { PersonaAutorizo } from '../persona-autorizo.util';
 
@@ -64,21 +64,21 @@ export class BienDacionPagoGasto extends Auditoria {
   monto: number;
 
   @Column({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     type: 'int',
     nullable: true,
   })
-  idDestinoGasto?: number | null;
+  idPlanCuentas?: number | null;
 
-  @ManyToOne(() => DestinoGasto, {
+  @ManyToOne(() => PlanCuentas, {
     nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     referencedColumnName: 'id',
   })
-  destinoGasto?: DestinoGasto;
+  planCuentas?: PlanCuentas;
 
   @Column({
     name: 'id_movimiento_caja',

@@ -9,7 +9,7 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { KardexSubcuenta } from 'src/cluster/parametricas/entities/kardex-subcuenta.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { ValorizacionMineral } from 'src/cluster/comercio-interno/entities/valorizacion/valorizacion-mineral.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
@@ -23,15 +23,22 @@ import { MovimientoCajaService } from './movimiento-caja.service';
 import { LibretaBancoService } from './libreta-banco.service';
 import { MonedaCaja } from '../entities/periodo-caja.entity';
 import { aBolivianos, resolverTipoCambio, validarMonedaCuenta } from '../moneda.util';
+import { MovimientoCaja } from '../entities/movimiento-caja.entity';
+import { LibretaBanco } from '../entities/libreta-banco.entity';
+import {
+  origenDeLineaKardex,
+  origenesDeLineasKardex,
+  validarSinOrigen,
+} from '../origen-movimiento.util';
 
 const RELACIONES = {
   subcuenta: true,
   formaPago: true,
-  destinoGasto: true,
+  planCuentas: true,
   cobrador: true,
   valorizacion: true,
   cuentaBancaria: { entidadFinanciera: true },
-  movimientosCaja: { destinoGasto: true },
+  movimientosCaja: { planCuentas: true },
 } as const;
 
 // La caja de flujo (Caja id=1, "CAJA PRINCIPAL") es el registro maestro de
@@ -55,8 +62,8 @@ export class MovimientoKardexService {
     @InjectRepository(FormaPago, 'ci')
     private readonly formaPagoRepository: Repository<FormaPago>,
 
-    @InjectRepository(DestinoGasto, 'ci')
-    private readonly destinoGastoRepository: Repository<DestinoGasto>,
+    @InjectRepository(PlanCuentas, 'ci')
+    private readonly planCuentasRepository: Repository<PlanCuentas>,
 
     @InjectRepository(PersonaCi, 'ci')
     private readonly personaRepository: Repository<PersonaCi>,
@@ -157,6 +164,41 @@ export class MovimientoKardexService {
   }
 
   /**
+   * Movimiento de dinero enlazado a la línea: el de caja (efectivo) o el de
+   * libreta (medio bancario) que se generó al cargarla, o el de libreta que
+   * la generó a ella. Se corrige y se activa/desactiva junto con la línea
+   * para que caja y bancos no queden descuadrados con el kardex. Falla si
+   * cayó en un período ya cerrado.
+   */
+  private async movimientoDineroDeLinea(idLinea: string): Promise<{
+    caja: MovimientoCaja | null;
+    banco: LibretaBanco | null;
+  }> {
+    const manager = this.dataSource.manager;
+    const [caja, banco] = await Promise.all([
+      manager.findOne(MovimientoCaja, {
+        where: { idMovimientoKardex: idLinea },
+        relations: { periodoCaja: true },
+      }),
+      manager.findOne(LibretaBanco, {
+        where: { idMovimientoKardex: idLinea },
+        relations: { periodoBanco: true },
+      }),
+    ]);
+    if (caja?.periodoCaja?.estado === 'CERRADO') {
+      throw new BadRequestException(
+        'El movimiento de caja de esta línea está en un período cerrado: no puede modificarse. Reabrí el período o registrá una regularización.',
+      );
+    }
+    if (banco?.periodoBanco?.estado === 'CERRADO') {
+      throw new BadRequestException(
+        'El movimiento de libreta bancaria de esta línea está en un período cerrado: no puede modificarse. Reabrí el período o registrá una regularización.',
+      );
+    }
+    return { caja, banco };
+  }
+
+  /**
    * Solo valida que la cuenta exista y esté activa (uso puramente
    * informativo si no hay nada que postear en libreta_banco). La
    * validación de "aperturada" se hace aparte, justo antes de postear.
@@ -191,7 +233,7 @@ export class MovimientoKardexService {
     return formaPago;
   }
 
-  private async validarReferenciasOpcionales(
+  async validarReferenciasOpcionales(
     dto: CreateMovimientoKardexDto,
   ): Promise<void> {
     if (dto.idSubcuenta) {
@@ -202,13 +244,13 @@ export class MovimientoKardexService {
         throw new NotFoundException('No existe la subcuenta seleccionada.');
       }
     }
-    if (dto.idDestinoGasto) {
-      const existe = await this.destinoGastoRepository.findOne({
-        where: { id: dto.idDestinoGasto },
+    if (dto.idPlanCuentas) {
+      const existe = await this.planCuentasRepository.findOne({
+        where: { id: dto.idPlanCuentas },
       });
       if (!existe) {
         throw new NotFoundException(
-          'No existe el destino del gasto seleccionado.',
+          'No existe el plan de cuentas seleccionado.',
         );
       }
     }
@@ -285,7 +327,7 @@ export class MovimientoKardexService {
       fecha: string;
       detalle: string;
       facturaRecibo?: string | null;
-      idDestinoGasto?: number | null;
+      idPlanCuentas?: number | null;
       debe: number;
       haber: number;
       usuarioRegistro: string;
@@ -306,7 +348,7 @@ export class MovimientoKardexService {
         fecha: datos.fecha,
         facturaRecibo: datos.facturaRecibo ?? null,
         detalle: datos.detalle,
-        idDestinoGasto: datos.idDestinoGasto ?? null,
+        idPlanCuentas: datos.idPlanCuentas ?? null,
         lote: datos.lote ?? null,
         moneda: datos.moneda ?? 'BS',
         tipoCambio: datos.tipoCambio ?? null,
@@ -365,11 +407,22 @@ export class MovimientoKardexService {
     const cuentaBancaria = await this.resolverCuentaBancariaOpcional(
       dto.idCuentaBancaria,
     );
+    // Una forma de pago interna (afectaFondo = false, ej. TRANZADO: la
+    // valorización que se descuenta del anticipo) no mueve plata: la línea
+    // queda solo en el kardex, sin caja de flujo ni libreta de bancos.
+    const mueveFondos = formaPago?.afectaFondo !== false;
+    if (!mueveFondos && cuentaBancaria) {
+      throw new BadRequestException(
+        `La forma de pago ${formaPago.nombre} es interna (no mueve fondos): no lleva cuenta bancaria.`,
+      );
+    }
     // Con cuenta bancaria (medio bancario) el movimiento solo afecta la
     // libreta de bancos; sin ella (efectivo) solo afecta la caja de flujo.
     // Ambas reciben el monto en la moneda del movimiento.
     let cajaEmpresa: Caja | null = null;
-    if (cuentaBancaria) {
+    if (!mueveFondos) {
+      // Nada que validar: no hay caja ni cuenta que deban estar aperturadas.
+    } else if (cuentaBancaria) {
       validarMonedaCuenta(cuentaBancaria, moneda);
       await this.libretaBancoService.obtenerCuentaAperturada(cuentaBancaria.id);
       if (!formaPago) {
@@ -401,7 +454,7 @@ export class MovimientoKardexService {
           lote: dto.lote?.trim() || null,
           idSubcuenta: dto.idSubcuenta ?? null,
           idFormaPago: dto.idFormaPago ?? null,
-          idDestinoGasto: dto.idDestinoGasto ?? null,
+          idPlanCuentas: dto.idPlanCuentas ?? null,
           idCobrador: dto.idCobrador ? String(dto.idCobrador) : null,
           idValorizacion: dto.idValorizacion ? String(dto.idValorizacion) : null,
           ...importes,
@@ -412,7 +465,9 @@ export class MovimientoKardexService {
 
       await this.recalcularKardex(manager, kardex.id);
 
-      if (!cuentaBancaria) {
+      if (!mueveFondos) {
+        // Forma de pago interna: solo el kardex.
+      } else if (!cuentaBancaria) {
         // Efectivo: solo afecta la caja de flujo. DEBE (anticipo entregado,
         // plata que sale) -> EGRESO; HABER (pago/descuento, salda deuda,
         // valor recuperado) -> INGRESO.
@@ -421,6 +476,7 @@ export class MovimientoKardexService {
           cajaEmpresa!,
           {
             moneda,
+            tipoCambio: importes.tipoCambio,
             fecha: dto.fecha,
             nroComprobante: dto.nroComprobante?.trim() || null,
             facturaRecibo: dto.facturaRecibo?.trim() || null,
@@ -428,7 +484,7 @@ export class MovimientoKardexService {
             idPersona: beneficiario.idPersona,
             entregaFondosA: beneficiario.entregaFondosA,
             concepto: dto.detalle.trim(),
-            idDestinoGasto: dto.idDestinoGasto ?? null,
+            idPlanCuentas: dto.idPlanCuentas ?? null,
             idMovimientoKardex: mov.id,
             ingreso: dto.tipo === 'HABER' ? monto : 0,
             egreso: dto.tipo === 'DEBE' ? monto : 0,
@@ -449,7 +505,7 @@ export class MovimientoKardexService {
             idPersona: beneficiario.idPersona,
             nombresApellidos: beneficiario.entregaFondosA,
             concepto: dto.detalle.trim(),
-            idDestinoGasto: dto.idDestinoGasto ?? null,
+            idPlanCuentas: dto.idPlanCuentas ?? null,
             idMovimientoKardex: mov.id,
             debe: dto.tipo === 'DEBE' ? monto : 0,
             haber: dto.tipo === 'HABER' ? monto : 0,
@@ -466,10 +522,10 @@ export class MovimientoKardexService {
   }
 
   /**
-   * No sincroniza el movimiento de caja generado en `crear()` (igual que un
-   * recibo ya PROCESADO tampoco se puede corregir automáticamente): si hace
-   * falta corregir el monto/tipo, se ajusta también a mano el movimiento de
-   * caja correspondiente (`MovimientoCaja.idMovimientoKardex`).
+   * Una línea generada por otro documento (recibo, pago de valorización,
+   * bien en dación, fondo a rendir, venta de lote, préstamo) solo se
+   * reclasifica acá; sus importes se corrigen desde ese documento. Una línea
+   * cargada a mano corrige también su movimiento de caja o de libreta.
    */
   private async actualizar(
     dto: CreateMovimientoKardexDto,
@@ -489,6 +545,24 @@ export class MovimientoKardexService {
 
     const kardex = await this.obtenerKardexAbierto(dto.idKardex);
     await this.validarReferenciasOpcionales(dto);
+
+    const origen = await origenDeLineaKardex(this.dataSource.manager, mov);
+    if (origen) {
+      // No mueve ningún saldo: solo cómo se clasifica la línea en el kardex.
+      await this.movimientoRepository.update(mov.id, {
+        detalle: dto.detalle.trim(),
+        lote: dto.lote?.trim() || null,
+        idSubcuenta: dto.idSubcuenta ?? null,
+        idPlanCuentas: dto.idPlanCuentas ?? null,
+        idCobrador: dto.idCobrador ? String(dto.idCobrador) : null,
+        usuarioUltimaModificacion: user.usuario,
+      });
+      return this.movimientoRepository.findOne({
+        where: { id: mov.id },
+        relations: RELACIONES,
+      });
+    }
+
     const importes = this.importes(dto);
     const cuentaBancaria = await this.resolverCuentaBancariaOpcional(
       dto.idCuentaBancaria,
@@ -496,8 +570,82 @@ export class MovimientoKardexService {
     if (cuentaBancaria) {
       validarMonedaCuenta(cuentaBancaria, importes.moneda);
     }
+    const formaPago = await this.resolverFormaPagoOpcional(dto.idFormaPago);
+
+    // El medio (efectivo o qué cuenta) y la moneda definen DÓNDE está el
+    // movimiento de dinero; cambiarlos sería moverlo de caja a banco o entre
+    // cuentas, y eso se hace desactivando la línea y cargándola de nuevo.
+    const dinero = await this.movimientoDineroDeLinea(mov.id);
+    const registrarDeNuevo = 'Desactivá la línea y registrala de nuevo.';
+    const mueveFondos = formaPago?.afectaFondo !== false;
+    if (mueveFondos !== !!(dinero.caja || dinero.banco)) {
+      throw new BadRequestException(
+        dinero.caja || dinero.banco
+          ? `Esta línea ya movió fondos (caja de flujo o libreta): no se puede pasar a una forma de pago interna. ${registrarDeNuevo}`
+          : `Esta línea se registró con una forma de pago interna (sin mover fondos): no se puede pasar a una que sí los mueve. ${registrarDeNuevo}`,
+      );
+    }
+    if (dinero.caja && cuentaBancaria) {
+      throw new BadRequestException(
+        `Esta línea se pagó en efectivo (caja de flujo): no se puede pasar a una cuenta bancaria. ${registrarDeNuevo}`,
+      );
+    }
+    if (dinero.caja && dinero.caja.moneda !== importes.moneda) {
+      throw new BadRequestException(
+        `Esta línea está en la caja de flujo en ${dinero.caja.moneda}: no se puede cambiar la moneda. ${registrarDeNuevo}`,
+      );
+    }
+    if (dinero.banco && cuentaBancaria?.id !== dinero.banco.idCuentaBancaria) {
+      throw new BadRequestException(
+        `Esta línea está en la libreta de una cuenta bancaria: no se puede cambiar la cuenta ni pasarla a efectivo. ${registrarDeNuevo}`,
+      );
+    }
+    const monto = this.r2(Number(dto.monto));
+    const nroComprobante = dto.nroComprobante?.trim() || null;
+    const facturaRecibo = dto.facturaRecibo?.trim() || null;
 
     return this.dataSource.transaction(async (manager) => {
+      // DEBE (anticipo, plata que sale) = EGRESO de caja / DEBE de libreta;
+      // HABER (pago) = INGRESO / HABER. Ambas reciben el monto en la moneda
+      // de la línea.
+      if (dinero.caja) {
+        await this.movimientoCajaService.actualizarEnTransaccion(
+          manager,
+          dinero.caja,
+          {
+            tipoCambio: importes.tipoCambio,
+            fecha: dto.fecha,
+            nroComprobante,
+            facturaRecibo,
+            idFormaPago: formaPago?.id ?? null,
+            concepto: dto.detalle.trim(),
+            idPlanCuentas: dto.idPlanCuentas ?? null,
+            ingreso: dto.tipo === 'HABER' ? monto : 0,
+            egreso: dto.tipo === 'DEBE' ? monto : 0,
+          },
+          user,
+        );
+      }
+      if (dinero.banco && cuentaBancaria) {
+        await this.libretaBancoService.actualizarEnTransaccion(
+          manager,
+          cuentaBancaria,
+          dinero.banco,
+          {
+            fecha: dto.fecha,
+            nroTransaccion: nroComprobante,
+            tipoTransaccion: formaPago?.nombre ?? dinero.banco.tipoTransaccion,
+            facturaRecibo,
+            concepto: dto.detalle.trim(),
+            idPlanCuentas: dto.idPlanCuentas ?? null,
+            tipoCambio: importes.tipoCambio,
+            debe: dto.tipo === 'DEBE' ? monto : 0,
+            haber: dto.tipo === 'HABER' ? monto : 0,
+          },
+          user,
+        );
+      }
+
       await manager.update(MovimientoKardex, mov.id, {
         fecha: dto.fecha,
         nroComprobante: dto.nroComprobante?.trim() || null,
@@ -507,7 +655,7 @@ export class MovimientoKardexService {
         lote: dto.lote?.trim() || null,
         idSubcuenta: dto.idSubcuenta ?? null,
         idFormaPago: dto.idFormaPago ?? null,
-        idDestinoGasto: dto.idDestinoGasto ?? null,
+        idPlanCuentas: dto.idPlanCuentas ?? null,
         idCobrador: dto.idCobrador ? String(dto.idCobrador) : null,
         idValorizacion: dto.idValorizacion ? String(dto.idValorizacion) : null,
         ...importes,
@@ -533,6 +681,12 @@ export class MovimientoKardexService {
       throw new NotFoundException('No se encontró el movimiento solicitado.');
     }
     await this.obtenerKardexAbierto(mov.idKardex);
+    validarSinOrigen(
+      await origenDeLineaKardex(this.dataSource.manager, mov),
+      'el kardex',
+    );
+    // Su movimiento de caja o de libreta se activa/desactiva junto con ella.
+    const dinero = await this.movimientoDineroDeLinea(mov.id);
 
     return this.dataSource.transaction(async (manager) => {
       await manager.update(MovimientoKardex, mov.id, {
@@ -540,6 +694,22 @@ export class MovimientoKardexService {
         usuarioUltimaModificacion: user.usuario,
       });
       await this.recalcularKardex(manager, mov.idKardex);
+      if (dinero.caja) {
+        await this.movimientoCajaService.cambiarEstadoEnTransaccion(
+          manager,
+          dinero.caja,
+          activo,
+          user,
+        );
+      }
+      if (dinero.banco) {
+        await this.libretaBancoService.cambiarEstadoEnTransaccion(
+          manager,
+          dinero.banco,
+          activo,
+          user,
+        );
+      }
       return manager.findOne(MovimientoKardex, {
         where: { id: mov.id },
         relations: RELACIONES,
@@ -556,7 +726,7 @@ export class MovimientoKardexService {
     }
 
     // Bandeja liviana: solo lo que muestran la tabla del kardex, el
-    // formulario de edición (destino del gasto y cuenta los resuelve por id
+    // formulario de edición (plan de cuentas y cuenta los resuelve por id
     // contra sus catálogos) y el Excel. Nada de valorización, cuenta
     // bancaria ni movimientos de caja por cada línea.
     const movimientos = await this.movimientoRepository.find({
@@ -606,6 +776,12 @@ export class MovimientoKardexService {
       skip: (page - 1) * limit,
       take: limit,
     });
+    // `origen` le dice a la bandeja qué líneas se gestionan desde otro
+    // documento (no se desactivan acá y solo se reclasifican).
+    const origenes = await origenesDeLineasKardex(this.dataSource.manager, data);
+    for (const linea of data) {
+      Object.assign(linea, { origen: origenes.get(String(linea.id)) ?? null });
+    }
 
     return {
       kardex,

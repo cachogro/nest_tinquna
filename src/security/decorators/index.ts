@@ -4,3 +4,4 @@ export { StaticAuth } from './static-auth.decorator';
 
 export { GetUser } from './get-user.decorator';
 export { RawHeaders } from './raw-headers.decorator';
+export * from './requiere-permiso.decorator';

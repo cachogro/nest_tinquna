@@ -279,6 +279,7 @@ export class PrestamoPersonalService {
           idFormaPago: dto.idFormaPago,
           idCuentaBancaria: dto.idCuentaBancaria,
           nroComprobante: dto.nroComprobante,
+          pagos: dto.pagos,
           idPersona: persona.id,
           idPersonaAutorizo: dto.idPersonaAutorizo,
           detalles: [
@@ -286,7 +287,7 @@ export class PrestamoPersonalService {
               destino: 'EFECTIVO',
               idPersona: persona.id,
               monto,
-              idDestinoGasto: dto.idDestinoGasto,
+              idPlanCuentas: dto.idPlanCuentas,
             },
           ],
         },
@@ -366,6 +367,7 @@ export class PrestamoPersonalService {
           idFormaPago: dto.idFormaPago,
           idCuentaBancaria: dto.idCuentaBancaria,
           nroComprobante: dto.nroComprobante,
+          pagos: dto.pagos,
           idPersona: prestamo.idPersona,
           idPersonaAutorizo: dto.idPersonaAutorizo,
           detalles: [
@@ -373,7 +375,7 @@ export class PrestamoPersonalService {
               destino: 'PERSONAL',
               idPersona: prestamo.idPersona,
               monto,
-              idDestinoGasto: dto.idDestinoGasto,
+              idPlanCuentas: dto.idPlanCuentas,
             },
           ],
         },

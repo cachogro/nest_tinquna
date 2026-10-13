@@ -10,13 +10,22 @@ import { Usuario } from 'src/security/entities/usuario.entity';
 import { Caja } from 'src/cluster/parametricas/entities/caja.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { MovimientoCaja } from '../entities/movimiento-caja.entity';
 import { PeriodoCaja, MonedaCaja } from '../entities/periodo-caja.entity';
 import { CreateMovimientoCajaDto } from '../dto/movimiento-caja/create-movimiento-caja.dto';
 import { FiltroMovimientoCajaDto } from '../dto/movimiento-caja/filtro-movimiento-caja.dto';
 import { CerrarPeriodoCajaDto } from '../dto/movimiento-caja/cerrar-periodo-caja.dto';
 import { CerrarGestionCajaDto } from '../dto/movimiento-caja/cerrar-gestion-caja.dto';
+import { Kardex } from '../entities/kardex.entity';
+import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
+import { aBolivianos, resolverTipoCambio } from '../moneda.util';
+import { recalcularSaldoKardex } from '../kardex-posteo.util';
+import {
+  origenDeMovimiento,
+  origenesDeMovimientos,
+  validarSinOrigen,
+} from '../origen-movimiento.util';
 
 @Injectable()
 export class MovimientoCajaService {
@@ -36,8 +45,8 @@ export class MovimientoCajaService {
     @InjectRepository(FormaPago, 'ci')
     private readonly formaPagoRepository: Repository<FormaPago>,
 
-    @InjectRepository(DestinoGasto, 'ci')
-    private readonly destinoGastoRepository: Repository<DestinoGasto>,
+    @InjectRepository(PlanCuentas, 'ci')
+    private readonly planCuentasRepository: Repository<PlanCuentas>,
 
     @InjectDataSource('ci')
     private readonly dataSource: DataSource,
@@ -97,19 +106,41 @@ export class MovimientoCajaService {
     return formaPago.id;
   }
 
-  private async resolverDestinoGasto(
-    idDestinoGasto?: number,
+  private async resolverPlanCuentas(
+    idPlanCuentas?: number,
   ): Promise<number | null> {
-    if (!idDestinoGasto) {
+    if (!idPlanCuentas) {
       return null;
     }
-    const destinoGasto = await this.destinoGastoRepository.findOne({
-      where: { id: idDestinoGasto },
+    const planCuentas = await this.planCuentasRepository.findOne({
+      where: { id: idPlanCuentas },
     });
-    if (!destinoGasto) {
-      throw new NotFoundException('El destino del gasto indicado no existe.');
+    if (!planCuentas) {
+      throw new NotFoundException('El plan de cuentas indicado no existe.');
     }
-    return destinoGasto.id;
+    return planCuentas.id;
+  }
+
+  /** Línea de kardex enlazada al movimiento (si la tiene), validando que su kardex siga abierto. */
+  private async lineaKardexEditable(
+    mov: MovimientoCaja,
+  ): Promise<(MovimientoKardex & { kardex: Kardex }) | null> {
+    if (!mov.idMovimientoKardex) {
+      return null;
+    }
+    const linea = await this.dataSource.manager.findOne(MovimientoKardex, {
+      where: { id: mov.idMovimientoKardex },
+      relations: { kardex: true },
+    });
+    if (!linea?.kardex) {
+      return null;
+    }
+    if (linea.kardex.estado === 'CERRADO') {
+      throw new BadRequestException(
+        `El movimiento está cargado en el kardex ${linea.kardex.codigo}, que ya está cerrado: no puede modificarse.`,
+      );
+    }
+    return linea as MovimientoKardex & { kardex: Kardex };
   }
 
   // ------------------------------------------------------------------ helpers
@@ -315,6 +346,8 @@ export class MovimientoCajaService {
     caja: Caja,
     datos: {
       moneda: MonedaCaja;
+      /** Bs. por 1 USD (solo informativo). Se guarda únicamente en USD. */
+      tipoCambio?: number | null;
       fecha: string;
       nroComprobante?: string | null;
       facturaRecibo?: string | null;
@@ -322,7 +355,7 @@ export class MovimientoCajaService {
       idPersona?: string | null;
       entregaFondosA?: string | null;
       concepto: string;
-      idDestinoGasto?: number | null;
+      idPlanCuentas?: number | null;
       idRecibo?: string | null;
       idMovimientoKardex?: string | null;
       idTraspaso?: string | null;
@@ -347,6 +380,7 @@ export class MovimientoCajaService {
         idCaja: caja.id,
         idPeriodoCaja: periodo.id,
         moneda: datos.moneda,
+        tipoCambio: datos.moneda === 'USD' ? (datos.tipoCambio ?? null) : null,
         folio,
         fecha: datos.fecha,
         nroComprobante: datos.nroComprobante ?? null,
@@ -355,7 +389,7 @@ export class MovimientoCajaService {
         idPersona: datos.idPersona ?? null,
         entregaFondosA: datos.entregaFondosA ?? null,
         concepto: datos.concepto,
-        idDestinoGasto: datos.idDestinoGasto ?? null,
+        idPlanCuentas: datos.idPlanCuentas ?? null,
         idRecibo: datos.idRecibo ?? null,
         idMovimientoKardex: datos.idMovimientoKardex ?? null,
         idTraspaso: datos.idTraspaso ?? null,
@@ -370,7 +404,7 @@ export class MovimientoCajaService {
 
     return manager.findOne(MovimientoCaja, {
       where: { id: mov.id },
-      relations: { periodoCaja: true, persona: true, formaPago: true, destinoGasto: true },
+      relations: { periodoCaja: true, persona: true, formaPago: true, planCuentas: true },
     });
   }
 
@@ -379,10 +413,12 @@ export class MovimientoCajaService {
     user: Usuario,
   ): Promise<MovimientoCaja> {
     const caja = await this.obtenerCajaAperturada(dto.idCaja, dto.moneda);
+    // En USD el tipo de cambio del día es obligatorio (dato informativo).
+    const tipoCambio = resolverTipoCambio(dto.moneda, dto.tipoCambio);
     const { ingreso, egreso } = this.ingresoEgreso(dto);
     const beneficiario = await this.resolverBeneficiario(dto);
     const idFormaPago = await this.resolverFormaPago(dto.idFormaPago);
-    const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
+    const idPlanCuentas = await this.resolverPlanCuentas(dto.idPlanCuentas);
 
     return this.dataSource.transaction((manager) =>
       this.crearMovimientoEnTransaccion(
@@ -390,6 +426,7 @@ export class MovimientoCajaService {
         caja,
         {
           moneda: dto.moneda,
+          tipoCambio,
           fecha: dto.fecha,
           nroComprobante: dto.nroComprobante?.trim() || null,
           facturaRecibo: dto.facturaRecibo?.trim() || null,
@@ -397,7 +434,7 @@ export class MovimientoCajaService {
           idPersona: beneficiario.idPersona,
           entregaFondosA: beneficiario.entregaFondosA,
           concepto: dto.concepto.trim(),
-          idDestinoGasto,
+          idPlanCuentas,
           ingreso,
           egreso,
         },
@@ -431,54 +468,166 @@ export class MovimientoCajaService {
       throw new BadRequestException('No se puede cambiar la moneda del movimiento.');
     }
 
-    const [gestion, mes] = this.gestionMesDeFecha(dto.fecha);
+    const idPlanCuentas = await this.resolverPlanCuentas(dto.idPlanCuentas);
+
+    // Generado por un recibo, traspaso, pago de valorización o bien en dación:
+    // monto, fecha, tipo y beneficiario son de ese documento y no se tocan
+    // acá. Solo se reclasifica (concepto y plan de cuentas), que es propio
+    // de la caja y no mueve ningún saldo.
+    const origen = await origenDeMovimiento(
+      this.dataSource.manager,
+      'idMovimientoCaja',
+      mov,
+    );
+    if (origen) {
+      await this.movimientoRepository.update(mov.id, {
+        concepto: dto.concepto.trim(),
+        idPlanCuentas,
+        usuarioUltimaModificacion: user.usuario,
+      });
+      return this.movimientoRepository.findOne({
+        where: { id: mov.id },
+        relations: { periodoCaja: true, persona: true, formaPago: true, planCuentas: true },
+      });
+    }
+
     const { ingreso, egreso } = this.ingresoEgreso(dto);
     const beneficiario = await this.resolverBeneficiario(dto);
     const idFormaPago = await this.resolverFormaPago(dto.idFormaPago);
-    const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
+    // El formulario de la caja no edita la referencia del respaldo: si no
+    // llega, se conserva la que ya tenía.
+    const facturaRecibo =
+      dto.facturaRecibo !== undefined
+        ? dto.facturaRecibo.trim() || null
+        : mov.facturaRecibo ?? null;
+
+    // Cargado desde un kardex: la línea se corrige junto con el movimiento
+    // para que el saldo del kardex no quede descuadrado. La contraparte es la
+    // titular de ese kardex y queda fija.
+    const linea = await this.lineaKardexEditable(mov);
+    if (linea && String(beneficiario.idPersona ?? '') !== String(mov.idPersona ?? '')) {
+      throw new BadRequestException(
+        `Este movimiento está cargado en el kardex ${linea.kardex.codigo}: no se puede cambiar la persona. Para cambiarla, desactivá el movimiento y registralo de nuevo.`,
+      );
+    }
+
+    // En USD el tipo de cambio es obligatorio también al editar; si no llega
+    // se conserva el que ya tenía el movimiento (o su línea de kardex).
+    const tipoCambio = resolverTipoCambio(
+      mov.moneda,
+      dto.tipoCambio ?? mov.tipoCambio ?? linea?.tipoCambio ?? null,
+    );
+
+    // La caja admite referencias de hasta 100; la línea de kardex, de 30.
+    if (
+      linea &&
+      ((dto.nroComprobante?.trim().length ?? 0) > 30 || (facturaRecibo?.length ?? 0) > 30)
+    ) {
+      throw new BadRequestException(
+        `Este movimiento está cargado en el kardex ${linea.kardex.codigo}: el N° de comprobante y la factura/recibo no pueden exceder los 30 caracteres.`,
+      );
+    }
 
     return this.dataSource.transaction(async (manager) => {
-      let idPeriodoCaja = mov.idPeriodoCaja;
-      let folio = mov.folio;
-
-      if (mov.periodoCaja.gestion !== gestion || mov.periodoCaja.mes !== mes) {
-        const destino = await this.obtenerOCrearPeriodoMensual(
-          manager,
-          caja.id,
-          dto.moneda,
-          gestion,
-          mes,
-          user,
-        );
-        idPeriodoCaja = destino.id;
-        if (mov.periodoCaja.gestion !== gestion) {
-          folio = await this.siguienteFolio(manager, caja.id, dto.moneda, gestion);
-        }
+      if (linea) {
+        // DEBE (anticipo, plata que sale) = EGRESO; HABER (pago) = INGRESO.
+        // El kardex lleva su saldo en Bs.: en USD se convierte con el tipo de
+        // cambio del movimiento.
+        await manager.update(MovimientoKardex, linea.id, {
+          tipoCambio,
+          fecha: dto.fecha,
+          nroComprobante: dto.nroComprobante?.trim() || null,
+          facturaRecibo,
+          idFormaPago,
+          detalle: dto.concepto.trim(),
+          idPlanCuentas,
+          debe: aBolivianos(egreso, mov.moneda, tipoCambio),
+          haber: aBolivianos(ingreso, mov.moneda, tipoCambio),
+          debeUsd: mov.moneda === 'USD' ? egreso : 0,
+          haberUsd: mov.moneda === 'USD' ? ingreso : 0,
+          usuarioUltimaModificacion: user.usuario,
+        });
+        await recalcularSaldoKardex(manager, linea.idKardex);
       }
 
-      await manager.update(MovimientoCaja, mov.id, {
-        idPeriodoCaja,
-        folio,
-        fecha: dto.fecha,
-        nroComprobante: dto.nroComprobante?.trim() || null,
-        facturaRecibo: dto.facturaRecibo?.trim() || null,
-        idFormaPago,
-        idPersona: beneficiario.idPersona,
-        entregaFondosA: beneficiario.entregaFondosA,
-        concepto: dto.concepto.trim(),
-        idDestinoGasto,
-        ingreso,
-        egreso,
-        usuarioUltimaModificacion: user.usuario,
-      });
-
-      await this.recalcularCaja(manager, caja.id, dto.moneda);
+      await this.actualizarEnTransaccion(
+        manager,
+        mov,
+        {
+          tipoCambio,
+          fecha: dto.fecha,
+          nroComprobante: dto.nroComprobante?.trim() || null,
+          facturaRecibo,
+          idFormaPago,
+          idPersona: beneficiario.idPersona,
+          entregaFondosA: beneficiario.entregaFondosA,
+          concepto: dto.concepto.trim(),
+          idPlanCuentas,
+          ingreso,
+          egreso,
+        },
+        user,
+      );
 
       return manager.findOne(MovimientoCaja, {
         where: { id: mov.id },
-        relations: { periodoCaja: true, persona: true, formaPago: true, destinoGasto: true },
+        relations: { periodoCaja: true, persona: true, formaPago: true, planCuentas: true },
       });
     });
+  }
+
+  /**
+   * Núcleo de "editar un movimiento" (reubicación de período y folio si
+   * cambió la fecha + update + recálculo), reusable dentro de una transacción
+   * ya abierta por otro servicio (ej. MovimientoKardexService, que al editar
+   * una línea corrige también su movimiento de caja). `mov` debe traer
+   * `periodoCaja`; el período cerrado lo valida quien llama.
+   */
+  async actualizarEnTransaccion(
+    manager: EntityManager,
+    mov: MovimientoCaja,
+    campos: {
+      tipoCambio?: number | null;
+      fecha: string;
+      nroComprobante: string | null;
+      facturaRecibo: string | null;
+      idFormaPago: number | null;
+      idPersona?: string | null;
+      entregaFondosA?: string | null;
+      concepto: string;
+      idPlanCuentas: number | null;
+      ingreso: number;
+      egreso: number;
+    },
+    user: Usuario,
+  ): Promise<void> {
+    const [gestion, mes] = this.gestionMesDeFecha(campos.fecha);
+    let idPeriodoCaja = mov.idPeriodoCaja;
+    let folio = mov.folio;
+
+    if (mov.periodoCaja.gestion !== gestion || mov.periodoCaja.mes !== mes) {
+      const destino = await this.obtenerOCrearPeriodoMensual(
+        manager,
+        mov.idCaja,
+        mov.moneda,
+        gestion,
+        mes,
+        user,
+      );
+      idPeriodoCaja = destino.id;
+      if (mov.periodoCaja.gestion !== gestion) {
+        folio = await this.siguienteFolio(manager, mov.idCaja, mov.moneda, gestion);
+      }
+    }
+
+    await manager.update(MovimientoCaja, mov.id, {
+      ...campos,
+      idPeriodoCaja,
+      folio,
+      usuarioUltimaModificacion: user.usuario,
+    });
+
+    await this.recalcularCaja(manager, mov.idCaja, mov.moneda);
   }
 
   /**
@@ -530,12 +679,26 @@ export class MovimientoCajaService {
         'El movimiento pertenece a un período cerrado y no puede modificarse.',
       );
     }
+    validarSinOrigen(
+      await origenDeMovimiento(this.dataSource.manager, 'idMovimientoCaja', mov),
+      'la caja de flujo',
+    );
+    // Si el movimiento afecta un kardex, su línea se activa/desactiva junto
+    // con él para que el saldo del kardex no quede descuadrado.
+    const linea = await this.lineaKardexEditable(mov);
 
     return this.dataSource.transaction(async (manager) => {
       await this.cambiarEstadoEnTransaccion(manager, mov, activo, user);
+      if (linea) {
+        await manager.update(MovimientoKardex, linea.id, {
+          activo,
+          usuarioUltimaModificacion: user.usuario,
+        });
+        await recalcularSaldoKardex(manager, linea.idKardex);
+      }
       return manager.findOne(MovimientoCaja, {
         where: { id: mov.id },
-        relations: { periodoCaja: true, persona: true, formaPago: true, destinoGasto: true },
+        relations: { periodoCaja: true, persona: true, formaPago: true, planCuentas: true },
       });
     });
   }
@@ -556,7 +719,7 @@ export class MovimientoCajaService {
         'per.apellidoMaterno',
         'per.numeroDocumento',
       ])
-      .leftJoin('m.destinoGasto', 'dg')
+      .leftJoin('m.planCuentas', 'dg')
       .addSelect(['dg.id', 'dg.nombre'])
       .where('m.idCaja = :id', { id: caja.id })
       .andWhere('m.moneda = :moneda', { moneda: filtro.moneda });
@@ -569,7 +732,17 @@ export class MovimientoCajaService {
     }
 
     qb.orderBy('m.folio', 'ASC').addOrderBy('m.id', 'ASC');
-    const movimientos = await qb.getMany();
+    const lista = await qb.getMany();
+    // `origen` le dice a la bandeja qué filas se gestionan desde otro
+    // documento (no se editan ni desactivan acá).
+    const origenes = await origenesDeMovimientos(
+      this.dataSource.manager,
+      'idMovimientoCaja',
+      lista,
+    );
+    const movimientos = lista.map((m) =>
+      Object.assign(m, { origen: origenes.get(String(m.id)) ?? null }),
+    );
 
     const wherePeriodo: Record<string, unknown> = {
       idCaja: caja.id,

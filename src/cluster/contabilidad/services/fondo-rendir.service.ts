@@ -9,7 +9,7 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { Kardex } from '../entities/kardex.entity';
 import { FondoRendir, EstadoFondoRendir } from '../entities/fondo-rendir.entity';
 import { FondoRendirDetalle } from '../entities/fondo-rendir-detalle.entity';
@@ -24,7 +24,7 @@ import { KardexActividadService } from './kardex-actividad.service';
 const RELACIONES = {
   persona: true,
   actorProductivoMinero: true,
-  destinoGasto: true,
+  planCuentas: true,
   recibo: true,
   reciboReposicion: true,
   movimientoKardexCierre: true,
@@ -63,8 +63,8 @@ export class FondoRendirService {
     @InjectRepository(ActorProductivoMinero, 'ci')
     private readonly actorRepository: Repository<ActorProductivoMinero>,
 
-    @InjectRepository(DestinoGasto, 'ci')
-    private readonly destinoGastoRepository: Repository<DestinoGasto>,
+    @InjectRepository(PlanCuentas, 'ci')
+    private readonly planCuentasRepository: Repository<PlanCuentas>,
 
     @InjectRepository(Kardex, 'ci')
     private readonly kardexRepository: Repository<Kardex>,
@@ -123,17 +123,17 @@ export class FondoRendirService {
     }
   }
 
-  private async resolverDestinoGasto(
-    idDestinoGasto?: number,
+  private async resolverPlanCuentas(
+    idPlanCuentas?: number,
   ): Promise<number | null> {
-    if (!idDestinoGasto) {
+    if (!idPlanCuentas) {
       return null;
     }
-    const destino = await this.destinoGastoRepository.findOne({
-      where: { id: idDestinoGasto },
+    const destino = await this.planCuentasRepository.findOne({
+      where: { id: idPlanCuentas },
     });
     if (!destino) {
-      throw new NotFoundException('No existe el destino del gasto seleccionado.');
+      throw new NotFoundException('No existe el plan de cuentas seleccionado.');
     }
     return destino.id;
   }
@@ -277,7 +277,7 @@ export class FondoRendirService {
           monto: montoPorReponer,
           tipo: 'SALDO_FAVOR',
           idFondoOrigen: origen.id,
-          idDestinoGasto: origen.idDestinoGasto ?? null,
+          idPlanCuentas: origen.idPlanCuentas ?? null,
           usuarioRegistro: user.usuario,
         }),
       );
@@ -303,59 +303,67 @@ export class FondoRendirService {
   /**
    * Entrega el fondo: genera el recibo de EGRESO real que mueve la plata
    * (línea EFECTIVO sin idPersona/idActorProductivoMinero a propósito, para
-   * NO generar automáticamente una deuda de kardex) y la cabecera del fondo.
+   * NO generar automáticamente una deuda de kardex) y la cabecera del fondo,
+   * en una sola transacción.
    *
-   * Nota: `ReciboService.generar` abre su propia transacción; si el insert
-   * de `FondoRendir` que sigue llegara a fallar, el recibo de egreso queda
-   * igual creado (huérfano de seguimiento). Es un riesgo aceptado: unificar
-   * ambas operaciones en una sola transacción requeriría refactorizar
-   * `ReciboService` para aceptar un `EntityManager` externo.
+   * El `id` del fondo es su N° de seguimiento: se reserva antes de generar
+   * el recibo para que figure en su concepto ("FONDO A RENDIR N° 5 - ...") y,
+   * con él, en el movimiento de caja o de libreta de la entrega.
    */
   async entregar(dto: CreateFondoRendirDto, user: Usuario) {
     await this.validarDestinatario(dto);
-    const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
+    const idPlanCuentas = await this.resolverPlanCuentas(dto.idPlanCuentas);
     const monto = this.r2(Number(dto.monto));
 
-    const recibo = await this.reciboService.generar(
-      {
-        tipo: 'EGRESO',
-        fecha: dto.fecha,
-        montoTotal: monto,
-        concepto: dto.concepto.trim(),
-        idFormaPago: dto.idFormaPago,
-        idCuentaBancaria: dto.idCuentaBancaria,
-        nroComprobante: dto.nroComprobante,
-        idPersona: dto.idPersona,
-        idActorProductivoMinero: dto.idActorProductivoMinero,
-        idPersonaAutorizo: dto.idPersonaAutorizo,
-        detalles: [
-          {
-            destino: 'EFECTIVO',
-            monto,
-            idDestinoGasto: dto.idDestinoGasto,
-          },
-        ],
-      },
-      user,
-    );
+    const concepto = dto.concepto.trim();
 
-    const fondo = this.fondoRepository.create({
-      idPersona: dto.idPersona ?? null,
-      idActorProductivoMinero: dto.idActorProductivoMinero ?? null,
-      fecha: dto.fecha,
-      fechaHoraEntrega: new Date(),
-      concepto: dto.concepto.trim(),
-      montoEntregado: monto,
-      idRecibo: recibo.id,
-      idDestinoGasto,
-      fechaLimite: dto.fechaLimite ?? null,
-      estado: 'PENDIENTE',
-      usuarioRegistro: user.usuario,
-    });
-    // Si el destinatario tenía saldo a favor de fondos anteriores (justificó
-    // de más y no se le repuso), entra a este fondo como ya justificado.
     const idFondo = await this.dataSource.transaction(async (manager) => {
-      const guardado = await manager.save(fondo);
+      const [{ id }] = await manager.query(
+        `SELECT nextval(pg_get_serial_sequence('contabilidad.fondo_rendir', 'id')) AS id`,
+      );
+
+      const recibo = await this.reciboService.generarEnTransaccion(
+        manager,
+        {
+          tipo: 'EGRESO',
+          fecha: dto.fecha,
+          montoTotal: monto,
+          concepto: `FONDO A RENDIR N° ${id} - ${concepto}`.slice(0, 255),
+          idFormaPago: dto.idFormaPago,
+          idCuentaBancaria: dto.idCuentaBancaria,
+          nroComprobante: dto.nroComprobante,
+          idPersona: dto.idPersona,
+          idActorProductivoMinero: dto.idActorProductivoMinero,
+          idPersonaAutorizo: dto.idPersonaAutorizo,
+          detalles: [
+            {
+              destino: 'EFECTIVO',
+              monto,
+              idPlanCuentas: dto.idPlanCuentas,
+            },
+          ],
+        },
+        user,
+      );
+
+      const guardado = await manager.save(
+        manager.create(FondoRendir, {
+          id: String(id),
+          idPersona: dto.idPersona ?? null,
+          idActorProductivoMinero: dto.idActorProductivoMinero ?? null,
+          fecha: dto.fecha,
+          fechaHoraEntrega: new Date(),
+          concepto,
+          montoEntregado: monto,
+          idRecibo: recibo.id,
+          idPlanCuentas,
+          fechaLimite: dto.fechaLimite ?? null,
+          estado: 'PENDIENTE',
+          usuarioRegistro: user.usuario,
+        }),
+      );
+      // Si el destinatario tenía saldo a favor de fondos anteriores (justificó
+      // de más y no se le repuso), entra a este fondo como ya justificado.
       await this.aplicarSaldoFavorEnTransaccion(manager, guardado, user);
       return guardado.id;
     });
@@ -400,7 +408,7 @@ export class FondoRendirService {
       }
     }
 
-    const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
+    const idPlanCuentas = await this.resolverPlanCuentas(dto.idPlanCuentas);
     const monto = this.r2(Number(dto.monto));
 
     // Lo justificado SÍ puede superar lo entregado (el destinatario adelantó
@@ -414,7 +422,7 @@ export class FondoRendirService {
         monto,
         nroComprobante: dto.nroComprobante?.trim() || null,
         facturaRecibo: dto.facturaRecibo?.trim() || null,
-        idDestinoGasto,
+        idPlanCuentas,
         usuarioUltimaModificacion: user.usuario,
       });
     } else {
@@ -426,7 +434,7 @@ export class FondoRendirService {
           monto,
           nroComprobante: dto.nroComprobante?.trim() || null,
           facturaRecibo: dto.facturaRecibo?.trim() || null,
-          idDestinoGasto,
+          idPlanCuentas,
           usuarioRegistro: user.usuario,
         }),
       );
@@ -526,7 +534,7 @@ export class FondoRendirService {
           {
             fecha: this.hoy(),
             detalle: `SALDO SIN JUSTIFICAR - FONDO A RENDIR N° ${fondo.id} (${fondo.concepto})`,
-            idDestinoGasto: fondo.idDestinoGasto,
+            idPlanCuentas: fondo.idPlanCuentas,
             debe: saldoPendiente,
             haber: 0,
             usuarioRegistro: user.usuario,
@@ -577,7 +585,7 @@ export class FondoRendirService {
           concepto: 'RENDIDO SIN COMPROBANTES',
           monto: saldoPendiente,
           tipo: 'SIN_COMPROBANTE',
-          idDestinoGasto: fondo.idDestinoGasto ?? null,
+          idPlanCuentas: fondo.idPlanCuentas ?? null,
           usuarioRegistro: user.usuario,
         }),
       );
@@ -628,7 +636,7 @@ export class FondoRendirService {
             {
               destino: 'EFECTIVO',
               monto: montoPorReponer,
-              idDestinoGasto: dto.idDestinoGasto ?? fondo.idDestinoGasto ?? undefined,
+              idPlanCuentas: dto.idPlanCuentas ?? fondo.idPlanCuentas ?? undefined,
             },
           ],
         },
@@ -705,7 +713,7 @@ export class FondoRendirService {
   async buscarPorId(id: string) {
     const fondo = await this.fondoRepository.findOne({
       where: { id },
-      relations: { ...RELACIONES, detalles: { destinoGasto: true } },
+      relations: { ...RELACIONES, detalles: { planCuentas: true } },
     });
     if (!fondo) {
       throw new NotFoundException('No se encontró el fondo a rendir.');
@@ -738,7 +746,7 @@ export class FondoRendirService {
       .createQueryBuilder('f')
       .leftJoinAndSelect('f.persona', 'persona')
       .leftJoinAndSelect('f.actorProductivoMinero', 'actor')
-      .leftJoinAndSelect('f.destinoGasto', 'destino')
+      .leftJoinAndSelect('f.planCuentas', 'destino')
       // Solo lo que necesita la bandeja para imprimir el recibo de entrega.
       .leftJoin('f.recibo', 'rec')
       .addSelect(['rec.id', 'rec.serie', 'rec.numero', 'rec.estado'])
@@ -749,6 +757,9 @@ export class FondoRendirService {
       // quién generó cada fondo (igual que en recibos y traspasos).
       .addSelect('f.usuarioRegistro');
 
+    if (filtro.id) {
+      qb.andWhere('f.id = :id', { id: filtro.id });
+    }
     if (filtro.idPersona) {
       qb.andWhere('f.idPersona = :idPersona', { idPersona: filtro.idPersona });
     }

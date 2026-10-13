@@ -5,6 +5,7 @@ import { DataSource, Repository } from 'typeorm';
 import { PersonaCi } from '../comercio-interno/entities/persona-ci.entity';
 import { Kardex } from '../contabilidad/entities/kardex.entity';
 import { KardexActividadService } from '../contabilidad/services/kardex-actividad.service';
+import { ChequeService } from '../contabilidad/services/cheque.service';
 import { FiltroDashboardDto } from './dto/filtro-dashboard.dto';
 
 // Fecha de recepción: se guarda como texto ISO; se lleva a día calendario de
@@ -60,6 +61,8 @@ export class DashboardService {
     private readonly kardexRepository: Repository<Kardex>,
 
     private readonly kardexActividadService: KardexActividadService,
+
+    private readonly chequeService: ChequeService,
   ) {}
 
   async resumen(filtro: FiltroDashboardDto) {
@@ -85,6 +88,7 @@ export class DashboardService {
       cobranzas,
       cotizaciones,
       alertas,
+      cheques,
     ] = await Promise.all([
       this.mineralRecibido(periodo),
       this.mineralRecibido(anterior),
@@ -103,6 +107,7 @@ export class DashboardService {
       this.cobranzas(hoy),
       this.cotizacionesVigentes(),
       this.alertas(hoy),
+      this.chequeService.situacionDashboard(),
     ]);
 
     return {
@@ -123,7 +128,18 @@ export class DashboardService {
       deudores,
       cobranzas,
       cotizaciones,
-      alertas,
+      // Chequeras: cuántos cheques quedan y cuántos emitidos siguen sin cobrar.
+      cheques: cheques.cuentas,
+      alertas: [
+        ...alertas,
+        ...cheques.alertas.map(
+          (alerta): Alerta => ({
+            ...alerta,
+            modulo: 'contabilidad',
+            ruta: '/contabilidad/libreta-bancaria',
+          }),
+        ),
+      ],
     };
   }
 

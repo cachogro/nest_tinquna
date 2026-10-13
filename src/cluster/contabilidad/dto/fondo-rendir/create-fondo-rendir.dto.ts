@@ -92,13 +92,13 @@ export class CreateFondoRendirDto {
   @ApiPropertyOptional({
     example: 13,
     description:
-      'Id del destino del gasto (parametrica.destino_gasto) que clasifica esta entrega en los reportes.',
+      'Id del plan de cuentas (parametrica.plan_cuentas) que clasifica esta entrega en los reportes.',
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 
   @ApiProperty({
     example: '7',

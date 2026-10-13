@@ -14,7 +14,7 @@ import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.enti
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
 import { Caja } from 'src/cluster/parametricas/entities/caja.entity';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
@@ -22,8 +22,18 @@ import { Kardex } from '../entities/kardex.entity';
 import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
 import { MonedaCaja } from '../entities/periodo-caja.entity';
 import { Recibo, TipoRecibo, SerieRecibo } from '../entities/recibo.entity';
+import { MovimientoCaja } from '../entities/movimiento-caja.entity';
+import { LibretaBanco } from '../entities/libreta-banco.entity';
 import { resolverPersonaAutorizo } from '../persona-autorizo.util';
 import { ReciboDetalle } from '../entities/recibo-detalle.entity';
+import { ReciboPago } from '../entities/recibo-pago.entity';
+import { MedioPagoDto } from '../dto/medio-pago.dto';
+import {
+  FORMAS_PAGO_BANCARIAS,
+  MedioPagoResuelto,
+  repartidorMediosPago,
+  resolverMediosPago,
+} from '../medios-pago.util';
 import { CreateReciboDto } from '../dto/recibo/create-recibo.dto';
 import { ProcesarReciboDto } from '../dto/recibo/procesar-recibo.dto';
 import { ReciboDetalleDto } from '../dto/recibo/recibo-detalle.dto';
@@ -52,25 +62,21 @@ const ID_CAJA_EMPRESA = 1;
 // Estado de valorización que habilita el recibo de pago del saldo.
 const ESTADO_VALORIZACION_VALORIZADO = 3;
 
-// Formas de pago que implican un medio bancario: exigen cuenta bancaria +
-// N° de comprobante ya en la cabecera del recibo (aunque quede BORRADOR),
-// aunque el movimiento en libreta_banco recién se postea al procesar.
-const FORMAS_PAGO_BANCARIAS = ['QR', 'TRANSFERENCIA', 'CHEQUE', 'DEPOSITO'];
-
 const RELACIONES = {
   persona: true,
   actorProductivoMinero: true,
   cliente: true,
   formaPago: true,
   cuentaBancaria: { entidadFinanciera: true },
-  movimientosCaja: { destinoGasto: true },
+  movimientosCaja: { planCuentas: true },
   movimientosBanco: true,
   detalles: {
     persona: true,
     actorProductivoMinero: true,
     cliente: true,
-    destinoGasto: true,
+    planCuentas: true,
   },
+  pagos: { formaPago: true, cuentaBancaria: { entidadFinanciera: true } },
 } as const;
 
 @Injectable()
@@ -106,8 +112,8 @@ export class ReciboService {
     @InjectRepository(FormaPago, 'ci')
     private readonly formaPagoRepository: Repository<FormaPago>,
 
-    @InjectRepository(DestinoGasto, 'ci')
-    private readonly destinoGastoRepository: Repository<DestinoGasto>,
+    @InjectRepository(PlanCuentas, 'ci')
+    private readonly planCuentasRepository: Repository<PlanCuentas>,
 
     @InjectRepository(CuentaBancaria, 'ci')
     private readonly cuentaBancariaRepository: Repository<CuentaBancaria>,
@@ -598,21 +604,21 @@ export class ReciboService {
     };
   }
 
-  private async resolverIdDestinoGasto(
-    idDestinoGasto?: number,
+  private async resolverIdPlanCuentas(
+    idPlanCuentas?: number,
   ): Promise<number | null> {
-    if (!idDestinoGasto) {
+    if (!idPlanCuentas) {
       return null;
     }
-    const destinoGasto = await this.destinoGastoRepository.findOne({
-      where: { id: idDestinoGasto },
+    const planCuentas = await this.planCuentasRepository.findOne({
+      where: { id: idPlanCuentas },
     });
-    if (!destinoGasto) {
+    if (!planCuentas) {
       throw new NotFoundException(
-        'No existe el destino del gasto seleccionado.',
+        'No existe el plan de cuentas seleccionado.',
       );
     }
-    return destinoGasto.id;
+    return planCuentas.id;
   }
 
   private async resolverFormaPagoOpcional(
@@ -685,31 +691,78 @@ export class ReciboService {
   }
 
   /**
-   * Valida solo la cabecera: no requiere `detalles` (puede ser un borrador).
-   * Si la forma de pago es bancaria, exige cuenta bancaria + N° de
-   * comprobante ya acá (se guardan en el recibo aunque quede BORRADOR).
+   * Medios por los que se mueve el dinero del recibo (no requiere
+   * `detalles`: puede ser un borrador). Con `pagos` es un pago mixto y sale
+   * de esa lista; sin ella, un único medio con la forma de pago, la cuenta
+   * y el N° de comprobante de la cabecera. Si la forma de pago es bancaria
+   * exige cuenta bancaria + N° de comprobante ya acá (se guardan en el
+   * recibo aunque quede BORRADOR).
    */
-  private async validarCabecera(dto: CreateReciboDto): Promise<{
-    idFormaPago: number | null;
-    nombreFormaPago: string | null;
-    cuentaBancaria: CuentaBancaria | null;
-  }> {
-    const formaPago = await this.resolverFormaPagoOpcional(dto.idFormaPago);
-    const cuentaBancaria = await this.resolverCuentaBancariaOpcional(
-      dto.idCuentaBancaria,
-    );
+  private async resolverMedios(
+    pagos: MedioPagoDto[] | undefined,
+    montoTotal: number,
+    cabecera: {
+      idFormaPago?: number;
+      idCuentaBancaria?: number;
+      nroComprobante?: string;
+    },
+  ): Promise<MedioPagoResuelto[]> {
+    if (pagos?.length) {
+      return resolverMediosPago(
+        this.dataSource.manager,
+        pagos,
+        montoTotal,
+        'el monto total del recibo',
+      );
+    }
 
+    const formaPago = await this.resolverFormaPagoOpcional(cabecera.idFormaPago);
+    const cuentaBancaria = await this.resolverCuentaBancariaOpcional(
+      cabecera.idCuentaBancaria,
+    );
     this.validarDatosBancariosCabecera(
       formaPago,
       cuentaBancaria?.id,
-      dto.nroComprobante,
+      cabecera.nroComprobante,
     );
 
-    return {
-      idFormaPago: formaPago?.id ?? null,
-      nombreFormaPago: formaPago?.nombre ?? null,
-      cuentaBancaria,
-    };
+    return [
+      {
+        formaPago,
+        cuentaBancaria,
+        nroComprobante: cabecera.nroComprobante?.trim() || null,
+        monto: this.r2(Number(montoTotal)),
+      },
+    ];
+  }
+
+  /**
+   * Deja en `recibo_pago` los medios de un pago mixto (reemplaza los que
+   * hubiera). Con un solo medio no queda ninguna fila: ese vive en la
+   * cabecera del recibo.
+   */
+  private async guardarPagos(
+    manager: EntityManager,
+    idRecibo: string,
+    medios: MedioPagoResuelto[],
+    user: Usuario,
+  ): Promise<void> {
+    await manager.delete(ReciboPago, { idRecibo });
+    if (medios.length < 2) return;
+    for (let i = 0; i < medios.length; i++) {
+      const medio = medios[i];
+      await manager.save(
+        manager.create(ReciboPago, {
+          idRecibo,
+          orden: i + 1,
+          idFormaPago: medio.formaPago!.id,
+          idCuentaBancaria: medio.cuentaBancaria?.id ?? null,
+          nroComprobante: medio.nroComprobante,
+          monto: medio.monto,
+          usuarioRegistro: user.usuario,
+        }),
+      );
+    }
   }
 
   private validarDetalle(detalle: ReciboDetalleDto): void {
@@ -746,21 +799,20 @@ export class ReciboService {
    * Valida y resuelve todo lo necesario para PROCESAR un recibo (sea en el
    * mismo paso de creación, o al procesar un borrador): la suma de
    * `detalles` contra el `montoTotal`, cada línea de detalle (incluido su
-   * propio `idDestinoGasto`), la caja de la empresa (aperturada), el kardex
-   * ABIERTO de cada línea PERSONAL/ACTOR y, si hay `cuentaBancaria` y al
-   * menos una línea EFECTIVO (o sea, si de verdad va a postear en
-   * libreta_banco), que esa cuenta esté aperturada. Falla rápido, antes de
-   * abrir la transacción.
+   * propio `idPlanCuentas`), la caja de la empresa (aperturada), el kardex
+   * ABIERTO de cada línea PERSONAL/ACTOR y, por cada medio de pago, que su
+   * cuenta bancaria esté aperturada (o la caja, si es en efectivo). Falla
+   * rápido, antes de abrir la transacción.
    */
   private async validarYPrepararDetalles(
     montoTotal: number,
     detalles: ReciboDetalleDto[] | undefined,
-    cuentaBancaria: CuentaBancaria | null,
+    medios: MedioPagoResuelto[],
     moneda: MonedaCaja,
   ): Promise<{
     cajaEmpresa: Caja | null;
     kardexPorDetalle: Map<number, Kardex>;
-    destinoGastoPorDetalle: Map<number, number | null>;
+    planCuentasPorDetalle: Map<number, number | null>;
   }> {
     if (!detalles || detalles.length === 0) {
       throw new BadRequestException(
@@ -781,14 +833,18 @@ export class ReciboService {
       this.validarDetalle(detalle);
     }
 
-    // Con cuenta bancaria (medio bancario) el recibo solo afecta la libreta
-    // de bancos; sin ella (efectivo) solo afecta la caja de flujo. Ambas en
-    // la moneda del recibo.
+    // Cada medio con cuenta bancaria afecta la libreta de esa cuenta; los que
+    // no la tienen (efectivo), la caja de flujo. Todo en la moneda del recibo.
     let cajaEmpresa: Caja | null = null;
-    if (cuentaBancaria) {
-      validarMonedaCuenta(cuentaBancaria, moneda);
-      await this.libretaBancoService.obtenerCuentaAperturada(cuentaBancaria.id);
-    } else {
+    for (const medio of medios) {
+      if (medio.cuentaBancaria) {
+        validarMonedaCuenta(medio.cuentaBancaria, moneda);
+        await this.libretaBancoService.obtenerCuentaAperturada(
+          medio.cuentaBancaria.id,
+        );
+      }
+    }
+    if (medios.some((medio) => !medio.cuentaBancaria)) {
       cajaEmpresa = await this.movimientoCajaService.obtenerCajaAperturada(
         ID_CAJA_EMPRESA,
         moneda,
@@ -796,7 +852,7 @@ export class ReciboService {
     }
 
     const kardexPorDetalle = new Map<number, Kardex>();
-    const destinoGastoPorDetalle = new Map<number, number | null>();
+    const planCuentasPorDetalle = new Map<number, number | null>();
     for (let i = 0; i < detalles.length; i++) {
       const detalle = detalles[i];
       if (detalle.destino === 'PERSONAL') {
@@ -839,19 +895,19 @@ export class ReciboService {
           await this.obtenerKardexAbiertoCliente(String(detalle.idCliente)),
         );
       }
-      destinoGastoPorDetalle.set(
+      planCuentasPorDetalle.set(
         i,
-        await this.resolverIdDestinoGasto(detalle.idDestinoGasto),
+        await this.resolverIdPlanCuentas(detalle.idPlanCuentas),
       );
     }
 
-    return { cajaEmpresa, kardexPorDetalle, destinoGastoPorDetalle };
+    return { cajaEmpresa, kardexPorDetalle, planCuentasPorDetalle };
   }
 
   /**
    * Postea la línea de kardex de cada detalle (si corresponde) y el
    * movimiento de caja de flujo de esa misma línea, cada uno con su propio
-   * `idDestinoGasto`. Las líneas PERSONAL/ACTOR postean HABER en su kardex
+   * `idPlanCuentas`. Las líneas PERSONAL/ACTOR postean HABER en su kardex
    * (saldan una deuda existente) y SIEMPRE un INGRESO en caja (valor
    * recuperado por la empresa, sea cual sea el tipo del recibo). Las líneas
    * EFECTIVO postean en caja según el tipo del recibo (INGRESO si el
@@ -859,22 +915,22 @@ export class ReciboService {
    * efectivamente entra o sale) y, si además traen `idPersona`/
    * `idActorProductivoMinero` de alguien con kardex abierto, también un
    * DEBE en ese kardex (anticipo nuevo: sube su deuda, a diferencia de
-   * PERSONAL/ACTOR que la baja). Si el recibo tiene `cuentaBancaria` (se
-   * pagó por un medio bancario), la línea EFECTIVO también postea en la
-   * libreta de bancos, en la misma dirección que en caja. Reusado tanto por
-   * `generar` (un solo paso) como por `procesar` (segundo paso de un
-   * borrador).
+   * PERSONAL/ACTOR que la baja). El dinero se mueve por los `medios` del
+   * recibo: un medio con cuenta bancaria postea en la libreta de bancos (en
+   * la misma dirección que tendría en caja) y uno sin cuenta, en la caja de
+   * flujo. En un pago mixto los medios se van consumiendo en orden, línea
+   * por línea, y una línea cubierta por dos medios genera dos movimientos.
+   * Reusado tanto por `generar` (un solo paso) como por `procesar` (segundo
+   * paso de un borrador).
    */
   private async procesarDetalles(
     manager: EntityManager,
     recibo: Recibo,
     detalles: ReciboDetalleDto[],
-    idFormaPago: number | null,
-    nombreFormaPago: string | null,
-    cuentaBancaria: CuentaBancaria | null,
+    medios: MedioPagoResuelto[],
     cajaEmpresa: Caja | null,
     kardexPorDetalle: Map<number, Kardex>,
-    destinoGastoPorDetalle: Map<number, number | null>,
+    planCuentasPorDetalle: Map<number, number | null>,
     user: Usuario,
   ): Promise<void> {
     const nroComprobanteInterno = this.formatearNroComprobante(
@@ -882,13 +938,19 @@ export class ReciboService {
       recibo.numero,
     );
 
+    const tramosDe = repartidorMediosPago(medios);
+
     for (let i = 0; i < detalles.length; i++) {
       const detalleDto = detalles[i];
       const monto = this.r2(Number(detalleDto.monto));
-      const idDestinoGasto = destinoGastoPorDetalle.get(i) ?? null;
+      const idPlanCuentas = planCuentasPorDetalle.get(i) ?? null;
       let idMovimientoKardex: string | null = null;
 
       const esEfectivo = detalleDto.destino === 'EFECTIVO';
+      // Medios que cubren esta línea; el primero es el que queda anotado en
+      // su línea de kardex.
+      const tramos = tramosDe(monto);
+      const medioLinea = tramos[0]?.medio ?? medios[0];
 
       const kardex = kardexPorDetalle.get(i);
       if (kardex) {
@@ -904,13 +966,13 @@ export class ReciboService {
             idKardex: kardex.id,
             numeroLinea,
             fecha: recibo.fecha,
-            nroComprobante: recibo.nroComprobante ?? null,
+            nroComprobante: medioLinea.nroComprobante,
             facturaRecibo: nroComprobanteInterno,
-            idCuentaBancaria: cuentaBancaria?.id ?? null,
+            idCuentaBancaria: medioLinea.cuentaBancaria?.id ?? null,
             detalle: recibo.concepto,
             lote: detalleDto.lote?.trim() || null,
-            idFormaPago,
-            idDestinoGasto,
+            idFormaPago: medioLinea.formaPago?.id ?? null,
+            idPlanCuentas,
             idCobrador: recibo.idPersona ?? null,
             idRecibo: recibo.id,
             moneda: recibo.moneda,
@@ -950,7 +1012,7 @@ export class ReciboService {
               ? String(detalleDto.idCliente)
               : null,
           monto,
-          idDestinoGasto,
+          idPlanCuentas,
           idMovimientoKardex,
           usuarioRegistro: user.usuario,
         }),
@@ -967,48 +1029,54 @@ export class ReciboService {
       // (persona o actor del kardex afectado), no la contraparte genérica
       // de la cabecera del recibo.
       const beneficiarioLinea = this.datosBeneficiarioLinea(kardex, recibo);
-      if (!cuentaBancaria) {
-        // Efectivo: solo afecta la caja de flujo.
-        await this.movimientoCajaService.crearMovimientoEnTransaccion(
-          manager,
-          cajaEmpresa!,
-          {
-            moneda: recibo.moneda,
-            fecha: recibo.fecha,
-            nroComprobante: recibo.nroComprobante ?? null,
-            facturaRecibo: nroComprobanteInterno,
-            idFormaPago,
-            idPersona: beneficiarioLinea.idPersona,
-            entregaFondosA: beneficiarioLinea.nombresApellidos,
-            concepto: recibo.concepto,
-            idDestinoGasto,
-            idRecibo: recibo.id,
-            ingreso: entraACaja ? monto : 0,
-            egreso: entraACaja ? 0 : monto,
-          },
-          user,
-        );
-      } else {
-        // Medio bancario: solo afecta la libreta de bancos (misma dirección
-        // que tendría en caja: HABER si entra, DEBE si sale), no la caja.
-        await this.libretaBancoService.crearMovimientoEnTransaccion(
-          manager,
-          cuentaBancaria,
-          {
-            fecha: recibo.fecha,
-            nroTransaccion: recibo.nroComprobante ?? null,
-            tipoTransaccion: nombreFormaPago ?? 'EFECTIVO',
-            facturaRecibo: nroComprobanteInterno,
-            idPersona: beneficiarioLinea.idPersona,
-            nombresApellidos: beneficiarioLinea.nombresApellidos,
-            concepto: recibo.concepto,
-            idDestinoGasto,
-            idRecibo: recibo.id,
-            debe: entraACaja ? 0 : monto,
-            haber: entraACaja ? monto : 0,
-          },
-          user,
-        );
+      // Un movimiento por cada medio que cubre la línea (uno solo si el
+      // recibo se pagó por un único medio).
+      for (const tramo of tramos) {
+        const { formaPago, cuentaBancaria, nroComprobante } = tramo.medio;
+        if (!cuentaBancaria) {
+          // Efectivo: solo afecta la caja de flujo.
+          await this.movimientoCajaService.crearMovimientoEnTransaccion(
+            manager,
+            cajaEmpresa!,
+            {
+              moneda: recibo.moneda,
+              tipoCambio: recibo.tipoCambio ?? null,
+              fecha: recibo.fecha,
+              nroComprobante,
+              facturaRecibo: nroComprobanteInterno,
+              idFormaPago: formaPago?.id ?? null,
+              idPersona: beneficiarioLinea.idPersona,
+              entregaFondosA: beneficiarioLinea.nombresApellidos,
+              concepto: recibo.concepto,
+              idPlanCuentas,
+              idRecibo: recibo.id,
+              ingreso: entraACaja ? tramo.monto : 0,
+              egreso: entraACaja ? 0 : tramo.monto,
+            },
+            user,
+          );
+        } else {
+          // Medio bancario: solo afecta la libreta de bancos (misma dirección
+          // que tendría en caja: HABER si entra, DEBE si sale), no la caja.
+          await this.libretaBancoService.crearMovimientoEnTransaccion(
+            manager,
+            cuentaBancaria,
+            {
+              fecha: recibo.fecha,
+              nroTransaccion: nroComprobante,
+              tipoTransaccion: formaPago?.nombre ?? 'EFECTIVO',
+              facturaRecibo: nroComprobanteInterno,
+              idPersona: beneficiarioLinea.idPersona,
+              nombresApellidos: beneficiarioLinea.nombresApellidos,
+              concepto: recibo.concepto,
+              idPlanCuentas,
+              idRecibo: recibo.id,
+              debe: entraACaja ? 0 : tramo.monto,
+              haber: entraACaja ? tramo.monto : 0,
+            },
+            user,
+          );
+        }
       }
     }
   }
@@ -1045,15 +1113,19 @@ export class ReciboService {
     dto: CreateReciboDto,
     user: Usuario,
   ): Promise<(manager: EntityManager) => Promise<Recibo>> {
-    const { idFormaPago, nombreFormaPago, cuentaBancaria } =
-      await this.validarCabecera(dto);
+    const medios = await this.resolverMedios(dto.pagos, dto.montoTotal, dto);
+    const principal = medios[0];
     const beneficiario = await this.resolverBeneficiario(dto);
     // Quien autorizó: distinto de la contraparte física (`idPersona`).
-    const personaAutorizo = await resolverPersonaAutorizo(
-      this.personaRepository,
-      dto.idPersonaAutorizo,
-      'el recibo',
-    );
+    // Obligatorio en el POST del recibo (lo valida el DTO); el recibo que
+    // nace del pago de una deuda desde el kardex puede no traerlo.
+    const personaAutorizo = dto.idPersonaAutorizo
+      ? await resolverPersonaAutorizo(
+          this.personaRepository,
+          dto.idPersonaAutorizo,
+          'el recibo',
+        )
+      : null;
     const idRecepcionMineral = await this.validarRecepcionAnticipo(dto);
     const idValorizacionMineral =
       await this.validarValorizacionLiquidacion(dto);
@@ -1061,10 +1133,12 @@ export class ReciboService {
     const serie = this.serieDeTipo(dto.tipo);
     const moneda: MonedaCaja = dto.moneda ?? 'BS';
     const tipoCambio = resolverTipoCambio(moneda, dto.tipoCambio);
-    // La cuenta se guarda ya en el borrador: tiene que ser de la moneda del
-    // recibo desde el principio.
-    if (cuentaBancaria) {
-      validarMonedaCuenta(cuentaBancaria, moneda);
+    // Las cuentas se guardan ya en el borrador: tienen que ser de la moneda
+    // del recibo desde el principio.
+    for (const medio of medios) {
+      if (medio.cuentaBancaria) {
+        validarMonedaCuenta(medio.cuentaBancaria, moneda);
+      }
     }
 
     const tieneDetalles = !!dto.detalles && dto.detalles.length > 0;
@@ -1072,7 +1146,7 @@ export class ReciboService {
       ? await this.validarYPrepararDetalles(
           dto.montoTotal,
           dto.detalles,
-          cuentaBancaria,
+          medios,
           moneda,
         )
       : null;
@@ -1091,9 +1165,9 @@ export class ReciboService {
           moneda,
           tipoCambio,
           concepto: dto.concepto.trim(),
-          idFormaPago,
-          idCuentaBancaria: cuentaBancaria?.id ?? null,
-          nroComprobante: dto.nroComprobante?.trim() || null,
+          idFormaPago: principal.formaPago?.id ?? null,
+          idCuentaBancaria: principal.cuentaBancaria?.id ?? null,
+          nroComprobante: principal.nroComprobante,
           idPersona: beneficiario.idPersona,
           idActorProductivoMinero: beneficiario.idActorProductivoMinero,
           idCliente: beneficiario.idCliente,
@@ -1107,17 +1181,17 @@ export class ReciboService {
         }),
       );
 
+      await this.guardarPagos(manager, recibo.id, medios, user);
+
       if (tieneDetalles) {
         await this.procesarDetalles(
           manager,
           recibo,
           dto.detalles,
-          idFormaPago,
-          nombreFormaPago,
-          cuentaBancaria,
+          medios,
           previo.cajaEmpresa,
           previo.kardexPorDetalle,
-          previo.destinoGastoPorDetalle,
+          previo.planCuentasPorDetalle,
           user,
         );
       }
@@ -1150,57 +1224,40 @@ export class ReciboService {
       );
     }
 
-    const formaPago = dto.idFormaPago
-      ? await this.resolverFormaPagoOpcional(dto.idFormaPago)
-      : recibo.idFormaPago
-        ? await this.resolverFormaPagoOpcional(recibo.idFormaPago)
-        : null;
-    const idFormaPago = formaPago?.id ?? null;
-    const cuentaBancaria = await this.resolverCuentaBancariaOpcional(
-      dto.idCuentaBancaria ?? recibo.idCuentaBancaria ?? undefined,
-    );
-    const nroComprobante =
-      dto.nroComprobante?.trim() || recibo.nroComprobante || null;
-
-    this.validarDatosBancariosCabecera(
-      formaPago,
-      cuentaBancaria?.id,
-      nroComprobante,
-    );
+    const medios = await this.mediosParaProcesar(recibo, dto);
+    const principal = medios[0];
+    const cabeceraPago = {
+      idFormaPago: principal.formaPago?.id ?? null,
+      idCuentaBancaria: principal.cuentaBancaria?.id ?? null,
+      nroComprobante: principal.nroComprobante,
+    };
 
     // La moneda y el tipo de cambio se fijan al crear el borrador.
     const previo = await this.validarYPrepararDetalles(
       recibo.montoTotal,
       dto.detalles,
-      cuentaBancaria,
+      medios,
       recibo.moneda,
     );
 
     return this.dataSource.transaction(async (manager) => {
       await manager.update(Recibo, recibo.id, {
-        idFormaPago,
-        idCuentaBancaria: cuentaBancaria?.id ?? null,
-        nroComprobante,
+        ...cabeceraPago,
         estado: 'PROCESADO',
         usuarioUltimaModificacion: user.usuario,
       });
+      await this.guardarPagos(manager, recibo.id, medios, user);
 
-      const reciboActualizado: Recibo = Object.assign(recibo, {
-        idFormaPago,
-        idCuentaBancaria: cuentaBancaria?.id ?? null,
-        nroComprobante,
-      });
+      const reciboActualizado: Recibo = Object.assign(recibo, cabeceraPago);
 
       await this.procesarDetalles(
         manager,
         reciboActualizado,
         dto.detalles,
-        idFormaPago,
-        formaPago?.nombre ?? null,
-        cuentaBancaria,
+        medios,
         previo.cajaEmpresa,
         previo.kardexPorDetalle,
-        previo.destinoGastoPorDetalle,
+        previo.planCuentasPorDetalle,
         user,
       );
 
@@ -1212,31 +1269,218 @@ export class ReciboService {
   }
 
   /**
-   * Anula un recibo BORRADOR (nunca uno PROCESADO: no hay nada que revertir
-   * en kardex/caja porque un borrador todavía no generó movimientos).
+   * Medios de pago con los que se procesa un BORRADOR:
+   *   - `pagos` en el body: pago mixto, tal cual;
+   *   - `idFormaPago` en el body: un solo medio. La cuenta y el N° de
+   *     comprobante del borrador solo se conservan si la forma de pago no
+   *     cambió (si cambió, ya no aplican: son de otro medio);
+   *   - nada de eso: lo que el borrador ya tenía (mixto o de un solo medio).
+   */
+  private async mediosParaProcesar(
+    recibo: Recibo,
+    dto: ProcesarReciboDto,
+  ): Promise<MedioPagoResuelto[]> {
+    if (dto.pagos?.length) {
+      return this.resolverMedios(dto.pagos, recibo.montoTotal, {});
+    }
+    if (dto.idFormaPago) {
+      const mismaForma = dto.idFormaPago === recibo.idFormaPago;
+      return this.resolverMedios(undefined, recibo.montoTotal, {
+        idFormaPago: dto.idFormaPago,
+        idCuentaBancaria:
+          dto.idCuentaBancaria ??
+          (mismaForma ? (recibo.idCuentaBancaria ?? undefined) : undefined),
+        nroComprobante:
+          dto.nroComprobante?.trim() ||
+          (mismaForma ? (recibo.nroComprobante ?? undefined) : undefined),
+      });
+    }
+
+    const guardados = await this.dataSource.manager.find(ReciboPago, {
+      where: { idRecibo: recibo.id, activo: true },
+      relations: { formaPago: true, cuentaBancaria: true },
+      order: { orden: 'ASC', id: 'ASC' },
+    });
+    if (guardados.length > 1) {
+      return guardados.map((pago) => ({
+        formaPago: pago.formaPago ?? null,
+        cuentaBancaria: pago.cuentaBancaria ?? null,
+        nroComprobante: pago.nroComprobante ?? null,
+        monto: this.r2(Number(pago.monto)),
+      }));
+    }
+    return this.resolverMedios(undefined, recibo.montoTotal, {
+      idFormaPago: recibo.idFormaPago ?? undefined,
+      idCuentaBancaria:
+        dto.idCuentaBancaria ?? recibo.idCuentaBancaria ?? undefined,
+      nroComprobante:
+        dto.nroComprobante?.trim() || recibo.nroComprobante || undefined,
+    });
+  }
+
+  /**
+   * Anula un recibo.
+   *
+   * BORRADOR: solo cambia de estado (todavía no generó movimientos).
+   *
+   * PROCESADO: además revierte todo lo que posteó al procesarse — da de baja
+   * sus movimientos de la caja de flujo, de la libreta de bancos (si emitió
+   * un cheque, queda ANULADO) y sus líneas de kardex, y recalcula los saldos
+   * de cada caja, cuenta y kardex afectados. Todo en una sola transacción.
+   * No se puede si algún movimiento cayó en un período ya cerrado, si algún
+   * kardex ya está cerrado, o si el recibo es el respaldo de otra operación
+   * (ver `validarAnulacionProcesado`).
    */
   async anular(id: string, user: Usuario): Promise<Recibo> {
     const recibo = await this.reciboRepository.findOne({ where: { id } });
     if (!recibo) {
       throw new NotFoundException('No se encontró el recibo solicitado.');
     }
-    if (recibo.estado !== 'BORRADOR') {
-      throw new BadRequestException(
-        recibo.estado === 'PROCESADO'
-          ? 'No se puede anular un recibo ya procesado.'
-          : 'El recibo ya está anulado.',
-      );
+    if (recibo.estado === 'ANULADO') {
+      throw new BadRequestException('El recibo ya está anulado.');
     }
 
-    await this.reciboRepository.update(recibo.id, {
-      estado: 'ANULADO',
-      usuarioUltimaModificacion: user.usuario,
-    });
+    if (recibo.estado === 'BORRADOR') {
+      await this.reciboRepository.update(recibo.id, {
+        estado: 'ANULADO',
+        usuarioUltimaModificacion: user.usuario,
+      });
+    } else {
+      await this.anularProcesado(recibo, user);
+    }
 
     return this.reciboRepository.findOne({
       where: { id: recibo.id },
       relations: RELACIONES,
     });
+  }
+
+  private async anularProcesado(recibo: Recibo, user: Usuario): Promise<void> {
+    const codigo = `${recibo.serie}-${recibo.numero}`;
+    await this.validarAnulacionProcesado(recibo, codigo);
+
+    const manager = this.dataSource.manager;
+    const [movsCaja, movsBanco, lineasKardex] = await Promise.all([
+      manager.find(MovimientoCaja, {
+        where: { idRecibo: recibo.id, activo: true },
+        relations: { periodoCaja: true },
+      }),
+      manager.find(LibretaBanco, {
+        where: { idRecibo: recibo.id, activo: true },
+        relations: { periodoBanco: true },
+      }),
+      manager.find(MovimientoKardex, {
+        where: { idRecibo: recibo.id, activo: true },
+        relations: { kardex: true },
+      }),
+    ]);
+
+    if (movsCaja.some((mov) => mov.periodoCaja?.estado === 'CERRADO')) {
+      throw new BadRequestException(
+        `El recibo ${codigo} tiene un movimiento de caja en un período cerrado: no se puede anular. Reabrí el período o registrá una regularización.`,
+      );
+    }
+    if (movsBanco.some((mov) => mov.periodoBanco?.estado === 'CERRADO')) {
+      throw new BadRequestException(
+        `El recibo ${codigo} tiene un movimiento de libreta bancaria en un período cerrado: no se puede anular. Reabrí el período o registrá una regularización.`,
+      );
+    }
+    const kardexCerrado = lineasKardex.find(
+      (linea) => linea.kardex?.estado !== 'ABIERTO',
+    );
+    if (kardexCerrado) {
+      throw new BadRequestException(
+        `El kardex ${kardexCerrado.kardex?.codigo ?? kardexCerrado.idKardex} ya está cerrado: no se puede anular el recibo ${codigo}.`,
+      );
+    }
+
+    await this.dataSource.transaction(async (tx) => {
+      for (const mov of movsCaja) {
+        await this.movimientoCajaService.cambiarEstadoEnTransaccion(
+          tx,
+          mov,
+          false,
+          user,
+        );
+      }
+      for (const mov of movsBanco) {
+        await this.libretaBancoService.cambiarEstadoEnTransaccion(
+          tx,
+          mov,
+          false,
+          user,
+        );
+      }
+      for (const linea of lineasKardex) {
+        await tx.update(MovimientoKardex, linea.id, {
+          activo: false,
+          usuarioUltimaModificacion: user.usuario,
+        });
+      }
+      for (const idKardex of new Set(lineasKardex.map((l) => l.idKardex))) {
+        await this.recalcularKardex(tx, idKardex);
+      }
+      await tx.update(Recibo, recibo.id, {
+        estado: 'ANULADO',
+        usuarioUltimaModificacion: user.usuario,
+      });
+    });
+  }
+
+  /**
+   * Un recibo PROCESADO no se anula por acá cuando otra operación depende de
+   * él, porque quedaría descuadrada:
+   *   - lo generó un préstamo al personal, un abono de préstamo, una boleta
+   *     de pago, un fondo a rendir o un bien en dación de pago: se revierte
+   *     desde esa operación;
+   *   - es el anticipo de una recepción cuya valorización ya tiene un pago
+   *     vigente (ese pago descontó este anticipo): primero se anula el pago.
+   */
+  private async validarAnulacionProcesado(
+    recibo: Recibo,
+    codigo: string,
+  ): Promise<void> {
+    const [origen] = await this.dataSource.query(
+      `SELECT 'un préstamo al personal' AS origen
+         FROM contabilidad.prestamo_personal WHERE id_recibo = $1 AND activo = true
+       UNION ALL
+       SELECT 'un abono de préstamo al personal'
+         FROM contabilidad.movimiento_prestamo WHERE id_recibo = $1 AND activo = true
+       UNION ALL
+       SELECT 'una boleta de pago'
+         FROM contabilidad.boleta_pago WHERE id_recibo = $1 AND activo = true
+       UNION ALL
+       SELECT 'un fondo a rendir'
+         FROM contabilidad.fondo_rendir
+        WHERE (id_recibo = $1 OR id_recibo_reposicion = $1) AND activo = true
+       UNION ALL
+       SELECT 'un bien en dación de pago'
+         FROM contabilidad.bien_dacion_pago WHERE id_recibo = $1 AND activo = true
+       LIMIT 1`,
+      [recibo.id],
+    );
+    if (origen) {
+      throw new BadRequestException(
+        `El recibo ${codigo} es el respaldo de ${origen.origen}: no se puede anular desde Recibos porque esa operación quedaría descuadrada.`,
+      );
+    }
+
+    if (recibo.idRecepcionMineral) {
+      const [pago] = await this.dataSource.query(
+        `SELECT pv.id
+           FROM contabilidad.pago_valorizacion pv
+           JOIN comercio_interno.valorizacion_mineral v ON v.id = pv.id_valorizacion_mineral
+          WHERE v.id_recepcion_mineral = $1
+            AND pv.activo = true AND pv.estado <> 'ANULADO'
+          LIMIT 1`,
+        [recibo.idRecepcionMineral],
+      );
+      if (pago) {
+        throw new BadRequestException(
+          `El recibo ${codigo} es el anticipo de una recepción cuya valorización ya fue pagada (ese pago descontó este anticipo). Anulá primero el pago de la valorización.`,
+        );
+      }
+    }
   }
 
   async listar(filtro: FiltrosReciboDto): Promise<ReciboPaginadoDto> {
@@ -1298,6 +1542,8 @@ export class ReciboService {
       .leftJoinAndSelect('r.cliente', 'cliente')
       .leftJoinAndSelect('r.cuentaBancaria', 'cuentaBancaria')
       .leftJoinAndSelect('cuentaBancaria.entidadFinanciera', 'entidadFinanciera')
+      .leftJoinAndSelect('r.pagos', 'pagos')
+      .leftJoinAndSelect('pagos.formaPago', 'formaPagoMixto')
       .orderBy('r.fecha', 'ASC')
       .addOrderBy('r.serie', 'ASC')
       .addOrderBy('r.numero', 'ASC')

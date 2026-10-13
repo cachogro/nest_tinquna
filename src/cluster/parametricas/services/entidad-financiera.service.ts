@@ -110,6 +110,7 @@ export class EntidadFinancieraService {
             alias: cuenta.alias?.trim() || null,
             saldoInicial: cuenta.saldoInicial ?? 0,
             fechaSaldoInicial: cuenta.fechaSaldoInicial ?? null,
+            manejaCheques: cuenta.manejaCheques ?? false,
             usuarioRegistro: user.usuario,
           }),
         );
@@ -176,6 +177,10 @@ export class EntidadFinancieraService {
             cuenta.fechaSaldoInicial !== undefined
               ? { fechaSaldoInicial: cuenta.fechaSaldoInicial || null }
               : {};
+          const manejaChequesCol =
+            cuenta.manejaCheques !== undefined
+              ? { manejaCheques: cuenta.manejaCheques }
+              : {};
 
           if (cuenta.id) {
             const actual = existentes.find((c) => c.id === cuenta.id);
@@ -200,6 +205,7 @@ export class EntidadFinancieraService {
               alias,
               ...saldoInicialCol,
               ...fechaSaldoInicialCol,
+              ...manejaChequesCol,
               usuarioUltimaModificacion: user.usuario,
             });
           } else {
@@ -219,6 +225,7 @@ export class EntidadFinancieraService {
               alias,
               saldoInicial: cuenta.saldoInicial ?? 0,
               fechaSaldoInicial: cuenta.fechaSaldoInicial ?? null,
+              manejaCheques: cuenta.manejaCheques ?? false,
               usuarioRegistro: user.usuario,
             });
             await queryRunner.manager.save(nueva);

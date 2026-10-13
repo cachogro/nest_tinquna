@@ -10,9 +10,10 @@ import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { ValorizacionMineral } from 'src/cluster/comercio-interno/entities/valorizacion/valorizacion-mineral.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { PersonaAutorizo } from '../persona-autorizo.util';
 import { PagoValorizacionDetalle } from './pago-valorizacion-detalle.entity';
+import { PagoValorizacionMedio } from './pago-valorizacion-medio.entity';
 
 export type EstadoPagoValorizacion = 'REGISTRADO' | 'ANULADO';
 
@@ -128,21 +129,21 @@ export class PagoValorizacion extends Auditoria {
   nroComprobante?: string | null;
 
   @Column({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     type: 'int',
     nullable: true,
   })
-  idDestinoGasto?: number | null;
+  idPlanCuentas?: number | null;
 
-  @ManyToOne(() => DestinoGasto, {
+  @ManyToOne(() => PlanCuentas, {
     nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     referencedColumnName: 'id',
   })
-  destinoGasto?: DestinoGasto | null;
+  planCuentas?: PlanCuentas | null;
 
   @Column({
     name: 'id_persona_autorizo',
@@ -184,4 +185,9 @@ export class PagoValorizacion extends Auditoria {
 
   @OneToMany(() => PagoValorizacionDetalle, (d) => d.pagoValorizacion)
   detalles?: PagoValorizacionDetalle[];
+
+  // Medios de un pago MIXTO (dos o más). Vacío con un solo medio: ese vive
+  // en la cabecera, que en un pago mixto guarda los datos del primero.
+  @OneToMany(() => PagoValorizacionMedio, (m) => m.pagoValorizacion)
+  medios?: PagoValorizacionMedio[];
 }

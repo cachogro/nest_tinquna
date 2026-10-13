@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -77,4 +78,13 @@ export class CuentaBancariaDto {
     { message: 'La fecha del saldo inicial debe tener el formato YYYY-MM-DD.' },
   )
   fechaSaldoInicial?: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Si la cuenta maneja chequera. Con true, cada pago con forma CHEQUE que sale de la cuenta debe usar un N° de cheque de sus talonarios (contabilidad/talonario-cheque). Si no se envía al actualizar, no se modifica.',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'manejaCheques debe ser verdadero o falso.' })
+  manejaCheques?: boolean;
 }

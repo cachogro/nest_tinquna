@@ -30,7 +30,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { LibretaBancoService } from '../services/libreta-banco.service';
 import { LibretaBancoExcelService } from '../services/libreta-banco-excel.service';
@@ -45,10 +46,13 @@ import {
   AccionPeriodo,
 } from '../dto/movimiento-caja/accion-periodo-caja.dto';
 import { AccionPeriodoBancoDto } from '../dto/libreta-banco/accion-periodo-banco.dto';
+import { RequierePermisoExcel } from 'src/security/decorators/requiere-permiso.decorator';
+import { PERMISO_DESCARGAR_EXCEL_CONTABILIDAD } from 'src/security/enums/permisos';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class ContabilidadController {
   constructor(
     private readonly libretaBancoService: LibretaBancoService,
@@ -183,6 +187,7 @@ export class ContabilidadController {
     return await this.libretaBancoService.listar(filtro);
   }
 
+  @RequierePermisoExcel(PERMISO_DESCARGAR_EXCEL_CONTABILIDAD)
   @Get('libreta-banco/excel')
   @Auth()
   @ApiOperation({
@@ -214,7 +219,7 @@ export class ContabilidadController {
   @ApiOperation({
     summary: 'Detalle de un movimiento de la libreta',
     description:
-      'Movimiento completo para el visor de la bandeja: cuenta, período, beneficiario, destino del gasto, quién y cuándo lo registró, y el origen (recibo, traspaso o línea de kardex) si lo tiene.',
+      'Movimiento completo para el visor de la bandeja: cuenta, período, beneficiario, plan de cuentas, quién y cuándo lo registró, y el origen (recibo, traspaso o línea de kardex) si lo tiene.',
   })
   @ApiParam({ name: 'id', description: 'Id del movimiento.', example: '15' })
   @ApiOkResponse({ description: 'Movimiento obtenido.', type: LibretaBanco })

@@ -11,7 +11,7 @@ import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.enti
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { Caja } from 'src/cluster/parametricas/entities/caja.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
 import { Kardex } from '../entities/kardex.entity';
 import { MovimientoCaja } from '../entities/movimiento-caja.entity';
@@ -36,7 +36,7 @@ const RELACIONES = {
   persona: true,
   actorProductivoMinero: true,
   recibo: true,
-  gastos: { destinoGasto: true },
+  gastos: { planCuentas: true },
 } as const;
 
 // La caja de flujo de la empresa (Caja id=1, "CAJA PRINCIPAL"): mismo
@@ -53,7 +53,7 @@ interface MedioPago {
   cuentaBancaria: CuentaBancaria | null;
   caja: Caja | null;
   nroComprobante: string | null;
-  idDestinoGasto: number | null;
+  idPlanCuentas: number | null;
   personaAutorizo: PersonaAutorizo;
 }
 
@@ -205,7 +205,7 @@ export class BienDacionPagoService {
   /**
    * Valida los datos de pago antes de abrir la transacción: forma de pago,
    * cuenta bancaria + comprobante si el medio es bancario (o la caja de la
-   * empresa aperturada si es efectivo), destino del gasto y quién autorizó.
+   * empresa aperturada si es efectivo), plan de cuentas y quién autorizó.
    */
   private async resolverMedioPago(dto: DatosPagoDto, documento: string): Promise<MedioPago> {
     const personaAutorizo = await resolverPersonaAutorizo(
@@ -246,22 +246,22 @@ export class BienDacionPagoService {
       await this.libretaBancoService.obtenerCuentaAperturada(cuentaBancaria.id);
     }
 
-    let idDestinoGasto: number | null = null;
-    if (dto.idDestinoGasto) {
-      const destino = await this.dataSource.manager.findOne(DestinoGasto, {
-        where: { id: dto.idDestinoGasto },
+    let idPlanCuentas: number | null = null;
+    if (dto.idPlanCuentas) {
+      const destino = await this.dataSource.manager.findOne(PlanCuentas, {
+        where: { id: dto.idPlanCuentas },
       });
       if (!destino) {
-        throw new NotFoundException('El destino del gasto seleccionado no existe.');
+        throw new NotFoundException('El plan de cuentas seleccionado no existe.');
       }
-      idDestinoGasto = destino.id;
+      idPlanCuentas = destino.id;
     }
 
     const caja = cuentaBancaria
       ? null
       : await this.movimientoCajaService.obtenerCajaAperturada(ID_CAJA_EMPRESA, MONEDA);
 
-    return { formaPago, cuentaBancaria, caja, nroComprobante, idDestinoGasto, personaAutorizo };
+    return { formaPago, cuentaBancaria, caja, nroComprobante, idPlanCuentas, personaAutorizo };
   }
 
   /**
@@ -293,7 +293,7 @@ export class BienDacionPagoService {
           facturaRecibo: datos.referencia,
           nombresApellidos: datos.aNombreDe,
           concepto: datos.concepto,
-          idDestinoGasto: medio.idDestinoGasto,
+          idPlanCuentas: medio.idPlanCuentas,
           debe: datos.egreso,
           haber: datos.ingreso,
         },
@@ -312,7 +312,7 @@ export class BienDacionPagoService {
         idFormaPago: medio.formaPago.id,
         entregaFondosA: datos.aNombreDe,
         concepto: datos.concepto,
-        idDestinoGasto: medio.idDestinoGasto,
+        idPlanCuentas: medio.idPlanCuentas,
         ingreso: datos.ingreso,
         egreso: datos.egreso,
       },
@@ -544,7 +544,7 @@ export class BienDacionPagoService {
           fecha: dto.fecha,
           concepto,
           monto,
-          idDestinoGasto: medio.idDestinoGasto,
+          idPlanCuentas: medio.idPlanCuentas,
           ...movimientos,
           personaAutorizo: medio.personaAutorizo,
           usuarioRegistro: user.usuario,
@@ -662,7 +662,7 @@ export class BienDacionPagoService {
     const gastos = ids.length
       ? await this.gastoRepository
           .createQueryBuilder('g')
-          .leftJoinAndSelect('g.destinoGasto', 'dg')
+          .leftJoinAndSelect('g.planCuentas', 'dg')
           .where('g.idBienDacionPago IN (:...ids)', { ids })
           .orderBy('g.fecha', 'ASC')
           .addOrderBy('g.id', 'ASC')

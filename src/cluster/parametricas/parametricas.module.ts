@@ -38,9 +38,9 @@ import { CuentaBancaria } from './entities/cuenta-bancaria.entity';
 import { EntidadFinancieraService } from './services/entidad-financiera.service';
 import { FormaPago } from './entities/forma-pago.entity';
 import { KardexSubcuenta } from './entities/kardex-subcuenta.entity';
-import { DestinoGasto } from './entities/destino-gasto.entity';
+import { PlanCuentas } from './entities/plan-cuentas.entity';
 import { CodificacionLote } from './entities/codificacion-lote.entity';
-import { DestinoGastoService } from './services/destino-gasto.service';
+import { PlanCuentasService } from './services/plan-cuentas.service';
 import { CodificacionLoteService } from './services/codificacion-lote.service';
 import { LugarAcopio } from './entities/lugar-acopio.entity';
 import { LugarAcopioService } from './services/lugar-acopio.service';
@@ -67,7 +67,7 @@ import { ClienteService } from './services/cliente.service';
     EntidadFinancieraService,
     CajaService,
     ClienteService,
-    DestinoGastoService,
+    PlanCuentasService,
     CodificacionLoteService,
     LugarAcopioService,
     FormaPagoService,
@@ -97,7 +97,7 @@ import { ClienteService } from './services/cliente.service';
         CuentaBancaria,
         FormaPago,
         KardexSubcuenta,
-        DestinoGasto,
+        PlanCuentas,
         CodificacionLote,
         LugarAcopio,
         Caja,

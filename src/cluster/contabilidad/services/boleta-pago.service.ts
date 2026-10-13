@@ -293,13 +293,14 @@ export class BoletaPagoService {
                 idFormaPago: dto.idFormaPago,
                 idCuentaBancaria: dto.idCuentaBancaria,
                 nroComprobante: dto.nroComprobante,
+                pagos: dto.pagos,
                 idPersona: persona.id,
                 idPersonaAutorizo: dto.idPersonaAutorizo,
                 detalles: [
                   {
                     destino: 'EFECTIVO',
                     monto: montoPagado,
-                    idDestinoGasto: dto.idDestinoGasto,
+                    idPlanCuentas: dto.idPlanCuentas,
                   },
                 ],
               },
@@ -314,6 +315,7 @@ export class BoletaPagoService {
           fechaDesde,
           fechaHasta,
           fechaPago: dto.fechaPago,
+          fechaHoraGeneracion: new Date(),
           diasTrabajados: dto.diasTrabajados ?? null,
           concepto,
           salarioBase,

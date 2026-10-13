@@ -8,7 +8,7 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { LibretaBanco } from '../entities/libreta-banco.entity';
 import { PeriodoBanco } from '../entities/periodo-banco.entity';
@@ -28,7 +28,13 @@ import {
   recalcularSaldoKardex,
   siguienteNumeroLineaKardex,
 } from '../kardex-posteo.util';
+import {
+  origenDeMovimiento,
+  origenesDeMovimientos,
+  validarSinOrigen,
+} from '../origen-movimiento.util';
 import { KardexActividadService } from './kardex-actividad.service';
+import { ChequeService } from './cheque.service';
 
 /** Relaciones que se devuelven al crear/editar/cambiar estado un movimiento. */
 const RELACIONES_MOVIMIENTO = {
@@ -36,7 +42,7 @@ const RELACIONES_MOVIMIENTO = {
   persona: true,
   actorProductivoMinero: true,
   cliente: true,
-  destinoGasto: true,
+  planCuentas: true,
 } as const;
 
 @Injectable()
@@ -54,8 +60,8 @@ export class LibretaBancoService {
     @InjectRepository(PersonaCi, 'ci')
     private readonly personaRepository: Repository<PersonaCi>,
 
-    @InjectRepository(DestinoGasto, 'ci')
-    private readonly destinoGastoRepository: Repository<DestinoGasto>,
+    @InjectRepository(PlanCuentas, 'ci')
+    private readonly planCuentasRepository: Repository<PlanCuentas>,
 
     @InjectRepository(ActorProductivoMinero, 'ci')
     private readonly actorRepository: Repository<ActorProductivoMinero>,
@@ -64,6 +70,8 @@ export class LibretaBancoService {
     private readonly clienteRepository: Repository<Cliente>,
 
     private readonly kardexActividadService: KardexActividadService,
+
+    private readonly chequeService: ChequeService,
 
     @InjectDataSource('ci')
     private readonly dataSource: DataSource,
@@ -236,18 +244,15 @@ export class LibretaBancoService {
     return formaPago?.id ?? null;
   }
 
-  /** Los movimientos generados por un recibo o un traspaso se gestionan desde su origen. */
-  private validarEditableDesdeLibreta(mov: LibretaBanco): void {
-    if (mov.idRecibo) {
-      throw new BadRequestException(
-        'Este movimiento lo generó un recibo: no se puede modificar desde la libreta de bancos.',
-      );
-    }
-    if (mov.idTraspaso) {
-      throw new BadRequestException(
-        'Este movimiento lo generó un traspaso: modificalo o desactivalo desde el traspaso.',
-      );
-    }
+  /**
+   * Los movimientos generados por un recibo, un traspaso, un pago de
+   * valorización o un bien en dación de pago se gestionan desde su origen.
+   */
+  private async validarEditableDesdeLibreta(mov: LibretaBanco): Promise<void> {
+    validarSinOrigen(
+      await origenDeMovimiento(this.dataSource.manager, 'idLibretaBanco', mov),
+      'la libreta de bancos',
+    );
   }
 
   /** Línea de kardex enlazada al movimiento (si la tiene), validando que su kardex siga abierto. */
@@ -283,20 +288,20 @@ export class LibretaBancoService {
     return cuenta;
   }
 
-  /** Solo valida que el destino exista (mismo criterio que MovimientoCajaService). */
-  private async resolverDestinoGasto(
-    idDestinoGasto?: number,
+  /** Solo valida que el plan de cuentas exista (mismo criterio que MovimientoCajaService). */
+  private async resolverPlanCuentas(
+    idPlanCuentas?: number,
   ): Promise<number | null> {
-    if (!idDestinoGasto) {
+    if (!idPlanCuentas) {
       return null;
     }
-    const destinoGasto = await this.destinoGastoRepository.findOne({
-      where: { id: idDestinoGasto },
+    const planCuentas = await this.planCuentasRepository.findOne({
+      where: { id: idPlanCuentas },
     });
-    if (!destinoGasto) {
-      throw new NotFoundException('El destino del gasto indicado no existe.');
+    if (!planCuentas) {
+      throw new NotFoundException('El plan de cuentas indicado no existe.');
     }
-    return destinoGasto.id;
+    return planCuentas.id;
   }
 
   /** Folio siguiente para la libreta de una cuenta dentro de una gestión. */
@@ -451,7 +456,7 @@ export class LibretaBancoService {
       idRecibo?: string | null;
       idMovimientoKardex?: string | null;
       idTraspaso?: string | null;
-      idDestinoGasto?: number | null;
+      idPlanCuentas?: number | null;
       /** Bs. por 1 USD, si la cuenta es en USD y quien llama lo conoce. */
       tipoCambio?: number | null;
       debe: number;
@@ -486,13 +491,22 @@ export class LibretaBancoService {
         idRecibo: datos.idRecibo ?? null,
         idMovimientoKardex: datos.idMovimientoKardex ?? null,
         idTraspaso: datos.idTraspaso ?? null,
-        idDestinoGasto: datos.idDestinoGasto ?? null,
+        idPlanCuentas: datos.idPlanCuentas ?? null,
         tipoCambio: datos.tipoCambio ?? null,
         debe: this.r2(datos.debe),
         haber: this.r2(datos.haber),
         saldo: 0,
         usuarioRegistro: user.usuario,
       }),
+    );
+
+    // Pago con cheque de una cuenta con chequera: consume el cheque del
+    // talonario (falla si el N° no existe o ya se usó).
+    await this.chequeService.registrarEmisionEnTransaccion(
+      manager,
+      cuenta,
+      mov,
+      user,
     );
 
     await this.recalcularCuenta(manager, cuenta.id);
@@ -517,7 +531,7 @@ export class LibretaBancoService {
     // (queda en el movimiento como referencia del equivalente en Bs.).
     const tipoCambio = resolverTipoCambio(monedaDeCuenta(cuenta), dto.tipoCambio);
     const beneficiario = await this.resolverBeneficiario(dto);
-    const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
+    const idPlanCuentas = await this.resolverPlanCuentas(dto.idPlanCuentas);
     // Con persona/actor/cliente: también afecta su kardex abierto (falla si
     // no tiene uno). Sin contraparte vinculada: solo se registra en la libreta.
     const kardex = await buscarKardexAbiertoContraparte(
@@ -548,7 +562,7 @@ export class LibretaBancoService {
             idCuentaBancaria: cuenta.id,
             idFormaPago,
             detalle: concepto,
-            idDestinoGasto,
+            idPlanCuentas,
             ...importesKardex,
             saldo: 0,
             usuarioRegistro: user.usuario,
@@ -571,7 +585,7 @@ export class LibretaBancoService {
           idCliente: beneficiario.idCliente,
           nombresApellidos: beneficiario.nombresApellidos,
           concepto,
-          idDestinoGasto,
+          idPlanCuentas,
           idMovimientoKardex,
           tipoCambio,
           debe,
@@ -598,7 +612,7 @@ export class LibretaBancoService {
     if (!mov) {
       throw new NotFoundException('No se encontró el movimiento solicitado.');
     }
-    this.validarEditableDesdeLibreta(mov);
+    await this.validarEditableDesdeLibreta(mov);
     if (mov.periodoBanco.estado === 'CERRADO') {
       throw new BadRequestException(
         'El movimiento pertenece a un período cerrado y no puede modificarse. Registrá una regularización en el período abierto.',
@@ -612,10 +626,9 @@ export class LibretaBancoService {
       );
     }
 
-    const [gestion, mes] = this.gestionMesDeFecha(dto.fecha);
     const { debe, haber } = this.debeHaber(dto);
     let beneficiario = await this.resolverBeneficiario(dto);
-    const idDestinoGasto = await this.resolverDestinoGasto(dto.idDestinoGasto);
+    const idPlanCuentas = await this.resolverPlanCuentas(dto.idPlanCuentas);
     const nroTransaccion = dto.nroTransaccion?.trim() || null;
     const facturaRecibo =
       dto.facturaRecibo !== undefined
@@ -685,7 +698,7 @@ export class LibretaBancoService {
           facturaRecibo,
           idFormaPago,
           detalle: concepto,
-          idDestinoGasto,
+          idPlanCuentas,
           ...importesKardex,
           usuarioUltimaModificacion: user.usuario,
         });
@@ -701,7 +714,7 @@ export class LibretaBancoService {
             idCuentaBancaria: cuenta.id,
             idFormaPago,
             detalle: concepto,
-            idDestinoGasto,
+            idPlanCuentas,
             ...importesKardex,
             saldo: 0,
             usuarioRegistro: user.usuario,
@@ -711,53 +724,98 @@ export class LibretaBancoService {
         idMovimientoKardex = nueva.id;
       }
 
-      let idPeriodoBanco = mov.idPeriodoBanco;
-      let folio = mov.folio;
-
-      if (
-        mov.periodoBanco.gestion !== gestion ||
-        mov.periodoBanco.mes !== mes
-      ) {
-        const destino = await this.obtenerOCrearPeriodoMensual(
-          manager,
-          cuenta.id,
-          gestion,
-          mes,
-          user,
-        );
-        idPeriodoBanco = destino.id;
-        if (mov.periodoBanco.gestion !== gestion) {
-          folio = await this.siguienteFolio(manager, cuenta.id, gestion);
-        }
-      }
-
-      await manager.update(LibretaBanco, mov.id, {
-        idPeriodoBanco,
-        folio,
-        fecha: dto.fecha,
-        nroTransaccion,
-        tipoTransaccion: dto.tipoTransaccion.trim(),
-        facturaRecibo,
-        idPersona: beneficiario.idPersona,
-        idActorProductivoMinero: beneficiario.idActorProductivoMinero,
-        idCliente: beneficiario.idCliente,
-        nombresApellidos: beneficiario.nombresApellidos,
-        concepto,
-        idDestinoGasto,
-        idMovimientoKardex,
-        tipoCambio,
-        debe,
-        haber,
-        usuarioUltimaModificacion: user.usuario,
-      });
-
-      await this.recalcularCuenta(manager, cuenta.id);
+      await this.actualizarEnTransaccion(
+        manager,
+        cuenta,
+        mov,
+        {
+          fecha: dto.fecha,
+          nroTransaccion,
+          tipoTransaccion: dto.tipoTransaccion.trim(),
+          facturaRecibo,
+          idPersona: beneficiario.idPersona,
+          idActorProductivoMinero: beneficiario.idActorProductivoMinero,
+          idCliente: beneficiario.idCliente,
+          nombresApellidos: beneficiario.nombresApellidos,
+          concepto,
+          idPlanCuentas,
+          idMovimientoKardex,
+          tipoCambio,
+          debe,
+          haber,
+        },
+        user,
+      );
 
       return manager.findOne(LibretaBanco, {
         where: { id: mov.id },
         relations: RELACIONES_MOVIMIENTO,
       });
     });
+  }
+
+  /**
+   * Núcleo de "editar un movimiento" (reubicación de período y folio si
+   * cambió la fecha + update + cheque + recálculo), reusable dentro de una
+   * transacción ya abierta por otro servicio (ej. MovimientoKardexService,
+   * que al editar una línea corrige también su movimiento de libreta). `mov`
+   * debe traer `periodoBanco`; el período cerrado lo valida quien llama.
+   */
+  async actualizarEnTransaccion(
+    manager: EntityManager,
+    cuenta: CuentaBancaria,
+    mov: LibretaBanco,
+    campos: {
+      fecha: string;
+      nroTransaccion: string | null;
+      tipoTransaccion: string;
+      facturaRecibo: string | null;
+      idPersona?: string | null;
+      idActorProductivoMinero?: string | null;
+      idCliente?: string | null;
+      nombresApellidos?: string | null;
+      concepto: string;
+      idPlanCuentas: number | null;
+      idMovimientoKardex?: string | null;
+      tipoCambio: number | null;
+      debe: number;
+      haber: number;
+    },
+    user: Usuario,
+  ): Promise<void> {
+    const [gestion, mes] = this.gestionMesDeFecha(campos.fecha);
+    let idPeriodoBanco = mov.idPeriodoBanco;
+    let folio = mov.folio;
+
+    if (mov.periodoBanco.gestion !== gestion || mov.periodoBanco.mes !== mes) {
+      const destino = await this.obtenerOCrearPeriodoMensual(
+        manager,
+        cuenta.id,
+        gestion,
+        mes,
+        user,
+      );
+      idPeriodoBanco = destino.id;
+      if (mov.periodoBanco.gestion !== gestion) {
+        folio = await this.siguienteFolio(manager, cuenta.id, gestion);
+      }
+    }
+
+    await manager.update(LibretaBanco, mov.id, {
+      ...campos,
+      idPeriodoBanco,
+      folio,
+      usuarioUltimaModificacion: user.usuario,
+    });
+
+    await this.chequeService.sincronizarEdicionEnTransaccion(
+      manager,
+      cuenta,
+      await manager.findOneBy(LibretaBanco, { id: mov.id }),
+      user,
+    );
+
+    await this.recalcularCuenta(manager, cuenta.id);
   }
 
   /**
@@ -788,6 +846,13 @@ export class LibretaBancoService {
       activo,
       usuarioUltimaModificacion: user.usuario,
     });
+    // Si el movimiento emitió un cheque, se anula (o se restituye) con él.
+    await this.chequeService.sincronizarEstadoEnTransaccion(
+      manager,
+      mov.id,
+      activo,
+      user,
+    );
     await this.recalcularSaldosEnTransaccion(manager, mov.idCuentaBancaria);
   }
 
@@ -803,7 +868,7 @@ export class LibretaBancoService {
     if (!mov) {
       throw new NotFoundException('No se encontró el movimiento solicitado.');
     }
-    this.validarEditableDesdeLibreta(mov);
+    await this.validarEditableDesdeLibreta(mov);
     if (mov.periodoBanco.estado === 'CERRADO') {
       throw new BadRequestException(
         'El movimiento pertenece a un período cerrado y no puede modificarse.',
@@ -868,7 +933,17 @@ export class LibretaBancoService {
       .addOrderBy('p.mes', 'ASC')
       .addOrderBy('l.folio', 'ASC')
       .addOrderBy('l.id', 'ASC');
-    const movimientos = await qb.getMany();
+    const lista = await qb.getMany();
+    // `origen` le dice a la bandeja qué filas se gestionan desde otro
+    // documento (no se editan ni desactivan acá).
+    const origenes = await origenesDeMovimientos(
+      this.dataSource.manager,
+      'idLibretaBanco',
+      lista,
+    );
+    const movimientos = lista.map((m) =>
+      Object.assign(m, { origen: origenes.get(String(m.id)) ?? null }),
+    );
 
     const wherePeriodo: Record<string, unknown> = {
       idCuentaBancaria: cuenta.id,
@@ -900,7 +975,7 @@ export class LibretaBancoService {
 
   /**
    * Detalle completo de un movimiento (visor de la bandeja): cuenta, período,
-   * beneficiario, destino del gasto, auditoría y un resumen del origen
+   * beneficiario, plan de cuentas, auditoría y un resumen del origen
    * (recibo, traspaso o línea de kardex) cuando lo tiene.
    */
   async buscarPorId(id: string): Promise<LibretaBanco> {
@@ -914,7 +989,7 @@ export class LibretaBancoService {
       .addSelect(['act.id', 'act.nombre'])
       .leftJoin('l.cliente', 'cli')
       .addSelect(['cli.id', 'cli.nombre'])
-      .leftJoinAndSelect('l.destinoGasto', 'dg')
+      .leftJoinAndSelect('l.planCuentas', 'dg')
       .leftJoin('l.recibo', 'rec')
       .addSelect(['rec.id', 'rec.serie', 'rec.numero', 'rec.tipo', 'rec.estado'])
       .leftJoin('l.traspaso', 'tr')

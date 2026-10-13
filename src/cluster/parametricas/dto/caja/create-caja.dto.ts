@@ -7,7 +7,6 @@ import {
   IsOptional,
   IsString,
   Length,
-  Min,
 } from 'class-validator';
 
 export class CreateCajaDto {
@@ -22,7 +21,8 @@ export class CreateCajaDto {
 
   @ApiPropertyOptional({
     example: 1587523,
-    description: 'Saldo con el que arranca la caja en bolivianos.',
+    description:
+      'Saldo con el que arranca la caja en bolivianos. Puede ser negativo (caja que abre sobregirada).',
   })
   @IsOptional()
   @Type(() => Number)
@@ -30,7 +30,6 @@ export class CreateCajaDto {
     { maxDecimalPlaces: 2 },
     { message: 'El saldo inicial en Bs. debe ser numérico con hasta 2 decimales.' },
   )
-  @Min(0, { message: 'El saldo inicial en Bs. no puede ser negativo.' })
   saldoInicialBs?: number;
 
   @ApiPropertyOptional({
@@ -43,7 +42,8 @@ export class CreateCajaDto {
 
   @ApiPropertyOptional({
     example: 0,
-    description: 'Saldo con el que arranca la caja en dólares.',
+    description:
+      'Saldo con el que arranca la caja en dólares. Puede ser negativo (caja que abre sobregirada).',
   })
   @IsOptional()
   @Type(() => Number)
@@ -51,7 +51,6 @@ export class CreateCajaDto {
     { maxDecimalPlaces: 2 },
     { message: 'El saldo inicial en $us. debe ser numérico con hasta 2 decimales.' },
   )
-  @Min(0, { message: 'El saldo inicial en $us. no puede ser negativo.' })
   saldoInicialUsd?: number;
 
   @ApiPropertyOptional({

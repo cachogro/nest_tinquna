@@ -22,7 +22,30 @@ export interface ActividadKardex {
   diasInactividad: number;
 }
 
-export type TipoKardex = 'ACTOR' | 'ASOCIADO' | 'PERSONAL' | 'CLIENTE';
+/**
+ * Intereses por mora de un kardex (ver KardexInteresService). Se llevan
+ * aparte: `pendiente` NO está dentro de `saldoActual` hasta que se carga.
+ */
+export interface ResumenInteresKardex {
+  /** Plan que sigue generando cuotas; null si ya no hay ninguno vigente. */
+  idKardexInteres: string | null;
+  estado: 'VIGENTE' | 'FINALIZADO';
+  /** Tasa mensual (%) del plan vigente o, si no hay, del último. */
+  tasaMensual: number;
+  fechaInicio: string;
+  /** Día en que se genera la próxima cuota (YYYY-MM-DD); null sin plan vigente. */
+  proximoCorte: string | null;
+  cuotasPendientes: number;
+  /** Devengado y todavía negociable (Bs.). */
+  pendiente: number;
+  /** Ya cargado al kardex (está dentro de su saldo). */
+  cargado: number;
+  condonado: number;
+  /** `saldoActual` + `pendiente`: lo que se le cobraría hoy. */
+  totalConIntereses: number;
+}
+
+export type TipoKardex ='ACTOR' | 'ASOCIADO' | 'PERSONAL' | 'CLIENTE';
 export type EstadoKardex = 'ABIERTO' | 'CERRADO';
 
 /**
@@ -119,10 +142,11 @@ export class Kardex extends Auditoria {
   })
   numero: number;
 
-  // Código único y legible: K<tipo>-<correlativo>, ej. "KA-001" (ver
+  // Código legible del TITULAR: K<tipo>-<correlativo>, ej. "KA-001" (ver
   // generarCodigoKardex). Cada sigla (KA, KS, KP, KC) lleva su propia
-  // numeración, en orden de creación; distinta de `numero`, que es el N° de
-  // libro del destinatario. Lo asigna KardexService al abrir / cerrar.
+  // numeración. Lo asigna KardexService al abrir el N° 1; los kardex que
+  // nacen de un cierre lo conservan y solo avanza `numero` (el contador
+  // interno del mismo kardex). Único junto con `numero`.
   @Column({
     name: 'codigo',
     type: 'varchar',
@@ -239,4 +263,10 @@ export class Kardex extends Auditoria {
    * listados con KardexActividadService. Null en kardex cerrados o anulados.
    */
   actividad?: ActividadKardex | null;
+
+  /**
+   * Intereses por mora calculados (no es columna): lo completan los listados
+   * con KardexInteresService. Null si nunca se le aplicó interés.
+   */
+  interes?: ResumenInteresKardex | null;
 }

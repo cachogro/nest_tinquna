@@ -87,7 +87,7 @@ export class CajaFlujoConsolidadoExcelService {
       .createQueryBuilder(MovimientoCaja, 'm')
       .innerJoin('m.periodoCaja', 'p')
       .leftJoinAndSelect('m.formaPago', 'fp')
-      .leftJoinAndSelect('m.destinoGasto', 'dg')
+      .leftJoinAndSelect('m.planCuentas', 'dg')
       .addSelect('m.fechaRegistro')
       .where('m.idCaja = :idCaja', { idCaja })
       .andWhere('m.activo = true')
@@ -98,7 +98,7 @@ export class CajaFlujoConsolidadoExcelService {
     const movsBanco = await manager
       .createQueryBuilder(LibretaBanco, 'l')
       .innerJoin('l.periodoBanco', 'p')
-      .leftJoinAndSelect('l.destinoGasto', 'dg')
+      .leftJoinAndSelect('l.planCuentas', 'dg')
       .addSelect('l.fechaRegistro')
       .where('l.activo = true')
       .andWhere('p.gestion = :gestion AND p.mes = :mes', { gestion, mes })
@@ -151,7 +151,7 @@ export class CajaFlujoConsolidadoExcelService {
         facturaRecibo: m.facturaRecibo ?? '',
         nroComprobante: m.nroComprobante ?? '',
         medio: m.formaPago?.nombre ?? 'EFECTIVO',
-        destino: m.destinoGasto?.nombre ?? '',
+        destino: m.planCuentas?.nombre ?? '',
         ingreso: Number(m.ingreso),
         egreso: Number(m.egreso),
       })),
@@ -167,7 +167,7 @@ export class CajaFlujoConsolidadoExcelService {
         facturaRecibo: l.facturaRecibo ?? '',
         nroComprobante: l.nroTransaccion ?? '',
         medio: l.tipoTransaccion ?? '',
-        destino: l.destinoGasto?.nombre ?? '',
+        destino: l.planCuentas?.nombre ?? '',
         ingreso: Number(l.haber),
         egreso: Number(l.debe),
       })),
@@ -253,7 +253,7 @@ export class CajaFlujoConsolidadoExcelService {
       { titulo: 'FACTURA Y/O RECIBO', ancho: 14, alineacion: 'center' },
       { titulo: 'Nº CPTE', ancho: 14, alineacion: 'center' },
       { titulo: 'MEDIO / N° DE CHEQUE', ancho: 14, alineacion: 'center' },
-      { titulo: 'DESTINO DEL GASTO', ancho: 28 },
+      { titulo: 'PLAN DE CUENTAS', ancho: 28 },
     ];
     const columnasImporte: ColumnaContable[] = cuentas.flatMap((c) => [
       { titulo: `INGRESO ${c.simbolo}`, ancho: 14, importe: true },

@@ -9,7 +9,7 @@ import {
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { Caja } from 'src/cluster/parametricas/entities/caja.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { MonedaCaja } from './periodo-caja.entity';
 import { MovimientoCaja } from './movimiento-caja.entity';
 import { LibretaBanco } from './libreta-banco.entity';
@@ -29,9 +29,9 @@ export type TipoTraspaso = 'DEPOSITO' | 'RETIRO';
  *   DEPOSITO: la plata sale de la caja (EGRESO) y entra al banco (HABER).
  *   RETIRO:   la plata sale del banco (DEBE) y entra a la caja (INGRESO).
  *
- * Lleva `destinoGasto` para clasificarlo en reportes contables propios,
- * pero OJO: `ReporteDestinoGastoService` (el resumen de "cuánto se gastó/
- * ingresó" por destino) sigue excluyendo estos movimientos por
+ * Lleva `planCuentas` para clasificarlo en reportes contables propios,
+ * pero OJO: `ReportePlanCuentasService` (el resumen de "cuánto se gastó/
+ * ingresó" por plan de cuentas) sigue excluyendo estos movimientos por
  * `MovimientoCaja.idTraspaso`, porque un traspaso no es un gasto/ingreso
  * real del negocio, es la misma plata cambiando de custodia.
  */
@@ -124,27 +124,27 @@ export class Traspaso extends Auditoria {
   })
   concepto: string;
 
-  // "DESTINO DEL GASTO" del Excel (parametrica.destino_gasto), igual que en
+  // "PLAN DE CUENTAS" del Excel (parametrica.plan_cuentas), igual que en
   // movimiento_caja / movimiento_kardex / recibo_detalle. Se refleja en el
   // movimiento de la caja de flujo; la libreta de bancos no tiene esta
   // columna. Ver nota de la clase: excluido del resumen de "cuánto se
-  // gastó/ingresó" (ReporteDestinoGastoService).
+  // gastó/ingresó" (ReportePlanCuentasService).
   @Column({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     type: 'int',
     nullable: true,
   })
-  idDestinoGasto?: number | null;
+  idPlanCuentas?: number | null;
 
-  @ManyToOne(() => DestinoGasto, {
+  @ManyToOne(() => PlanCuentas, {
     nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     referencedColumnName: 'id',
   })
-  destinoGasto?: DestinoGasto;
+  planCuentas?: PlanCuentas;
 
   @Column({
     name: 'monto',

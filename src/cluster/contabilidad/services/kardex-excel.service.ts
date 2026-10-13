@@ -120,7 +120,35 @@ export class KardexExcelService {
       paleta,
     );
 
-    return { buffer: await excel.generar(workbook), codigo: kardex.codigo };
+    // Intereses por mora devengados y todavía no cargados: no están en el
+    // saldo del kardex, así que van aparte, debajo del total.
+    const interes = kardex.interes;
+    if (interes && interes.pendiente > 0) {
+      excel.agregarTotal(
+        worksheet,
+        fila + 1,
+        TOTAL_COLUMNAS,
+        COL_SALDO - 1,
+        `INTERESES POR MORA PENDIENTES - ${interes.tasaMensual} % MENSUAL, ${interes.cuotasPendientes} ${interes.cuotasPendientes === 1 ? 'MES' : 'MESES'} (Bs.)`,
+        { [COL_SALDO]: interes.pendiente },
+        paleta,
+      );
+      excel.agregarTotal(
+        worksheet,
+        fila + 2,
+        TOTAL_COLUMNAS,
+        COL_SALDO - 1,
+        'TOTAL POR COBRAR CON INTERESES (Bs.)',
+        { [COL_SALDO]: interes.totalConIntereses },
+        paleta,
+      );
+    }
+
+    // El código es del titular: el N° distingue el archivo de cada libro.
+    return {
+      buffer: await excel.generar(workbook),
+      codigo: `${kardex.codigo}-N${kardex.numero}`,
+    };
   }
 
   /**

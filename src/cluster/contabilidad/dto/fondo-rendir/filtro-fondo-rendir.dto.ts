@@ -1,8 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class FiltroFondoRendirDto {
+  @ApiPropertyOptional({
+    example: 5,
+    description: 'N° de seguimiento del fondo (su `id`): trae solo ese fondo.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'El N° de seguimiento debe ser un número entero.' })
+  @Min(1)
+  id?: number;
+
   @ApiPropertyOptional({ example: '20', description: 'Filtrar por persona destinataria.' })
   @IsOptional()
   @IsString()

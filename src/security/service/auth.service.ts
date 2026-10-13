@@ -21,6 +21,7 @@ import { JwtPayload } from '../models/interfaces/jwt-payload';
 import { ConfigService } from '@nestjs/config';
 import { hashToken } from '../helpers/token.helpers';
 import { BitacoraAccesoService } from './bitacora-acceso.service';
+import { PermisoService } from './permiso.service';
 import { TipoEventoBitacora } from '../enums/tipo-evento-bitacora';
 
 // Máximo de intentos fallidos de login antes de bloquear temporalmente la cuenta.
@@ -51,6 +52,8 @@ export class AuthService {
     private readonly $config: ConfigService,
 
     private readonly $bitacora: BitacoraAccesoService,
+
+    private readonly $permiso: PermisoService,
   ) {}
 
   async login(
@@ -133,6 +136,8 @@ export class AuthService {
     delete userLogged.intentosFallidos;
     delete userLogged.bloqueadoHasta;
 
+    userLogged.permisos = await this.$permiso.codigosDeUsuario(userLogged);
+
     const { token, refreshToken } = await this.getJwtTokens(
       { id: userLogged.id },
       meta,
@@ -152,6 +157,16 @@ export class AuthService {
       token,
       refreshToken,
     };
+  }
+
+  /**
+   * Usuario autenticado con sus permisos de pantalla al día. El front lo
+   * consulta al abrir la aplicación para reflejar cambios hechos en
+   * Roles y Permisos sin obligar a cerrar sesión.
+   */
+  async estadoSesion(user: Usuario): Promise<Usuario> {
+    user.permisos = await this.$permiso.codigosDeUsuario(user);
+    return user;
   }
 
   /**

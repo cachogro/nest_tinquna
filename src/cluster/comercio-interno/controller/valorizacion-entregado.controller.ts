@@ -12,7 +12,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { ValorizacionMineral } from '../entities/valorizacion/valorizacion-mineral.entity';
 import { CambiarEntregadoValorizacionMineralDto } from '../dto/valorizacion/cambiar-entregado-valorizacion-mineral.dto';
@@ -21,6 +22,7 @@ import { ValorizacionEntregadoService } from '../services/valorizacion-entregado
 @ApiTags('Registro de Operaciones')
 @Controller('comercio_interno')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.comercioInternoApi)
 export class ValorizacionEntregadoController {
   constructor(
     private readonly valorizacionEntregadoService: ValorizacionEntregadoService,

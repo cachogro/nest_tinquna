@@ -79,11 +79,11 @@ export class CreateFondoRendirDetalleDto {
 
   @ApiPropertyOptional({
     example: 13,
-    description: 'Id del destino del gasto de esta línea puntual, si difiere del de la cabecera.',
+    description: 'Id del plan de cuentas de esta línea puntual, si difiere del de la cabecera.',
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 }

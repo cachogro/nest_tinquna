@@ -15,6 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ReciboDetalleDto } from './recibo-detalle.dto';
+import { MedioPagoDto } from '../medio-pago.dto';
 
 /**
  * Cuerpo del `POST /contabilidad/recibo`. Dos modos:
@@ -121,6 +122,22 @@ export class CreateReciboDto {
   nroComprobante?: string;
 
   @ApiPropertyOptional({
+    type: [MedioPagoDto],
+    description:
+      'Pago MIXTO: los medios por los que se mueve el dinero del recibo (por ejemplo, la mitad en efectivo y el resto por QR). La suma de los montos debe ser igual a `montoTotal`. Si se envía, reemplaza a `idFormaPago` / `idCuentaBancaria` / `nroComprobante`, que quedan con los datos del primer medio. Con un solo medio no hace falta: alcanza con esos tres campos.',
+    example: [
+      { idFormaPago: 1, monto: 500 },
+      { idFormaPago: 2, monto: 500, idCuentaBancaria: 1, nroComprobante: '4613159797' },
+    ],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Los medios de pago deben ser una lista.' })
+  @ArrayMinSize(1, { message: 'Indicá al menos un medio de pago.' })
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  pagos?: MedioPagoDto[];
+
+  @ApiPropertyOptional({
     example: '18',
     description:
       'Id de la persona registrada (persona_ci), contraparte física del recibo ("Recibí de" / "Entregué a"), cuando corresponde a UNA sola persona ya registrada. Excluyente con `idActorProductivoMinero`/`idCliente`. Si no corresponde a una persona ni a un actor ni a un cliente, dejar vacío y usar `nombresApellidos`. El destino real de cada porción (a quién se le salda la deuda) se indica en `detalles`, no acá.',
@@ -196,11 +213,11 @@ export class CreateReciboDto {
   @ApiPropertyOptional({
     type: [ReciboDetalleDto],
     description:
-      'Cómo se subdivide el monto total entre kardex personal, kardex de actor productivo minero, y efectivo directo. La suma debe ser igual a `montoTotal`. Cada línea puede tener su propio `idDestinoGasto` y genera su propio movimiento de caja de flujo. Si se omite, el recibo queda como BORRADOR (solo cabecera) y se procesa después con `PATCH /contabilidad/recibo/:id/procesar`.',
+      'Cómo se subdivide el monto total entre kardex personal, kardex de actor productivo minero, y efectivo directo. La suma debe ser igual a `montoTotal`. Cada línea puede tener su propio `idPlanCuentas` y genera su propio movimiento de caja de flujo. Si se omite, el recibo queda como BORRADOR (solo cabecera) y se procesa después con `PATCH /contabilidad/recibo/:id/procesar`.',
     example: [
-      { destino: 'PERSONAL', idPersona: '18', monto: 150000, idDestinoGasto: 8 },
-      { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 100000, idDestinoGasto: 12 },
-      { destino: 'EFECTIVO', monto: 50000, idDestinoGasto: 3 },
+      { destino: 'PERSONAL', idPersona: '18', monto: 150000, idPlanCuentas: 8 },
+      { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 100000, idPlanCuentas: 12 },
+      { destino: 'EFECTIVO', monto: 50000, idPlanCuentas: 3 },
     ],
   })
   @IsOptional()

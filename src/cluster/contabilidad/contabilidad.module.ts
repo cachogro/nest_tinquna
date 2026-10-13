@@ -23,11 +23,12 @@ import { BoletaPagoPdfService } from './services/boleta-pago-pdf.service';
 import { PrestamoPersonal } from './entities/prestamo-personal.entity';
 import { MovimientoPrestamo } from './entities/movimiento-prestamo.entity';
 import { BoletaPago } from './entities/boleta-pago.entity';
-import { ReporteDestinoGastoService } from './services/reporte-destino-gasto.service';
+import { ReportePlanCuentasService } from './services/reporte-plan-cuentas.service';
 //import { ReciboPdfProcesadoController } from './controller/recibo-pdf-procesado.controller';
 import { LibretaBancoService } from './services/libreta-banco.service';
 import { KardexService } from './services/kardex.service';
 import { MovimientoKardexService } from './services/movimiento-kardex.service';
+import { PagoDeudaKardexService } from './services/pago-deuda-kardex.service';
 import { MovimientoCajaService } from './services/movimiento-caja.service';
 import { TraspasoService } from './services/traspaso.service';
 import { FondoRendirService } from './services/fondo-rendir.service';
@@ -45,6 +46,10 @@ import { ReciboExcelService } from './services/recibo-excel.service';
 import { TraspasoExcelService } from './services/traspaso-excel.service';
 import { LibretaBancoExcelService } from './services/libreta-banco-excel.service';
 import { KardexActividadService } from './services/kardex-actividad.service';
+import { ChequeService } from './services/cheque.service';
+import { ChequeController } from './controller/cheque.controller';
+import { TalonarioCheque } from './entities/talonario-cheque.entity';
+import { Cheque } from './entities/cheque.entity';
 import { LibretaBanco } from './entities/libreta-banco.entity';
 import { PeriodoBanco } from './entities/periodo-banco.entity';
 import { Kardex } from './entities/kardex.entity';
@@ -61,7 +66,7 @@ import { BienDacionPagoGasto } from './entities/bien-dacion-pago-gasto.entity';
 import { PersonaCi } from '../comercio-interno/entities/persona-ci.entity';
 import { RecepcionMineral } from '../comercio-interno/entities/recepcion-mineral/recepcion-mineral.entity';
 import { ValorizacionMineral } from '../comercio-interno/entities/valorizacion/valorizacion-mineral.entity';
-import { DestinoGasto } from '../parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from '../parametricas/entities/plan-cuentas.entity';
 import { ReciboPdfHorizontalService } from './services/recibo-pdf-horizontal.service';
 import { VentaLoteController } from './controller/venta-lote.controller';
 import { VentaLoteService } from './services/venta-lote.service';
@@ -72,6 +77,13 @@ import { PagoValorizacionController } from './controller/pago-valorizacion.contr
 import { PagoValorizacionService } from './services/pago-valorizacion.service';
 import { PagoValorizacion } from './entities/pago-valorizacion.entity';
 import { PagoValorizacionDetalle } from './entities/pago-valorizacion-detalle.entity';
+import { PagoValorizacionMedio } from './entities/pago-valorizacion-medio.entity';
+import { ReciboPago } from './entities/recibo-pago.entity';
+import { KardexInteresController } from './controller/kardex-interes.controller';
+import { KardexInteresService } from './services/kardex-interes.service';
+import { KardexInteres } from './entities/kardex-interes.entity';
+import { KardexInteresCuota } from './entities/kardex-interes-cuota.entity';
+import { KardexInteresEvento } from './entities/kardex-interes-evento.entity';
 
 @Module({
   controllers: [
@@ -88,12 +100,15 @@ import { PagoValorizacionDetalle } from './entities/pago-valorizacion-detalle.en
     BoletaPagoController,
     VentaLoteController,
     PagoValorizacionController,
+    ChequeController,
+    KardexInteresController,
     // ReciboPdfProcesadoController,
   ],
   providers: [
     LibretaBancoService,
     KardexService,
     MovimientoKardexService,
+    PagoDeudaKardexService,
     MovimientoCajaService,
     TraspasoService,
     FondoRendirService,
@@ -112,12 +127,14 @@ import { PagoValorizacionDetalle } from './entities/pago-valorizacion-detalle.en
     TraspasoExcelService,
     LibretaBancoExcelService,
     KardexActividadService,
-    ReporteDestinoGastoService,
+    ReportePlanCuentasService,
     PrestamoPersonalService,
     BoletaPagoService,
     BoletaPagoPdfService,
     VentaLoteService,
     PagoValorizacionService,
+    ChequeService,
+    KardexInteresService,
   ],
   imports: [
     ConfigModule,
@@ -143,19 +160,27 @@ import { PagoValorizacionDetalle } from './entities/pago-valorizacion-detalle.en
         PersonaCi,
         RecepcionMineral,
         ValorizacionMineral,
-        DestinoGasto,
+        PlanCuentas,
         VentaLote,
         PromedioMineral,
         Cliente,
         PagoValorizacion,
         PagoValorizacionDetalle,
+        PagoValorizacionMedio,
+        ReciboPago,
+        TalonarioCheque,
+        Cheque,
+        KardexInteres,
+        KardexInteresCuota,
+        KardexInteresEvento,
       ],
       'ci',
     ),
     ParametricasModule,
     forwardRef(() => SecurityModule),
   ],
-  // El dashboard reutiliza la regla de actividad (deudor activo/inactivo).
-  exports: [KardexActividadService],
+  // El dashboard reutiliza la regla de actividad (deudor activo/inactivo) y
+  // la situación de las chequeras.
+  exports: [KardexActividadService, ChequeService],
 })
 export class ContabilidadModule {}

@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { FondoRendir } from './fondo-rendir.entity';
 
 export type TipoFondoRendirDetalle =
@@ -84,21 +84,21 @@ export class FondoRendirDetalle extends Auditoria {
   facturaRecibo?: string | null;
 
   @Column({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     type: 'int',
     nullable: true,
   })
-  idDestinoGasto?: number | null;
+  idPlanCuentas?: number | null;
 
-  @ManyToOne(() => DestinoGasto, {
+  @ManyToOne(() => PlanCuentas, {
     nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     referencedColumnName: 'id',
   })
-  destinoGasto?: DestinoGasto;
+  planCuentas?: PlanCuentas;
 
   // COMPROBANTE:     gasto con respaldo, cargado a mano (lo normal).
   // SIN_COMPROBANTE: el fondo se dio por rendido sin cargar comprobantes;

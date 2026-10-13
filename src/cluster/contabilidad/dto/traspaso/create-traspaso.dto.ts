@@ -68,13 +68,13 @@ export class CreateTraspasoDto {
   @ApiPropertyOptional({
     example: 5,
     description:
-      'Id del destino del gasto / categoría del ingreso (parametrica.destino_gasto), igual que en los detalles de un recibo. Debe ser un destino de EGRESO si tipo=DEPOSITO, o de INGRESO si tipo=RETIRO (según el `esEgreso` del destino). Se refleja tanto en el movimiento de la caja de flujo como en el de la libreta de bancos que genera el traspaso; en ambos queda excluido del resumen de "cuánto se gastó/ingresó" por destino (`/contabilidad/reportes/destino-gasto`), que es solo para gasto/ingreso real del negocio.',
+      'Id del plan de cuentas / categoría del ingreso (parametrica.plan_cuentas), igual que en los detalles de un recibo. Debe ser uno de EGRESO si tipo=DEPOSITO, o de INGRESO si tipo=RETIRO (según su `esEgreso`). Se refleja tanto en el movimiento de la caja de flujo como en el de la libreta de bancos que genera el traspaso; en ambos queda excluido del resumen de "cuánto se gastó/ingresó" por destino (`/contabilidad/reportes/plan-cuentas`), que es solo para gasto/ingreso real del negocio.',
   })
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: 'El destino del gasto no es válido.' })
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsInt({ message: 'El plan de cuentas no es válido.' })
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 
   @ApiProperty({
     example: 'DEPÓSITO DE EFECTIVO DE CAJA PRINCIPAL A CTA BANCO UNIÓN',

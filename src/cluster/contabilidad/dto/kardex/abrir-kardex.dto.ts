@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsDateString,
   IsIn,
   IsInt,
   IsNumber,
@@ -63,7 +64,8 @@ export class AbrirKardexDto {
 
   @ApiPropertyOptional({
     example: 2026,
-    description: 'Gestión (año) de apertura. Por defecto, el año actual.',
+    description:
+      'Gestión (año) de apertura. Por defecto, el año de la fecha de apertura.',
   })
   @IsOptional()
   @Type(() => Number)
@@ -71,6 +73,15 @@ export class AbrirKardexDto {
   @Min(2000)
   @Max(2100)
   gestion?: number;
+
+  @ApiPropertyOptional({
+    example: '2025-04-22',
+    description:
+      'Fecha de apertura (YYYY-MM-DD); por defecto hoy. No puede ser futura. Sirve para cargar kardex históricos con su fecha real.',
+  })
+  @IsOptional()
+  @IsDateString({}, { message: 'La fecha de apertura debe tener el formato YYYY-MM-DD.' })
+  fechaApertura?: string;
 
   @ApiPropertyOptional({
     example: 3500,

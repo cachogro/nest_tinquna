@@ -25,7 +25,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { ReciboService } from '../services/recibo.service';
 import { ReciboPdfService } from '../services/recibo-pdf.service';
@@ -39,10 +40,13 @@ import { ReciboExcelService } from '../services/recibo-excel.service';
 import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
 import { FiltroReciboExcelDto } from '../dto/recibo/filtro-recibo-excel.dto';
 import { FiltroReciboPdfDto } from '../dto/recibo/filtro-recibo-pdf.dto';
+import { RequierePermisoExcel } from 'src/security/decorators/requiere-permiso.decorator';
+import { PERMISO_DESCARGAR_EXCEL_CONTABILIDAD } from 'src/security/enums/permisos';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class ReciboController {
   constructor(
     private readonly reciboService: ReciboService,
@@ -58,7 +62,7 @@ export class ReciboController {
   @ApiOperation({
     summary: 'Generar un recibo de ingreso o egreso (BORRADOR o PROCESADO)',
     description:
-      'Genera un recibo (serie R=INGRESO, serie C=EGRESO, numeración global por serie). Dos modos: sin `detalles` queda como BORRADOR (solo la cabecera: tipo, fecha, montoTotal, concepto y contraparte —una de `idPersona`, `idActorProductivoMinero`, `idCliente` o `nombresApellidos`, obligatoria alguna de las cuatro, excluyentes entre sí— ya alcanza para imprimirlo) y se procesa después con `PATCH /contabilidad/recibo/:id/procesar`, o se da de baja con `PATCH /contabilidad/recibo/:id/anular`; con `detalles` se procesa en el mismo paso (queda PROCESADO) y postea automáticamente, por CADA línea de `detalles`: un movimiento en la caja de flujo (Caja id=1, "CAJA PRINCIPAL", el registro maestro de la empresa) — las líneas PERSONAL/ACTOR/CLIENTE SIEMPRE postean INGRESO (valor recuperado/cobrado por la empresa al saldar esa deuda, sea cual sea el tipo del recibo); las líneas EFECTIVO postean según el tipo del recibo: INGRESO si el recibo es INGRESO (plata que efectivamente entra), EGRESO si es EGRESO (plata que efectivamente sale) — y, según el destino, una línea de kardex: PERSONAL/ACTOR/CLIENTE postea HABER en el kardex de `idPersona`/`idActorProductivoMinero`/`idCliente` (salda una deuda existente, en el caso de CLIENTE es el cobro de una venta a crédito); EFECTIVO no requiere kardex, pero si además trae `idPersona`, `idActorProductivoMinero` o `idCliente` de alguien con kardex abierto, postea un DEBE (anticipo/venta a crédito nuevo, sube su deuda, a diferencia de PERSONAL/ACTOR/CLIENTE que la baja). Cada línea puede tener su propio `idDestinoGasto` (parametrica.destino_gasto), que se aplica tanto a su línea de kardex como a su movimiento de caja. Un recibo con varias líneas genera varios movimientos de caja (uno por línea). Al procesar (acá o en `/procesar`), requiere que cada kardex referenciado en `detalles` ya esté ABIERTO y que la Caja id=1 ya esté aperturada en BS. La contraparte física de la cabecera (`idPersona`/`idActorProductivoMinero`/`idCliente`/`nombresApellidos`) es solo informativa para la impresión; el efecto real en kardex/caja lo definen los `idPersona`/`idActorProductivoMinero`/`idCliente` de cada línea de `detalles`, que son independientes. Si `idFormaPago` es un medio bancario (QR, Transferencia, Cheque, Depósito), `idCuentaBancaria` y `nroComprobante` pasan a ser OBLIGATORIOS ya en la cabecera (se validan y se guardan aunque el recibo quede BORRADOR; 400 si faltan): en ese caso, la línea EFECTIVO del recibo (si tiene una) también postea, recién al procesar, un movimiento en la libreta de bancos de esa cuenta (misma dirección que en caja: HABER si entra, DEBE si sale), por el monto de esa línea; las líneas PERSONAL/ACTOR/CLIENTE nunca tocan la libreta de bancos (no representan plata que realmente se mueve). Si no hay línea EFECTIVO, `idCuentaBancaria`/`nroComprobante` quedan solo como referencia informativa del recibo.',
+      'Genera un recibo (serie R=INGRESO, serie C=EGRESO, numeración global por serie). Dos modos: sin `detalles` queda como BORRADOR (solo la cabecera: tipo, fecha, montoTotal, concepto y contraparte —una de `idPersona`, `idActorProductivoMinero`, `idCliente` o `nombresApellidos`, obligatoria alguna de las cuatro, excluyentes entre sí— ya alcanza para imprimirlo) y se procesa después con `PATCH /contabilidad/recibo/:id/procesar`, o se da de baja con `PATCH /contabilidad/recibo/:id/anular`; con `detalles` se procesa en el mismo paso (queda PROCESADO) y postea automáticamente, por CADA línea de `detalles`: un movimiento en la caja de flujo (Caja id=1, "CAJA PRINCIPAL", el registro maestro de la empresa) — las líneas PERSONAL/ACTOR/CLIENTE SIEMPRE postean INGRESO (valor recuperado/cobrado por la empresa al saldar esa deuda, sea cual sea el tipo del recibo); las líneas EFECTIVO postean según el tipo del recibo: INGRESO si el recibo es INGRESO (plata que efectivamente entra), EGRESO si es EGRESO (plata que efectivamente sale) — y, según el destino, una línea de kardex: PERSONAL/ACTOR/CLIENTE postea HABER en el kardex de `idPersona`/`idActorProductivoMinero`/`idCliente` (salda una deuda existente, en el caso de CLIENTE es el cobro de una venta a crédito); EFECTIVO no requiere kardex, pero si además trae `idPersona`, `idActorProductivoMinero` o `idCliente` de alguien con kardex abierto, postea un DEBE (anticipo/venta a crédito nuevo, sube su deuda, a diferencia de PERSONAL/ACTOR/CLIENTE que la baja). Cada línea puede tener su propio `idPlanCuentas` (parametrica.plan_cuentas), que se aplica tanto a su línea de kardex como a su movimiento de caja. Un recibo con varias líneas genera varios movimientos de caja (uno por línea). Al procesar (acá o en `/procesar`), requiere que cada kardex referenciado en `detalles` ya esté ABIERTO y que la Caja id=1 ya esté aperturada en BS. La contraparte física de la cabecera (`idPersona`/`idActorProductivoMinero`/`idCliente`/`nombresApellidos`) es solo informativa para la impresión; el efecto real en kardex/caja lo definen los `idPersona`/`idActorProductivoMinero`/`idCliente` de cada línea de `detalles`, que son independientes. Si `idFormaPago` es un medio bancario (QR, Transferencia, Cheque, Depósito), `idCuentaBancaria` y `nroComprobante` pasan a ser OBLIGATORIOS ya en la cabecera (se validan y se guardan aunque el recibo quede BORRADOR; 400 si faltan): en ese caso, la línea EFECTIVO del recibo (si tiene una) también postea, recién al procesar, un movimiento en la libreta de bancos de esa cuenta (misma dirección que en caja: HABER si entra, DEBE si sale), por el monto de esa línea; las líneas PERSONAL/ACTOR/CLIENTE nunca tocan la libreta de bancos (no representan plata que realmente se mueve). Si no hay línea EFECTIVO, `idCuentaBancaria`/`nroComprobante` quedan solo como referencia informativa del recibo.',
   })
   @ApiBody({
     type: CreateReciboDto,
@@ -115,20 +119,20 @@ export class ReciboController {
               destino: 'PERSONAL',
               idPersona: '18',
               monto: 400,
-              idDestinoGasto: 1,
+              idPlanCuentas: 1,
             },
             {
               destino: 'EFECTIVO',
               idActorProductivoMinero: '4',
               monto: 485,
-              idDestinoGasto: 1,
+              idPlanCuentas: 1,
             },
           ],
         },
       },
       egreso: {
         summary:
-          'Recibo de egreso subdividido (C-932), persona registrada, cada línea con su propio destino de gasto',
+          'Recibo de egreso subdividido (C-932), persona registrada, cada línea con su propio plan de cuentas',
         value: {
           tipo: 'EGRESO',
           fecha: '2026-09-03',
@@ -142,15 +146,15 @@ export class ReciboController {
               destino: 'PERSONAL',
               idPersona: '20',
               monto: 150000,
-              idDestinoGasto: 8,
+              idPlanCuentas: 8,
             },
             {
               destino: 'ACTOR',
               idActorProductivoMinero: '4',
               monto: 100000,
-              idDestinoGasto: 12,
+              idPlanCuentas: 12,
             },
-            { destino: 'EFECTIVO', monto: 50000, idDestinoGasto: 3 },
+            { destino: 'EFECTIVO', monto: 50000, idPlanCuentas: 3 },
           ],
         },
       },
@@ -172,7 +176,7 @@ export class ReciboController {
               destino: 'PERSONAL',
               idPersona: '18',
               monto: 60000,
-              idDestinoGasto: 1,
+              idPlanCuentas: 1,
             },
           ],
         },
@@ -190,7 +194,7 @@ export class ReciboController {
           idCuentaBancaria: 1,
           nroComprobante: '8858778899558',
           idPersonaAutorizo: '7',
-          detalles: [{ destino: 'EFECTIVO', monto: 200, idDestinoGasto: 14 }],
+          detalles: [{ destino: 'EFECTIVO', monto: 200, idPlanCuentas: 14 }],
         },
       },
       egresoEfectivoConAnticipoAKardex: {
@@ -209,7 +213,7 @@ export class ReciboController {
               destino: 'EFECTIVO',
               monto: 222,
               idPersona: '23',
-              idDestinoGasto: 14,
+              idPlanCuentas: 14,
             },
           ],
         },
@@ -245,15 +249,15 @@ export class ReciboController {
               destino: 'PERSONAL',
               idPersona: '20',
               monto: 200,
-              idDestinoGasto: 8,
+              idPlanCuentas: 8,
             },
             {
               destino: 'ACTOR',
               idActorProductivoMinero: '4',
               monto: 200,
-              idDestinoGasto: 8,
+              idPlanCuentas: 8,
             },
-            { destino: 'EFECTIVO', monto: 100, idDestinoGasto: 3 },
+            { destino: 'EFECTIVO', monto: 100, idPlanCuentas: 3 },
           ],
         },
       },
@@ -270,7 +274,7 @@ export class ReciboController {
   })
   @ApiNotFoundResponse({
     description:
-      'No se encontró la persona, el actor, el cliente, la forma de pago, la cuenta bancaria, la persona que autorizó (idPersonaAutorizo), el destino del gasto, o el kardex de algún destinatario.',
+      'No se encontró la persona, el actor, el cliente, la forma de pago, la cuenta bancaria, la persona que autorizó (idPersonaAutorizo), el plan de cuentas, o el kardex de algún destinatario.',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -294,11 +298,11 @@ export class ReciboController {
   @ApiOperation({
     summary: 'Procesar un recibo BORRADOR (paso 2)',
     description:
-      'Solo aplica a un recibo en estado BORRADOR (creado sin `detalles`). Postea, por cada línea de `detalles`, su línea HABER en el kardex correspondiente (si es PERSONAL/ACTOR) y su movimiento de caja de flujo (con el `idDestinoGasto` propio de esa línea), y deja el recibo PROCESADO (terminal: no se puede volver a procesar ni anular). Los campos de pago bancario (`idFormaPago`, `idCuentaBancaria`, `nroComprobante`) son opcionales: si no se envían, se conserva lo que ya tenía el recibo desde que se creó como borrador.',
+      'Solo aplica a un recibo en estado BORRADOR (creado sin `detalles`). Postea, por cada línea de `detalles`, su línea HABER en el kardex correspondiente (si es PERSONAL/ACTOR) y su movimiento de caja de flujo (con el `idPlanCuentas` propio de esa línea), y deja el recibo PROCESADO (terminal: no se puede volver a procesar ni anular). Los campos de pago bancario (`idFormaPago`, `idCuentaBancaria`, `nroComprobante`) son opcionales: si no se envían, se conserva lo que ya tenía el recibo desde que se creó como borrador.',
   })
   @ApiParam({
     name: 'id',
-    description: 'Id del recibo (debe estar en estado BORRADOR).',
+    description: 'Id del recibo (BORRADOR o PROCESADO).',
     example: '7',
   })
   @ApiBody({
@@ -312,15 +316,15 @@ export class ReciboController {
               destino: 'PERSONAL',
               idPersona: '20',
               monto: 200,
-              idDestinoGasto: 8,
+              idPlanCuentas: 8,
             },
             {
               destino: 'ACTOR',
               idActorProductivoMinero: '4',
               monto: 200,
-              idDestinoGasto: 8,
+              idPlanCuentas: 8,
             },
-            { destino: 'EFECTIVO', monto: 100, idDestinoGasto: 3 },
+            { destino: 'EFECTIVO', monto: 100, idPlanCuentas: 3 },
           ],
         },
       },
@@ -335,7 +339,7 @@ export class ReciboController {
               destino: 'PERSONAL',
               idPersona: '20',
               monto: 500,
-              idDestinoGasto: 8,
+              idPlanCuentas: 8,
             },
           ],
         },
@@ -352,7 +356,7 @@ export class ReciboController {
   })
   @ApiNotFoundResponse({
     description:
-      'No se encontró el recibo, la forma de pago, la cuenta bancaria, el tipo de movimiento, el destino del gasto, o el kardex de algún destinatario.',
+      'No se encontró el recibo, la forma de pago, la cuenta bancaria, el tipo de movimiento, el plan de cuentas, o el kardex de algún destinatario.',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({
@@ -373,9 +377,9 @@ export class ReciboController {
   @Patch('recibo/:id/anular')
   @Auth()
   @ApiOperation({
-    summary: 'Anular un recibo BORRADOR',
+    summary: 'Anular un recibo (BORRADOR o PROCESADO)',
     description:
-      'Solo se puede anular un recibo en estado BORRADOR (todavía no generó movimientos de kardex/caja, así que no hay nada que revertir). Un recibo PROCESADO no se puede anular.',
+      'BORRADOR: solo pasa a ANULADO (todavía no generó movimientos). PROCESADO: además revierte todo lo que posteó al procesarse, en una sola transacción: da de baja sus movimientos de la caja de flujo, de la libreta de bancos (si emitió un cheque, queda ANULADO) y sus líneas de kardex, y recalcula los saldos de cada caja, cuenta bancaria y kardex afectados. Devuelve 400 si algún movimiento cayó en un período de caja o banco ya CERRADO, si algún kardex afectado ya está cerrado, si el recibo es el respaldo de otra operación (préstamo al personal o su abono, boleta de pago, fondo a rendir, bien en dación de pago: se revierte desde esa operación), o si es el anticipo de una recepción cuya valorización ya tiene un pago vigente (primero se anula ese pago). Un recibo ANULADO libera su recepción, valorización o venta de lote para generar uno nuevo.',
   })
   @ApiParam({
     name: 'id',
@@ -387,7 +391,8 @@ export class ReciboController {
     type: Recibo,
   })
   @ApiBadRequestResponse({
-    description: 'El recibo ya fue procesado, o ya está anulado.',
+    description:
+      'El recibo ya está anulado, o es PROCESADO y no se puede revertir (período cerrado, kardex cerrado o respaldo de otra operación).',
   })
   @ApiNotFoundResponse({ description: 'No se encontró el recibo.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
@@ -401,6 +406,7 @@ export class ReciboController {
     return await this.reciboService.anular(id, user);
   }
 
+  @RequierePermisoExcel(PERMISO_DESCARGAR_EXCEL_CONTABILIDAD)
   @Get('recibo/reporte/excel')
   @Auth()
   @ApiOperation({
@@ -454,11 +460,11 @@ export class ReciboController {
   }
 
   @Get('recibo/:id')
-  @Auth()
+  @Auth(...RolesModules.contabilidad, ...RolesModules.comercioInterno)
   @ApiOperation({
     summary: 'Ver el detalle de un recibo',
     description:
-      'Devuelve un recibo con sus líneas de aplicación (cada una con su destino_gasto y la línea de kardex que generó), los movimientos de caja de flujo que generó (uno por línea de detalle: INGRESO para PERSONAL/ACTOR, EGRESO para EFECTIVO) y, si corresponde, el movimiento en la libreta de bancos de la línea EFECTIVO.',
+      'Devuelve un recibo con sus líneas de aplicación (cada una con su plan_cuentas y la línea de kardex que generó), los movimientos de caja de flujo que generó (uno por línea de detalle: INGRESO para PERSONAL/ACTOR, EGRESO para EFECTIVO) y, si corresponde, el movimiento en la libreta de bancos de la línea EFECTIVO.',
   })
   @ApiParam({ name: 'id', description: 'Id del recibo.', example: '5' })
   @ApiOkResponse({
@@ -475,7 +481,7 @@ export class ReciboController {
   }
 
   @Get('recibo/:id/pdf')
-  @Auth()
+  @Auth(...RolesModules.contabilidad, ...RolesModules.comercioInterno)
   @ApiOperation({
     summary: 'Generar el PDF de un recibo (3 copias en hoja carta)',
     description:

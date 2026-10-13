@@ -18,6 +18,8 @@ import {
 
 const COLUMNAS: ColumnaContable[] = [
   { titulo: 'FECHA', ancho: 12, fecha: true },
+  // N° de seguimiento: el id del fondo al que pertenece la fila.
+  { titulo: 'N° FONDO', ancho: 10, alineacion: 'center' },
   { titulo: 'CONCEPTO - DETALLE', ancho: 48 },
   { titulo: 'FACTURA Y/O DOCUMENTO RESPALDO', ancho: 22, alineacion: 'center' },
   { titulo: 'CARGO', ancho: 16, importe: true },
@@ -34,6 +36,7 @@ interface FilaRendicion {
   // día. `fecha` sola no alcanza — un fondo se puede entregar y justificar
   // el mismo día, en cualquier orden real.
   momento: Date;
+  nroFondo: string;
   concepto: string;
   comprobante: string;
   cargo: number | null;
@@ -232,6 +235,7 @@ export class FondoRendirExcelService {
       ...fondosEnRango.map((f) => ({
         fecha: f.fecha,
         momento: f.fechaHoraEntrega,
+        nroFondo: String(f.id),
         concepto: f.concepto,
         comprobante: f.recibo?.nroComprobante ?? '',
         cargo: this.r2(Number(f.montoEntregado)),
@@ -240,6 +244,7 @@ export class FondoRendirExcelService {
       ...reposiciones.map((f) => ({
         fecha: f.fechaReposicion!,
         momento: f.reciboReposicion?.fechaHoraGeneracion ?? new Date(`${f.fechaReposicion}T23:59:59`),
+        nroFondo: String(f.id),
         concepto: `DEVOLUCIÓN POR EXCESO EN RENDICIÓN - ${f.concepto}`,
         comprobante:
           f.reciboReposicion?.nroComprobante || this.codigoRecibo(f.reciboReposicion),
@@ -249,6 +254,7 @@ export class FondoRendirExcelService {
       ...detalles.map((d) => ({
         fecha: d.fecha,
         momento: d.fechaRegistro,
+        nroFondo: String(d.idFondoRendir),
         concepto:
           d.tipo === 'SIN_COMPROBANTE'
             ? `${d.concepto} - ${d.fondoRendir?.concepto ?? ''}`.replace(/ - $/, '')
@@ -290,7 +296,7 @@ export class FondoRendirExcelService {
       etiqueta: 'RENDICIÓN DE CUENTAS QUE PRESENTA EL SR./SRA.',
       valor: destinatario.nombre,
     });
-    excel.agregarDatoCabecera(worksheet, 6, 1, 3, {
+    excel.agregarDatoCabecera(worksheet, 6, 1, 4, {
       etiqueta: 'PERÍODO',
       valor: filtro.mes
         ? `${MESES[filtro.mes - 1]} DE ${filtro.gestion}`
@@ -299,7 +305,7 @@ export class FondoRendirExcelService {
     excel.agregarDatoCabecera(
       worksheet,
       6,
-      4,
+      5,
       TOTAL_COLUMNAS,
       { etiqueta: 'GENERADO POR', valor: user.usuario?.toUpperCase() ?? '' },
       'center',
@@ -314,6 +320,7 @@ export class FondoRendirExcelService {
     if (filas.length === 0 && saldoInicial === 0) {
       excel.agregarFila(worksheet, fila++, COLUMNAS, [
         excel.fecha(desde),
+        '',
         'SIN MOVIMIENTOS EN EL PERÍODO',
         '',
         null,
@@ -325,7 +332,7 @@ export class FondoRendirExcelService {
         worksheet,
         fila++,
         COLUMNAS,
-        [excel.fecha(desde), 'SALDO ANTERIOR', '', null, null, saldo],
+        [excel.fecha(desde), '', 'SALDO ANTERIOR', '', null, null, saldo],
         { negrita: true },
       );
 
@@ -337,7 +344,7 @@ export class FondoRendirExcelService {
           worksheet,
           fila++,
           COLUMNAS,
-          [excel.fecha(f.fecha), f.concepto, f.comprobante, f.cargo, f.descargo, saldo],
+          [excel.fecha(f.fecha), f.nroFondo, f.concepto, f.comprobante, f.cargo, f.descargo, saldo],
           { relleno: f.cargo !== null ? paleta.suave : undefined },
         );
       });
@@ -349,9 +356,9 @@ export class FondoRendirExcelService {
       worksheet,
       fila,
       TOTAL_COLUMNAS,
-      3,
+      4,
       'SUMAS TOTALES',
-      { 4: totalCargo, 5: totalDescargo, 6: saldo },
+      { 5: totalCargo, 6: totalDescargo, 7: saldo },
       paleta,
     );
 

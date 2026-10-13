@@ -102,13 +102,13 @@ export class CreateLibretaBancoDto {
 
   @ApiPropertyOptional({
     example: 2,
-    description: 'Id del destino del gasto o categoría del ingreso (parametrica.destino_gasto).',
+    description: 'Id del plan de cuentas o categoría del ingreso (parametrica.plan_cuentas).',
   })
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: 'El destino del gasto no es válido.' })
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsInt({ message: 'El plan de cuentas no es válido.' })
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 
   @ApiProperty({
     example: 'ANTICIPO A CTA SACO MINERAL',

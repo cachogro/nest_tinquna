@@ -9,7 +9,7 @@ import {
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { KardexSubcuenta } from 'src/cluster/parametricas/entities/kardex-subcuenta.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { ValorizacionMineral } from 'src/cluster/comercio-interno/entities/valorizacion/valorizacion-mineral.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
@@ -156,21 +156,21 @@ export class MovimientoKardex extends Auditoria {
   formaPago?: FormaPago;
 
   @Column({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     type: 'int',
     nullable: true,
   })
-  idDestinoGasto?: number | null;
+  idPlanCuentas?: number | null;
 
-  @ManyToOne(() => DestinoGasto, {
+  @ManyToOne(() => PlanCuentas, {
     nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     referencedColumnName: 'id',
   })
-  destinoGasto?: DestinoGasto;
+  planCuentas?: PlanCuentas;
 
   // Quién recibió / entregó físicamente el movimiento.
   @Column({

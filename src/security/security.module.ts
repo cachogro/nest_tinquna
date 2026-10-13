@@ -19,6 +19,7 @@ import { AuthController } from './controller/auth.controller';
 
 import { AuthService } from './service/auth.service';
 import { BitacoraAccesoService } from './service/bitacora-acceso.service';
+import { PermisoService } from './service/permiso.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
 
@@ -29,6 +30,7 @@ import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
     UsuarioService,
     AuthService,
     BitacoraAccesoService,
+    PermisoService,
     JwtStrategy,
     RefreshTokenStrategy,
   ],
@@ -71,6 +73,8 @@ import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
     JwtModule,
     AuthService,
     UsuarioService,
+    // Lo usa PermisoGuard (@RequierePermiso) en los controladores de otros módulos.
+    PermisoService,
   ],
 })
 export class SecurityModule {}

@@ -32,6 +32,7 @@ import { CreateCodificacionDto } from '../dto/codificacion/create-codificacion.d
 import { Codificacion } from '../entities/codificacion.entity';
 import { CodificacionService } from '../services/codificacion.service';
 import { Auth, GetUser } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { UpdateCodificacionDto } from '../dto/codificacion/update-codificacion.dto';
 import {
   EmisionDocumentoResponseDto,
@@ -94,7 +95,7 @@ import { EntidadFinanciera } from '../entities/entidad-financiera.entity';
 import { CuentaBancaria } from '../entities/cuenta-bancaria.entity';
 import { FormaPago } from '../entities/forma-pago.entity';
 import { KardexSubcuenta } from '../entities/kardex-subcuenta.entity';
-import { DestinoGasto } from '../entities/destino-gasto.entity';
+import { PlanCuentas } from '../entities/plan-cuentas.entity';
 import { LugarAcopio } from '../entities/lugar-acopio.entity';
 import { CreateLugarAcopioDto } from '../dto/lugar-acopio/create-lugar-acopio.dto';
 import { UpdateLugarAcopioDto } from '../dto/lugar-acopio/update-lugar-acopio.dto';
@@ -103,9 +104,9 @@ import { CreateFormaPagoDto } from '../dto/forma-pago/create-forma-pago.dto';
 import { UpdateFormaPagoDto } from '../dto/forma-pago/update-forma-pago.dto';
 import { FormaPagoService } from '../services/forma-pago.service';
 import { CodificacionLote } from '../entities/codificacion-lote.entity';
-import { CreateDestinoGastoDto } from '../dto/destino-gasto/create-destino-gasto.dto';
-import { UpdateDestinoGastoDto } from '../dto/destino-gasto/update-destino-gasto.dto';
-import { DestinoGastoService } from '../services/destino-gasto.service';
+import { CreatePlanCuentasDto } from '../dto/plan-cuentas/create-plan-cuentas.dto';
+import { UpdatePlanCuentasDto } from '../dto/plan-cuentas/update-plan-cuentas.dto';
+import { PlanCuentasService } from '../services/plan-cuentas.service';
 import { CreateCodificacionLoteDto } from '../dto/codificacion-lote/create-codificacion-lote.dto';
 import { UpdateCodificacionLoteDto } from '../dto/codificacion-lote/update-codificacion-lote.dto';
 import { CodificacionLoteService } from '../services/codificacion-lote.service';
@@ -133,14 +134,14 @@ export class ParametricasController {
     private readonly entidadFinancieraService: EntidadFinancieraService,
     private readonly cajaService: CajaService,
     private readonly clienteService: ClienteService,
-    private readonly destinoGastoService: DestinoGastoService,
+    private readonly planCuentasService: PlanCuentasService,
     private readonly codificacionLoteService: CodificacionLoteService,
     private readonly lugarAcopioService: LugarAcopioService,
     private readonly formaPagoService: FormaPagoService,
   ) {}
 
   @Post('codificacion')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar una codificación',
@@ -315,7 +316,7 @@ export class ParametricasController {
   //------------------ CRUD tipo de persona ----------------------
 
   @Post('persona-tipo')
-  @Auth()
+  @Auth(...RolesModules.configuraciones, ...RolesModules.comercioInterno)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar un tipo de persona',
@@ -375,7 +376,7 @@ export class ParametricasController {
   }
 
   @Patch('persona-tipo/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de un tipo de persona',
     description:
@@ -444,7 +445,7 @@ export class ParametricasController {
   //------------------ crear cotizacion ----------------------
 
   @Post('cotizacion')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar una cotización de mineral',
@@ -639,7 +640,7 @@ export class ParametricasController {
   //------------------ escala de precio por ley (Zn, Ag, Pb...) ----------------------
 
   @Post('escala-precio')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:
@@ -792,7 +793,7 @@ export class ParametricasController {
   //---------------------------------------------------------------------------
 
   @Post('actor-productivo-minero')
-  @Auth()
+  @Auth(...RolesModules.configuraciones, ...RolesModules.comercioInterno)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar un actor productivo minero',
@@ -870,7 +871,7 @@ export class ParametricasController {
   //cambiar de estado
 
   @Patch('actor-productivo-minero/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de un actor productivo minero',
     description:
@@ -1036,7 +1037,7 @@ export class ParametricasController {
   // (contraparte de COMPRAS) para no mezclar ambos roles de negocio.
 
   @Post('cliente')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar un cliente',
@@ -1101,10 +1102,11 @@ export class ParametricasController {
   }
 
   @Patch('cliente/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de un cliente',
-    description: 'Permite activar o desactivar un cliente mediante baja lógica.',
+    description:
+      'Permite activar o desactivar un cliente mediante baja lógica.',
   })
   @ApiParam({
     name: 'id',
@@ -1151,7 +1153,11 @@ export class ParametricasController {
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiQuery({ name: 'busqueda', required: false, type: String })
   @ApiQuery({ name: 'activo', required: false, type: Boolean })
-  @ApiQuery({ name: 'idTipoActorProductivoMinero', required: false, type: Number })
+  @ApiQuery({
+    name: 'idTipoActorProductivoMinero',
+    required: false,
+    type: Number,
+  })
   @ApiQuery({
     name: 'orderBy',
     required: false,
@@ -1176,7 +1182,8 @@ export class ParametricasController {
   @Auth()
   @ApiOperation({
     summary: 'Obtener todos los clientes',
-    description: 'Retorna una lista completa de los clientes activos registrados en el sistema.',
+    description:
+      'Retorna una lista completa de los clientes activos registrados en el sistema.',
   })
   @ApiResponse({
     status: 200,
@@ -1268,7 +1275,7 @@ export class ParametricasController {
   }
 
   @Post('forma-pago')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar una forma de pago',
@@ -1329,7 +1336,7 @@ export class ParametricasController {
   }
 
   @Patch('forma-pago/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de una forma de pago',
     description:
@@ -1421,7 +1428,7 @@ export class ParametricasController {
   }
 
   @Post('lugar-acopio')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar un lugar de acopio',
@@ -1478,7 +1485,7 @@ export class ParametricasController {
   }
 
   @Patch('lugar-acopio/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de un lugar de acopio',
     description:
@@ -1548,19 +1555,19 @@ export class ParametricasController {
   }
 
   //---------------------------------------------------------------------------
-  //                        Destinos de gasto
+  //                        Plan de cuentas
   //---------------------------------------------------------------------------
 
-  @Post('destino-gasto')
-  @Auth()
+  @Post('plan-cuentas')
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Registrar o actualizar un destino de gasto',
+    summary: 'Registrar o actualizar una cuenta del plan de cuentas',
     description:
       'Si no se envía el campo id se registra uno nuevo. Si se envía el id, se actualiza. `esEgreso`: TRUE = egreso, FALSE = ingreso.',
   })
   @ApiBody({
-    description: 'Datos del destino de gasto.',
+    description: 'Datos de la cuenta del plan de cuentas.',
     examples: {
       crear: {
         summary: 'Registrar',
@@ -1572,57 +1579,68 @@ export class ParametricasController {
       },
     },
   })
-  @ApiCreatedResponse({ type: DestinoGasto })
+  @ApiCreatedResponse({ type: PlanCuentas })
   @ApiBadRequestResponse({ description: 'Los datos enviados no son válidos.' })
-  @ApiConflictResponse({ description: 'Ya existe un destino de gasto con ese nombre.' })
+  @ApiConflictResponse({
+    description: 'Ya existe una cuenta del plan de cuentas con ese nombre.',
+  })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
-  async createDestinoGasto(
-    @Body() body: CreateDestinoGastoDto | UpdateDestinoGastoDto,
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async createPlanCuentas(
+    @Body() body: CreatePlanCuentasDto | UpdatePlanCuentasDto,
     @GetUser() user: Usuario,
-  ): Promise<DestinoGasto> {
+  ): Promise<PlanCuentas> {
     if ('id' in body && body.id) {
-      return await this.destinoGastoService.update(body, user);
+      return await this.planCuentasService.update(body, user);
     }
-    return await this.destinoGastoService.create(body, user);
+    return await this.planCuentasService.create(body, user);
   }
 
-  @Patch('destino-gasto/cambiar_estado/:id')
-  @Auth()
+  @Patch('plan-cuentas/cambiar_estado/:id')
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
-    summary: 'Cambiar estado de un destino de gasto',
-    description: 'Activa o desactiva (baja lógica) un destino de gasto.',
+    summary: 'Cambiar estado de una cuenta del plan de cuentas',
+    description: 'Activa o desactiva (baja lógica) una cuenta del plan de cuentas.',
   })
   @ApiParam({ name: 'id', example: '1' })
   @ApiBody({
-    schema: { type: 'object', properties: { activo: { type: 'boolean', example: false } } },
+    schema: {
+      type: 'object',
+      properties: { activo: { type: 'boolean', example: false } },
+    },
   })
-  @ApiOkResponse({ type: DestinoGasto })
-  @ApiNotFoundResponse({ description: 'No se encontró el destino de gasto.' })
+  @ApiOkResponse({ type: PlanCuentas })
+  @ApiNotFoundResponse({ description: 'No se encontró la cuenta del plan de cuentas.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  async changeStateDestinoGasto(
+  async changeStatePlanCuentas(
     @Param('id', ParseIntPipe) id: number,
     @Body('activo', ParseBoolPipe) activo: boolean,
     @GetUser() user: Usuario,
-  ): Promise<DestinoGasto> {
-    return await this.destinoGastoService.cambiarEstado(id, activo, user);
+  ): Promise<PlanCuentas> {
+    return await this.planCuentasService.cambiarEstado(id, activo, user);
   }
 
-  @Get('destino-gasto')
+  @Get('plan-cuentas')
   @Auth()
   @ApiOperation({
-    summary: 'Obtener los destinos de gasto',
+    summary: 'Obtener el plan de cuentas',
     description:
-      'Catálogo de categorías de ingreso/egreso de la caja de flujo ("DESTINO DEL GASTO" del Excel), cada una marcada como ingreso o egreso (`esEgreso`). Por defecto solo los activos; con `todos=true` incluye los inactivos (para la pantalla de administración).',
+      'Catálogo de categorías de ingreso/egreso de la caja de flujo ("PLAN DE CUENTAS" del Excel), cada una marcada como ingreso o egreso (`esEgreso`). Por defecto solo los activos; con `todos=true` incluye los inactivos (para la pantalla de administración).',
   })
   @ApiQuery({ name: 'todos', required: false, type: Boolean })
-  @ApiResponse({ status: 200, type: [DestinoGasto] })
-  @ApiUnauthorizedResponse({ description: 'No autorizado. Token no proporcionado o inválido.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
-  async findAllDestinoGasto(
+  @ApiResponse({ status: 200, type: [PlanCuentas] })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
+  async findAllPlanCuentas(
     @Query('todos') todos?: string,
-  ): Promise<DestinoGasto[]> {
-    return await this.destinoGastoService.findAll(todos === 'true');
+  ): Promise<PlanCuentas[]> {
+    return await this.planCuentasService.findAll(todos === 'true');
   }
 
   //---------------------------------------------------------------------------
@@ -1630,7 +1648,7 @@ export class ParametricasController {
   //---------------------------------------------------------------------------
 
   @Post('codificacion-lote')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar una codificación de lote',
@@ -1640,15 +1658,25 @@ export class ParametricasController {
   @ApiBody({
     description: 'Datos de la codificación de lote.',
     examples: {
-      crear: { summary: 'Registrar', value: { codigo: 'MC', nombre: 'EXPORTACION' } },
-      actualizar: { summary: 'Actualizar', value: { id: 1, codigo: 'MC', nombre: 'EXPORTACION' } },
+      crear: {
+        summary: 'Registrar',
+        value: { codigo: 'MC', nombre: 'EXPORTACION' },
+      },
+      actualizar: {
+        summary: 'Actualizar',
+        value: { id: 1, codigo: 'MC', nombre: 'EXPORTACION' },
+      },
     },
   })
   @ApiCreatedResponse({ type: CodificacionLote })
   @ApiBadRequestResponse({ description: 'Los datos enviados no son válidos.' })
-  @ApiConflictResponse({ description: 'Ya existe una codificación de lote con ese código.' })
+  @ApiConflictResponse({
+    description: 'Ya existe una codificación de lote con ese código.',
+  })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
-  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  @ApiInternalServerErrorResponse({
+    description: 'Error interno del servidor.',
+  })
   async createCodificacionLote(
     @Body() body: CreateCodificacionLoteDto | UpdateCodificacionLoteDto,
     @GetUser() user: Usuario,
@@ -1660,17 +1688,23 @@ export class ParametricasController {
   }
 
   @Patch('codificacion-lote/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de una codificación de lote',
-    description: 'Activa o desactiva (baja lógica). Una codificación inactiva no puede elegirse en nuevos promedios.',
+    description:
+      'Activa o desactiva (baja lógica). Una codificación inactiva no puede elegirse en nuevos promedios.',
   })
   @ApiParam({ name: 'id', example: '1' })
   @ApiBody({
-    schema: { type: 'object', properties: { activo: { type: 'boolean', example: false } } },
+    schema: {
+      type: 'object',
+      properties: { activo: { type: 'boolean', example: false } },
+    },
   })
   @ApiOkResponse({ type: CodificacionLote })
-  @ApiNotFoundResponse({ description: 'No se encontró la codificación de lote.' })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la codificación de lote.',
+  })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   async changeStateCodificacionLote(
     @Param('id') id: string,
@@ -1701,7 +1735,7 @@ export class ParametricasController {
   //---------------------------------------------------------------------------
 
   @Post('caja')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar una caja',
@@ -1763,7 +1797,7 @@ export class ParametricasController {
   }
 
   @Patch('caja/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de una caja',
     description: 'Permite activar o desactivar una caja mediante baja lógica.',
@@ -1828,7 +1862,7 @@ export class ParametricasController {
   //---------------------------------------------------------------------------
 
   @Post('entidad-financiera')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar una entidad financiera',
@@ -1856,7 +1890,12 @@ export class ParametricasController {
           nombre: 'BANCO MERCANTIL SANTA CRUZ',
           sigla: 'BMSC',
           cuentas: [
-            { id: 3, numeroCuenta: '4010123456', moneda: 'BS', alias: 'Caja operativa' },
+            {
+              id: 3,
+              numeroCuenta: '4010123456',
+              moneda: 'BS',
+              alias: 'Caja operativa',
+            },
             { numeroCuenta: '4030555555', moneda: 'BS' },
           ],
         },
@@ -1876,7 +1915,8 @@ export class ParametricasController {
       'No se encontró la entidad a actualizar, o una cuenta indicada por id no le pertenece.',
   })
   @ApiBadRequestResponse({
-    description: 'Datos inválidos o números de cuenta repetidos en la solicitud.',
+    description:
+      'Datos inválidos o números de cuenta repetidos en la solicitud.',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -1896,7 +1936,7 @@ export class ParametricasController {
   }
 
   @Patch('entidad-financiera/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de una entidad financiera',
     description:
@@ -1936,7 +1976,7 @@ export class ParametricasController {
   }
 
   @Patch('entidad-financiera/cuenta/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de una cuenta bancaria',
     description:
@@ -2006,7 +2046,7 @@ export class ParametricasController {
   //---------------------------------------------------------------------------
 
   @Post('laboratorio')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar un laboratorio',
@@ -2064,7 +2104,7 @@ export class ParametricasController {
   }
 
   @Patch('laboratorio/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de un laboratorio',
     description:
@@ -2138,7 +2178,7 @@ export class ParametricasController {
   //---------------------------------------------------------------------------
 
   @Post('entidad-aporte')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar una entidad de aporte',
@@ -2197,7 +2237,7 @@ export class ParametricasController {
   }
 
   @Patch('entidad-aporte/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de una entidad de aporte',
     description:
@@ -2316,7 +2356,7 @@ export class ParametricasController {
   //---------------------------------------------------------------------------
 
   @Post('mineral')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar un mineral',
@@ -2385,7 +2425,7 @@ export class ParametricasController {
   }
 
   @Patch('mineral/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de un mineral',
     description:
@@ -2535,7 +2575,7 @@ export class ParametricasController {
   //---------------------------------------------------------------------------
 
   @Post('tipo-calculo-valorizacion')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar o actualizar un tipo de cálculo de valorización',
@@ -2611,7 +2651,7 @@ export class ParametricasController {
   }
 
   @Patch('tipo-calculo-valorizacion/cambiar_estado/:id')
-  @Auth()
+  @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de un tipo de cálculo de valorización',
     description:

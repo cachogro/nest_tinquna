@@ -9,7 +9,7 @@ import { DataSource, Repository } from 'typeorm';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { MovimientoCaja } from '../entities/movimiento-caja.entity';
 import { LibretaBanco } from '../entities/libreta-banco.entity';
@@ -26,7 +26,7 @@ import { resolverPersonaAutorizo } from '../persona-autorizo.util';
 const RELACIONES = {
   caja: true,
   cuentaBancaria: { entidadFinanciera: true },
-  destinoGasto: true,
+  planCuentas: true,
   movimientosCaja: { periodoCaja: true },
   movimientosBanco: { periodoBanco: true },
 } as const;
@@ -58,8 +58,8 @@ export class TraspasoService {
     @InjectRepository(CuentaBancaria, 'ci')
     private readonly cuentaBancariaRepository: Repository<CuentaBancaria>,
 
-    @InjectRepository(DestinoGasto, 'ci')
-    private readonly destinoGastoRepository: Repository<DestinoGasto>,
+    @InjectRepository(PlanCuentas, 'ci')
+    private readonly planCuentasRepository: Repository<PlanCuentas>,
 
     @InjectRepository(PersonaCi, 'ci')
     private readonly personaRepository: Repository<PersonaCi>,
@@ -92,31 +92,31 @@ export class TraspasoService {
   }
 
   /**
-   * Valida el destino del gasto igual que en un recibo/movimiento de caja,
+   * Valida el plan de cuentas igual que en un recibo/movimiento de caja,
    * pero acá además exige que coincida con la dirección del traspaso: un
    * DEPOSITO es un EGRESO de la caja (sale efectivo), así que necesita un
-   * destino marcado `esEgreso = true`; un RETIRO es un INGRESO (entra
+   * plan de cuentas marcado `esEgreso = true`; un RETIRO es un INGRESO (entra
    * efectivo), necesita uno con `esEgreso = false`.
    */
-  private async resolverDestinoGasto(
-    idDestinoGasto: number | undefined,
+  private async resolverPlanCuentas(
+    idPlanCuentas: number | undefined,
     tipo: 'DEPOSITO' | 'RETIRO',
   ): Promise<number | null> {
-    if (!idDestinoGasto) {
+    if (!idPlanCuentas) {
       return null;
     }
-    const destino = await this.destinoGastoRepository.findOne({
-      where: { id: idDestinoGasto },
+    const destino = await this.planCuentasRepository.findOne({
+      where: { id: idPlanCuentas },
     });
     if (!destino) {
-      throw new NotFoundException('No existe el destino del gasto seleccionado.');
+      throw new NotFoundException('No existe el plan de cuentas seleccionado.');
     }
     const esperaEgreso = tipo === 'DEPOSITO';
     if (destino.esEgreso !== esperaEgreso) {
       throw new BadRequestException(
         esperaEgreso
-          ? `El destino "${destino.nombre}" es de ingreso; un DEPOSITO (sale de caja) necesita un destino de egreso.`
-          : `El destino "${destino.nombre}" es de egreso; un RETIRO (entra a caja) necesita un destino de ingreso.`,
+          ? `El plan de cuentas "${destino.nombre}" es de ingreso; un DEPOSITO (sale de caja) necesita uno de egreso.`
+          : `El plan de cuentas "${destino.nombre}" es de egreso; un RETIRO (entra a caja) necesita uno de ingreso.`,
       );
     }
     return destino.id;
@@ -142,8 +142,8 @@ export class TraspasoService {
       moneda,
     );
     await this.libretaBancoService.obtenerCuentaAperturada(cuentaBancaria.id);
-    const idDestinoGasto = await this.resolverDestinoGasto(
-      dto.idDestinoGasto,
+    const idPlanCuentas = await this.resolverPlanCuentas(
+      dto.idPlanCuentas,
       dto.tipo,
     );
     const personaAutorizo = await resolverPersonaAutorizo(
@@ -169,7 +169,7 @@ export class TraspasoService {
           nroComprobante,
           concepto,
           monto,
-          idDestinoGasto,
+          idPlanCuentas,
           personaAutorizo,
           usuarioRegistro: user.usuario,
         }),
@@ -182,11 +182,12 @@ export class TraspasoService {
         cajaEmpresa,
         {
           moneda,
+          tipoCambio,
           fecha: dto.fecha,
           nroComprobante,
           concepto,
           entregaFondosA: `TRASPASO ${dto.tipo} - CTA ${this.etiquetaCuenta(cuentaBancaria)}`,
-          idDestinoGasto,
+          idPlanCuentas,
           idTraspaso: traspaso.id,
           ingreso: esDeposito ? 0 : monto,
           egreso: esDeposito ? monto : 0,
@@ -202,7 +203,7 @@ export class TraspasoService {
           nroTransaccion: nroComprobante,
           tipoTransaccion: dto.tipo,
           concepto,
-          idDestinoGasto,
+          idPlanCuentas,
           nombresApellidos: `TRASPASO ${dto.tipo} - ${cajaEmpresa.nombre}`,
           idTraspaso: traspaso.id,
           tipoCambio,
@@ -220,7 +221,7 @@ export class TraspasoService {
   }
 
   /**
-   * Solo permite corregir fecha / concepto / N° de comprobante / destino del
+   * Solo permite corregir fecha / concepto / N° de comprobante / plan de cuentas del
    * gasto / monto / tipo de cambio:
    * `tipo` e `idCuentaBancaria` quedan fijos (cambiarlos exigiría borrar y
    * recrear los dos movimientos ya posteados; la caja de flujo siempre es
@@ -272,8 +273,8 @@ export class TraspasoService {
       );
     }
 
-    const idDestinoGasto = await this.resolverDestinoGasto(
-      dto.idDestinoGasto,
+    const idPlanCuentas = await this.resolverPlanCuentas(
+      dto.idPlanCuentas,
       dto.tipo,
     );
     // Mismo autorizador => se conserva el snapshot original (no se pisa con
@@ -303,16 +304,17 @@ export class TraspasoService {
         nroComprobante,
         monto,
         tipoCambio,
-        idDestinoGasto,
+        idPlanCuentas,
         personaAutorizo,
         usuarioUltimaModificacion: user.usuario,
       });
 
       await manager.update(MovimientoCaja, movCaja.id, {
+        tipoCambio,
         fecha: dto.fecha,
         nroComprobante,
         concepto,
-        idDestinoGasto,
+        idPlanCuentas,
         ingreso: esDeposito ? 0 : monto,
         egreso: esDeposito ? monto : 0,
         usuarioUltimaModificacion: user.usuario,
@@ -321,7 +323,7 @@ export class TraspasoService {
         fecha: dto.fecha,
         nroTransaccion: nroComprobante,
         concepto,
-        idDestinoGasto,
+        idPlanCuentas,
         tipoCambio,
         debe: esDeposito ? 0 : monto,
         haber: esDeposito ? monto : 0,
@@ -425,7 +427,7 @@ export class TraspasoService {
       .leftJoinAndSelect('t.caja', 'caja')
       .leftJoinAndSelect('t.cuentaBancaria', 'cuenta')
       .leftJoinAndSelect('cuenta.entidadFinanciera', 'entidad')
-      .leftJoinAndSelect('t.destinoGasto', 'destino')
+      .leftJoinAndSelect('t.planCuentas', 'destino')
       // usuarioRegistro tiene select:false en Auditoria; la bandeja muestra
       // quién generó cada traspaso (igual que en recibos).
       .addSelect('t.usuarioRegistro');
@@ -488,7 +490,7 @@ export class TraspasoService {
       .leftJoinAndSelect('t.caja', 'caja')
       .leftJoinAndSelect('t.cuentaBancaria', 'cuenta')
       .leftJoinAndSelect('cuenta.entidadFinanciera', 'entidad')
-      .leftJoinAndSelect('t.destinoGasto', 'destino')
+      .leftJoinAndSelect('t.planCuentas', 'destino')
       // usuarioRegistro tiene select:false en Auditoria; el reporte lo imprime.
       .addSelect('t.usuarioRegistro');
 

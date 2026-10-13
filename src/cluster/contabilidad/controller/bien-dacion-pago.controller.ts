@@ -24,7 +24,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { BienDacionPagoService } from '../services/bien-dacion-pago.service';
 import { BienDacionPago } from '../entities/bien-dacion-pago.entity';
@@ -38,6 +39,7 @@ import { CreateBienDacionPagoGastoDto } from '../dto/bien-dacion-pago/create-bie
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class BienDacionPagoController {
   constructor(private readonly bienDacionPagoService: BienDacionPagoService) {}
 

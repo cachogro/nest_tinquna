@@ -5,22 +5,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { ValorizacionMineral } from 'src/cluster/comercio-interno/entities/valorizacion/valorizacion-mineral.entity';
 import { RecepcionMineral } from 'src/cluster/comercio-interno/entities/recepcion-mineral/recepcion-mineral.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { proveedorDeRecepcion } from 'src/cluster/comercio-interno/recepcion-proveedor.util';
-import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
-import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { Kardex } from '../entities/kardex.entity';
 import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
 import { MovimientoCaja } from '../entities/movimiento-caja.entity';
 import { LibretaBanco } from '../entities/libreta-banco.entity';
 import { Recibo } from '../entities/recibo.entity';
 import { PagoValorizacion } from '../entities/pago-valorizacion.entity';
+import { PagoValorizacionMedio } from '../entities/pago-valorizacion-medio.entity';
 import {
   ConceptoPagoValorizacion,
   PagoValorizacionDetalle,
@@ -31,6 +30,11 @@ import {
 } from '../dto/pago-valorizacion/create-pago-valorizacion.dto';
 import { resolverPersonaAutorizo } from '../persona-autorizo.util';
 import { validarMonedaCuenta } from '../moneda.util';
+import {
+  FORMAS_PAGO_BANCARIAS,
+  MedioPagoResuelto,
+  resolverMediosPago,
+} from '../medios-pago.util';
 import { MovimientoCajaService } from './movimiento-caja.service';
 import { LibretaBancoService } from './libreta-banco.service';
 import { KardexActividadService } from './kardex-actividad.service';
@@ -38,7 +42,6 @@ import { KardexActividadService } from './kardex-actividad.service';
 // Caja de flujo de la empresa (Caja id=1, "CAJA PRINCIPAL"), igual que recibos.
 const ID_CAJA_EMPRESA = 1;
 const ESTADO_VALORIZACION_VALORIZADO = 3;
-const FORMAS_PAGO_BANCARIAS = ['QR', 'TRANSFERENCIA', 'CHEQUE', 'DEPOSITO'];
 // La valorización y sus anticipos se manejan en Bs.
 const MONEDA = 'BS' as const;
 
@@ -52,7 +55,8 @@ interface LineaKardex {
 const RELACIONES = {
   formaPago: true,
   cuentaBancaria: { entidadFinanciera: true },
-  destinoGasto: true,
+  planCuentas: true,
+  medios: { formaPago: true, cuentaBancaria: { entidadFinanciera: true } },
   detalles: { kardex: { persona: true, actorProductivoMinero: true, cliente: true } },
 } as const;
 
@@ -62,6 +66,8 @@ const RELACIONES = {
  *
  *  - Lo que se paga de verdad (líquido − abonos a kardex) sale de la caja de
  *    flujo o de la libreta bancaria como egreso, y NO toca ningún kardex.
+ *    Puede salir por más de un medio a la vez (pago mixto: una parte en
+ *    efectivo y otra por QR o transferencia), con un egreso por cada uno.
  *  - Lo que el proveedor deja a un kardex se anota ahí como HABER.
  *  - Los anticipos que la valorización ya descontó del líquido (el de la
  *    recepción y los "otros anticipos") también se anotan como HABER: al
@@ -404,55 +410,36 @@ export class PagoValorizacionService {
       await this.kardexActividadService.validarActivo(kardex);
     }
 
-    // Forma de pago: solo hace falta si de verdad sale dinero.
-    let formaPago: FormaPago | null = null;
-    let cuentaBancaria: CuentaBancaria | null = null;
-    let idDestinoGasto: number | null = null;
-    const nroComprobante = dto.nroComprobante?.trim().toUpperCase() || null;
+    // Medios de pago: solo hacen falta si de verdad sale dinero. Con `pagos`
+    // es un pago mixto; sin ella, un único medio con la forma de pago, la
+    // cuenta y el N° de comprobante de la cabecera.
+    let medios: MedioPagoResuelto[] = [];
+    let idPlanCuentas: number | null = null;
     if (montoPagado > 0) {
-      if (!dto.idFormaPago) {
-        throw new BadRequestException('Indicá la forma de pago.');
-      }
-      formaPago = await this.dataSource.manager.findOne(FormaPago, {
-        where: { id: dto.idFormaPago },
-      });
-      if (!formaPago) {
-        throw new NotFoundException('No existe la forma de pago seleccionada.');
-      }
-      if (FORMAS_PAGO_BANCARIAS.includes(formaPago.codigo)) {
-        if (!dto.idCuentaBancaria) {
-          throw new BadRequestException(
-            `La forma de pago ${formaPago.nombre} requiere indicar la cuenta bancaria.`,
+      medios = await this.resolverMedios(dto, montoPagado, codigo);
+      for (const medio of medios) {
+        if (medio.cuentaBancaria) {
+          validarMonedaCuenta(medio.cuentaBancaria, MONEDA);
+          await this.libretaBancoService.obtenerCuentaAperturada(
+            medio.cuentaBancaria.id,
           );
         }
-        if (!nroComprobante) {
-          throw new BadRequestException(
-            `La forma de pago ${formaPago.nombre} requiere el N° de comprobante.`,
-          );
-        }
-        cuentaBancaria = await this.dataSource.manager.findOne(CuentaBancaria, {
-          where: { id: dto.idCuentaBancaria },
-        });
-        if (!cuentaBancaria) {
-          throw new NotFoundException('No existe la cuenta bancaria seleccionada.');
-        }
-        validarMonedaCuenta(cuentaBancaria, MONEDA);
-        await this.libretaBancoService.obtenerCuentaAperturada(cuentaBancaria.id);
       }
-      if (dto.idDestinoGasto) {
-        const destino = await this.dataSource.manager.findOne(DestinoGasto, {
-          where: { id: dto.idDestinoGasto },
+      if (dto.idPlanCuentas) {
+        const destino = await this.dataSource.manager.findOne(PlanCuentas, {
+          where: { id: dto.idPlanCuentas },
         });
         if (!destino) {
-          throw new NotFoundException('El destino del gasto seleccionado no existe.');
+          throw new NotFoundException('El plan de cuentas seleccionado no existe.');
         }
-        idDestinoGasto = destino.id;
+        idPlanCuentas = destino.id;
       }
     }
-    const cajaEmpresa =
-      montoPagado > 0 && !cuentaBancaria
-        ? await this.movimientoCajaService.obtenerCajaAperturada(ID_CAJA_EMPRESA, MONEDA)
-        : null;
+    const cajaEmpresa = medios.some((medio) => !medio.cuentaBancaria)
+      ? await this.movimientoCajaService.obtenerCajaAperturada(ID_CAJA_EMPRESA, MONEDA)
+      : null;
+    // La cabecera guarda los datos del primer medio (el principal).
+    const principal = medios[0];
 
     const concepto = `VALORIZACIÓN ${codigo}`;
     const referencia = `VAL:${codigo}`.slice(0, 30);
@@ -466,10 +453,10 @@ export class PagoValorizacionService {
           montoLiquido: montos.liquido,
           montoAbonoKardex: montoAbono,
           montoPagado,
-          idFormaPago: formaPago?.id ?? null,
-          idCuentaBancaria: cuentaBancaria?.id ?? null,
-          nroComprobante,
-          idDestinoGasto,
+          idFormaPago: principal?.formaPago?.id ?? null,
+          idCuentaBancaria: principal?.cuentaBancaria?.id ?? null,
+          nroComprobante: principal?.nroComprobante ?? null,
+          idPlanCuentas,
           idPersonaAutorizo: personaAutorizo.id,
           personaAutorizo,
           estado: 'REGISTRADO',
@@ -509,54 +496,123 @@ export class PagoValorizacionService {
         );
       }
 
-      // Lo que sale de verdad: egreso de caja (efectivo) o de la libreta.
-      if (montoPagado > 0 && cuentaBancaria) {
-        const mov = await this.libretaBancoService.crearMovimientoEnTransaccion(
-          manager,
-          cuentaBancaria,
-          {
-            fecha: dto.fecha,
-            nroTransaccion: nroComprobante,
-            tipoTransaccion: formaPago!.nombre,
-            facturaRecibo: referencia,
-            idPersona: beneficiario.idPersona,
-            idActorProductivoMinero: beneficiario.idActorProductivoMinero,
-            idCliente: beneficiario.idCliente,
-            nombresApellidos: beneficiario.nombre,
-            concepto,
-            idDestinoGasto,
-            debe: montoPagado,
-            haber: 0,
-          },
-          user,
-        );
-        await manager.update(PagoValorizacion, pago.id, { idLibretaBanco: mov.id });
-      } else if (montoPagado > 0) {
-        const mov = await this.movimientoCajaService.crearMovimientoEnTransaccion(
-          manager,
-          cajaEmpresa!,
-          {
-            moneda: MONEDA,
-            fecha: dto.fecha,
-            nroComprobante,
-            facturaRecibo: referencia,
-            idFormaPago: formaPago!.id,
-            idPersona: beneficiario.idPersona,
-            entregaFondosA: beneficiario.nombre,
-            concepto,
-            idDestinoGasto,
-            ingreso: 0,
-            egreso: montoPagado,
-          },
-          user,
-        );
-        await manager.update(PagoValorizacion, pago.id, { idMovimientoCaja: mov.id });
+      // Lo que sale de verdad: un egreso por cada medio, de la caja
+      // (efectivo) o de la libreta de su cuenta.
+      let idMovimientoCaja: string | null = null;
+      let idLibretaBanco: string | null = null;
+      for (let i = 0; i < medios.length; i++) {
+        const medio = medios[i];
+        let idCajaMedio: string | null = null;
+        let idLibretaMedio: string | null = null;
+        if (medio.cuentaBancaria) {
+          const mov = await this.libretaBancoService.crearMovimientoEnTransaccion(
+            manager,
+            medio.cuentaBancaria,
+            {
+              fecha: dto.fecha,
+              nroTransaccion: medio.nroComprobante,
+              tipoTransaccion: medio.formaPago!.nombre,
+              facturaRecibo: referencia,
+              idPersona: beneficiario.idPersona,
+              idActorProductivoMinero: beneficiario.idActorProductivoMinero,
+              idCliente: beneficiario.idCliente,
+              nombresApellidos: beneficiario.nombre,
+              concepto,
+              idPlanCuentas,
+              debe: medio.monto,
+              haber: 0,
+            },
+            user,
+          );
+          idLibretaMedio = mov.id;
+          idLibretaBanco ??= mov.id;
+        } else {
+          const mov = await this.movimientoCajaService.crearMovimientoEnTransaccion(
+            manager,
+            cajaEmpresa!,
+            {
+              moneda: MONEDA,
+              fecha: dto.fecha,
+              nroComprobante: medio.nroComprobante,
+              facturaRecibo: referencia,
+              idFormaPago: medio.formaPago!.id,
+              idPersona: beneficiario.idPersona,
+              entregaFondosA: beneficiario.nombre,
+              concepto,
+              idPlanCuentas,
+              ingreso: 0,
+              egreso: medio.monto,
+            },
+            user,
+          );
+          idCajaMedio = mov.id;
+          idMovimientoCaja ??= mov.id;
+        }
+        // Solo el pago mixto deja sus medios aparte; con uno solo alcanza
+        // con la cabecera.
+        if (medios.length > 1) {
+          await manager.save(
+            manager.create(PagoValorizacionMedio, {
+              idPagoValorizacion: pago.id,
+              orden: i + 1,
+              idFormaPago: medio.formaPago!.id,
+              idCuentaBancaria: medio.cuentaBancaria?.id ?? null,
+              nroComprobante: medio.nroComprobante,
+              monto: medio.monto,
+              idMovimientoCaja: idCajaMedio,
+              idLibretaBanco: idLibretaMedio,
+              usuarioRegistro: user.usuario,
+            }),
+          );
+        }
+      }
+      if (idMovimientoCaja || idLibretaBanco) {
+        await manager.update(PagoValorizacion, pago.id, {
+          idMovimientoCaja,
+          idLibretaBanco,
+        });
       }
 
       return pago.id;
     });
 
     return this.buscarPorId(idPago);
+  }
+
+  /**
+   * Medios por los que sale `montoPagado`. Con `pagos` es un pago mixto (la
+   * suma debe dar exactamente lo que se paga); sin ella, un único medio con
+   * la forma de pago de la cabecera.
+   */
+  private async resolverMedios(
+    dto: CreatePagoValorizacionDto,
+    montoPagado: number,
+    codigo: string,
+  ): Promise<MedioPagoResuelto[]> {
+    if (dto.pagos?.length) {
+      return resolverMediosPago(
+        this.dataSource.manager,
+        dto.pagos,
+        montoPagado,
+        `lo que se paga de la valorización ${codigo}`,
+      );
+    }
+    if (!dto.idFormaPago) {
+      throw new BadRequestException('Indicá la forma de pago.');
+    }
+    return resolverMediosPago(
+      this.dataSource.manager,
+      [
+        {
+          idFormaPago: dto.idFormaPago,
+          monto: montoPagado,
+          idCuentaBancaria: dto.idCuentaBancaria,
+          nroComprobante: dto.nroComprobante,
+        },
+      ],
+      montoPagado,
+      `lo que se paga de la valorización ${codigo}`,
+    );
   }
 
   /**
@@ -662,8 +718,8 @@ export class PagoValorizacionService {
   }
 
   /**
-   * Anula el pago: da de baja su movimiento de caja o de libreta y sus
-   * líneas de kardex (todo se recalcula). No se puede si alguno cayó en un
+   * Anula el pago: da de baja sus movimientos de caja y de libreta (uno por
+   * medio, si fue un pago mixto) y sus líneas de kardex (todo se recalcula). No se puede si alguno cayó en un
    * período ya cerrado o en un kardex ya cerrado.
    */
   async anular(id: string, user: Usuario): Promise<PagoValorizacion> {
@@ -672,24 +728,36 @@ export class PagoValorizacionService {
       throw new BadRequestException('El pago ya está anulado.');
     }
 
-    const movCaja = pago.idMovimientoCaja
-      ? await this.dataSource.manager.findOne(MovimientoCaja, {
-          where: { id: pago.idMovimientoCaja },
+    // Movimientos del pago: los de la cabecera más los de cada medio (en
+    // un pago mixto la cabecera repite el primero de cada tipo).
+    const idsCaja = new Set(
+      [pago.idMovimientoCaja, ...(pago.medios ?? []).map((m) => m.idMovimientoCaja)]
+        .filter(Boolean)
+        .map(String),
+    );
+    const idsBanco = new Set(
+      [pago.idLibretaBanco, ...(pago.medios ?? []).map((m) => m.idLibretaBanco)]
+        .filter(Boolean)
+        .map(String),
+    );
+    const movsCaja = idsCaja.size
+      ? await this.dataSource.manager.find(MovimientoCaja, {
+          where: { id: In([...idsCaja]) },
           relations: { periodoCaja: true },
         })
-      : null;
-    if (movCaja?.periodoCaja?.estado === 'CERRADO') {
+      : [];
+    if (movsCaja.some((mov) => mov.periodoCaja?.estado === 'CERRADO')) {
       throw new BadRequestException(
         'El egreso de caja de este pago está en un período cerrado: no se puede anular.',
       );
     }
-    const movBanco = pago.idLibretaBanco
-      ? await this.dataSource.manager.findOne(LibretaBanco, {
-          where: { id: pago.idLibretaBanco },
+    const movsBanco = idsBanco.size
+      ? await this.dataSource.manager.find(LibretaBanco, {
+          where: { id: In([...idsBanco]) },
           relations: { periodoBanco: true },
         })
-      : null;
-    if (movBanco?.periodoBanco?.estado === 'CERRADO') {
+      : [];
+    if (movsBanco.some((mov) => mov.periodoBanco?.estado === 'CERRADO')) {
       throw new BadRequestException(
         'El movimiento de libreta bancaria de este pago está en un período cerrado: no se puede anular.',
       );
@@ -703,11 +771,11 @@ export class PagoValorizacionService {
     }
 
     await this.dataSource.transaction(async (manager) => {
-      if (movCaja) {
-        await this.movimientoCajaService.cambiarEstadoEnTransaccion(manager, movCaja, false, user);
+      for (const mov of movsCaja) {
+        await this.movimientoCajaService.cambiarEstadoEnTransaccion(manager, mov, false, user);
       }
-      if (movBanco) {
-        await this.libretaBancoService.cambiarEstadoEnTransaccion(manager, movBanco, false, user);
+      for (const mov of movsBanco) {
+        await this.libretaBancoService.cambiarEstadoEnTransaccion(manager, mov, false, user);
       }
       for (const detalle of pago.detalles ?? []) {
         if (detalle.idMovimientoKardex) {

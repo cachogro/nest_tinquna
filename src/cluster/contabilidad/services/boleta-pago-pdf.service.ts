@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { BoletaPago } from '../entities/boleta-pago.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { montoEnLetras } from 'src/common/utils/numero-a-letras.util';
+import { formatearFechaHora } from '../fecha-hora.util';
 
 const LOGO_PATH = join(process.cwd(), 'uploads', 'logo.png');
 
@@ -128,19 +129,28 @@ export class BoletaPagoPdfService {
       doc.image(LOGO_PATH, xi, y, { width: logoAncho });
     }
 
-    // --- Caja de info (Boleta N° / Fecha de pago / Recibo N°) ---
+    // --- Caja de info (Boleta N° / Fecha de pago / Emitido / Recibo N°) ---
     const cajaAncho = 130;
     const cajaAlto = 42;
     const cajaX = x + ancho - pad - cajaAncho;
     doc.rect(cajaX, y, cajaAncho, cajaAlto).lineWidth(0.75).stroke();
 
-    const filaAlto = cajaAlto / 3;
+    const filaAlto = cajaAlto / 4;
     this.filaEtiquetaValor(doc, cajaX, y, cajaAncho, filaAlto, 'Boleta N.º', String(boleta.numero).padStart(4, '0'));
     this.filaEtiquetaValor(doc, cajaX, y + filaAlto, cajaAncho, filaAlto, 'Fecha de pago', this.formatearFechaCorta(boleta.fechaPago));
     this.filaEtiquetaValor(
       doc,
       cajaX,
       y + filaAlto * 2,
+      cajaAncho,
+      filaAlto,
+      'Emitido',
+      boleta.fechaHoraGeneracion ? formatearFechaHora(boleta.fechaHoraGeneracion) : '',
+    );
+    this.filaEtiquetaValor(
+      doc,
+      cajaX,
+      y + filaAlto * 3,
       cajaAncho,
       filaAlto,
       'Recibo N.º',
@@ -403,7 +413,7 @@ export class BoletaPagoPdfService {
     etiqueta: string,
     valor: string,
   ) {
-    const anchoEtiqueta = ancho * 0.5;
+    const anchoEtiqueta = ancho * 0.45;
     doc
       .font('Helvetica-Bold')
       .fontSize(7)

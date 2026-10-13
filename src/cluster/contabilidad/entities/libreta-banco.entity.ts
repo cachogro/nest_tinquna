@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { CuentaBancaria } from 'src/cluster/parametricas/entities/cuenta-bancaria.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { Cliente } from 'src/cluster/parametricas/entities/cliente.entity';
@@ -182,27 +182,27 @@ export class LibretaBanco extends Auditoria {
   })
   concepto: string;
 
-  // "DESTINO DEL GASTO" del Excel (parametrica.destino_gasto), igual que en
+  // "PLAN DE CUENTAS" del Excel (parametrica.plan_cuentas), igual que en
   // movimiento_caja / movimiento_kardex / recibo_detalle / traspaso. Antes
-  // de esta columna, un recibo o kardex pagado por banco perdía su destino
+  // de esta columna, un recibo o kardex pagado por banco perdía su plan de cuentas
   // del gasto para efectos de reportes: nunca generaba fila en
   // movimiento_caja, así que no había dónde guardarlo del lado del banco.
   @Column({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     type: 'int',
     nullable: true,
   })
-  idDestinoGasto?: number | null;
+  idPlanCuentas?: number | null;
 
-  @ManyToOne(() => DestinoGasto, {
+  @ManyToOne(() => PlanCuentas, {
     nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     referencedColumnName: 'id',
   })
-  destinoGasto?: DestinoGasto;
+  planCuentas?: PlanCuentas;
 
   // Presente cuando el movimiento nace de la línea EFECTIVO de un recibo
   // pagado por un medio bancario (idCuentaBancaria). Las líneas

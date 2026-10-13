@@ -1,13 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsPositive,
   IsString,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { MedioPagoDto } from '../medio-pago.dto';
 
 /**
  * Datos del recibo que mueve la plata (préstamo, abono, boleta de pago):
@@ -45,6 +49,22 @@ export abstract class DatosPagoDto {
   @MaxLength(30, { message: 'El N° de comprobante no puede exceder los 30 caracteres.' })
   nroComprobante?: string;
 
+  @ApiPropertyOptional({
+    type: [MedioPagoDto],
+    description:
+      'Pago MIXTO: los medios por los que sale o entra el dinero (por ejemplo, la mitad en efectivo y el resto por QR). La suma de los montos debe ser igual a lo que mueve el recibo. Si se envía, reemplaza a `idFormaPago` / `idCuentaBancaria` / `nroComprobante`, que quedan con los datos del primer medio. Con un solo medio no hace falta: alcanza con esos tres campos.',
+    example: [
+      { idFormaPago: 1, monto: 500 },
+      { idFormaPago: 2, monto: 500, idCuentaBancaria: 1, nroComprobante: '4613159797' },
+    ],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Los medios de pago deben ser una lista.' })
+  @ArrayMinSize(1, { message: 'Indicá al menos un medio de pago.' })
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  pagos?: MedioPagoDto[];
+
   @ApiProperty({
     example: '7',
     description:
@@ -57,11 +77,11 @@ export abstract class DatosPagoDto {
   @ApiPropertyOptional({
     example: 13,
     description:
-      'Id del destino del gasto (parametrica.destino_gasto) que clasifica el movimiento de caja/banco en los reportes.',
+      'Id del plan de cuentas (parametrica.plan_cuentas) que clasifica el movimiento de caja/banco en los reportes.',
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 }

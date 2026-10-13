@@ -55,13 +55,13 @@ export class ReponerFondoRendirDto {
   @ApiPropertyOptional({
     example: 13,
     description:
-      'Id del destino del gasto de la devolución. Si se omite se usa el de la cabecera del fondo.',
+      'Id del plan de cuentas de la devolución. Si se omite se usa el de la cabecera del fondo.',
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 
   @ApiProperty({
     example: '7',

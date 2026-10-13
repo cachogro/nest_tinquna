@@ -24,9 +24,11 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { MovimientoKardexService } from '../services/movimiento-kardex.service';
+import { PagoDeudaKardexService } from '../services/pago-deuda-kardex.service';
 import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
 import { CreateMovimientoKardexDto } from '../dto/movimiento-kardex/create-movimiento-kardex.dto';
 import { FiltroMovimientoKardexDto } from '../dto/movimiento-kardex/filtro-movimiento-kardex.dto';
@@ -34,9 +36,11 @@ import { FiltroMovimientoKardexDto } from '../dto/movimiento-kardex/filtro-movim
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class MovimientoKardexController {
   constructor(
     private readonly movimientoKardexService: MovimientoKardexService,
+    private readonly pagoDeudaKardexService: PagoDeudaKardexService,
   ) {}
 
   @Post('movimiento-kardex')
@@ -45,7 +49,7 @@ export class MovimientoKardexController {
   @ApiOperation({
     summary: 'Registrar o actualizar una línea del kardex',
     description:
-      'Sin `id` registra un movimiento; con `id` lo actualiza. El kardex debe estar ABIERTO. DEBE = anticipo entregado (sube la deuda); HABER = pago/descuento (la baja). El `saldo` corriente y el `numeroLinea` (reinicia en 1 por kardex) los asigna el servicio, que también recalcula `kardex.saldoActual`. Al REGISTRAR (sin `id`), la línea afecta un solo registro según el medio de pago, nunca ambos: sin `idCuentaBancaria` (efectivo) se refleja en la caja de flujo (Caja id=1, "CAJA PRINCIPAL"): DEBE -> EGRESO (plata que sale como anticipo), HABER -> INGRESO (valor recuperado al saldar la deuda); requiere que la Caja id=1 ya esté aperturada en BS. Con `idCuentaBancaria` (medio bancario: QR, Transferencia, Cheque, Depósito, y requiere indicar también `idFormaPago`) postea en la libreta de bancos de esa cuenta (misma dirección: DEBE=sale, HABER=entra) y NO afecta la caja de flujo; requiere que esa cuenta ya esté aperturada. En ambos casos el beneficiario que queda guardado es el titular del kardex (la persona o el actor productivo minero). `nroComprobante` pasa a ser el N° de comprobante real de la transacción bancaria; `facturaRecibo` es el documento que respalda la línea (ej. "REC:C-273", "DET. ADJ."). Al ACTUALIZAR (con `id`) no se sincroniza el movimiento de caja/banco ya generado: si hace falta corregir el monto o el tipo, se ajusta también a mano en `/contabilidad/movimiento-caja` o en la libreta de bancos, según cuál se haya generado.',
+      'PAGO DE DEUDA PERSONAL: al registrar (sin `id`) un HABER en un kardex PERSONAL o ASOCIADO con una forma de pago que mueve dinero, no queda una línea suelta: se genera en el mismo paso un recibo de INGRESO (serie R) ya PROCESADO, que es el que postea la línea del kardex y la entrada a caja (o a la libreta de bancos, con `idCuentaBancaria`). La respuesta trae ese recibo en `recibo` (imprimir con GET /contabilidad/recibo/{recibo.id}/pdf); `facturaRecibo` pasa a ser su número ("REC:R-0007") y el `detalle` es su concepto. Como todo recibo, con medio bancario exige `idCuentaBancaria` + `nroComprobante`, y la línea se corrige anulando el recibo. Sin `id` registra un movimiento; con `id` lo actualiza. El kardex debe estar ABIERTO. DEBE = anticipo entregado (sube la deuda); HABER = pago/descuento (la baja). El `saldo` corriente y el `numeroLinea` (reinicia en 1 por kardex) los asigna el servicio, que también recalcula `kardex.saldoActual`. Al REGISTRAR (sin `id`), la línea afecta un solo registro según el medio de pago, nunca ambos: sin `idCuentaBancaria` (efectivo) se refleja en la caja de flujo (Caja id=1, "CAJA PRINCIPAL"): DEBE -> EGRESO (plata que sale como anticipo), HABER -> INGRESO (valor recuperado al saldar la deuda); requiere que la Caja id=1 ya esté aperturada en BS. Con `idCuentaBancaria` (medio bancario: QR, Transferencia, Cheque, Depósito, y requiere indicar también `idFormaPago`) postea en la libreta de bancos de esa cuenta (misma dirección: DEBE=sale, HABER=entra) y NO afecta la caja de flujo; requiere que esa cuenta ya esté aperturada. En ambos casos el beneficiario que queda guardado es el titular del kardex (la persona o el actor productivo minero). `nroComprobante` pasa a ser el N° de comprobante real de la transacción bancaria; `facturaRecibo` es el documento que respalda la línea (ej. "REC:C-273", "DET. ADJ."). Al ACTUALIZAR (con `id`) no se sincroniza el movimiento de caja/banco ya generado: si hace falta corregir el monto o el tipo, se ajusta también a mano en `/contabilidad/movimiento-caja` o en la libreta de bancos, según cuál se haya generado.',
   })
   @ApiBody({
     type: CreateMovimientoKardexDto,
@@ -72,6 +76,19 @@ export class MovimientoKardexController {
           idFormaPago: 1,
           tipo: 'HABER',
           monto: 7050,
+        },
+      },
+      pagoDeudaPersonal: {
+        summary: 'Pago de deuda personal (HABER en kardex PERSONAL): genera recibo de ingreso PROCESADO',
+        value: {
+          idKardex: '5',
+          fecha: '2026-10-13',
+          detalle: 'PAGO A CUENTA DE ANTICIPOS',
+          idFormaPago: 1,
+          idPlanCuentas: 13,
+          idPersonaAutorizo: '7',
+          tipo: 'HABER',
+          monto: 500,
         },
       },
       pagoPorTransferencia: {
@@ -101,7 +118,7 @@ export class MovimientoKardexController {
   })
   @ApiNotFoundResponse({
     description:
-      'No se encontró el kardex, el movimiento a actualizar, o alguna referencia (subcuenta, forma de pago, destino del gasto, cobrador, valorización, cuenta bancaria).',
+      'No se encontró el kardex, el movimiento a actualizar, o alguna referencia (subcuenta, forma de pago, plan de cuentas, cobrador, valorización, cuenta bancaria).',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
@@ -109,7 +126,7 @@ export class MovimientoKardexController {
     @Body() body: CreateMovimientoKardexDto,
     @GetUser() user: Usuario,
   ): Promise<MovimientoKardex> {
-    return await this.movimientoKardexService.guardar(body, user);
+    return await this.pagoDeudaKardexService.guardar(body, user);
   }
 
   @Patch('movimiento-kardex/cambiar_estado/:id')

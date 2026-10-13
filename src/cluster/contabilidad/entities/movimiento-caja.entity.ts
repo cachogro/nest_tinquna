@@ -8,7 +8,7 @@ import {
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { Caja } from 'src/cluster/parametricas/entities/caja.entity';
 import { FormaPago } from 'src/cluster/parametricas/entities/forma-pago.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { PeriodoCaja, MonedaCaja } from './periodo-caja.entity';
 import { Recibo } from './recibo.entity';
@@ -72,6 +72,17 @@ export class MovimientoCaja extends Auditoria {
   })
   moneda: MonedaCaja;
 
+  // Bs. por 1 USD con el que entró o salió el monto. Obligatorio en los
+  // movimientos en USD; null en Bs. Solo informativo: no convierte nada.
+  @Column({
+    name: 'tipo_cambio',
+    type: 'numeric',
+    precision: 12,
+    scale: 4,
+    nullable: true,
+  })
+  tipoCambio?: number | null;
+
   @Column({
     name: 'folio',
     type: 'int',
@@ -87,10 +98,12 @@ export class MovimientoCaja extends Auditoria {
 
   // "Nº CPTE" del Excel: n° de comprobante real de la transacción (ej. n°
   // de transferencia/QR), independiente del recibo/factura que la respalda.
+  // Hasta 100: un mismo pago puede traer varios depósitos (ej. las
+  // retenciones "DEP:CNS-..., FEDECOMIN-..., FENCOMIN-...").
   @Column({
     name: 'nro_comprobante',
     type: 'varchar',
-    length: 30,
+    length: 100,
     nullable: true,
   })
   nroComprobante?: string;
@@ -100,7 +113,7 @@ export class MovimientoCaja extends Auditoria {
   @Column({
     name: 'factura_recibo',
     type: 'varchar',
-    length: 30,
+    length: 100,
     nullable: true,
   })
   facturaRecibo?: string | null;
@@ -157,23 +170,23 @@ export class MovimientoCaja extends Auditoria {
   })
   concepto: string;
 
-  // "DESTINO DEL GASTO" del Excel (parametrica.destino_gasto).
+  // "PLAN DE CUENTAS" del Excel (parametrica.plan_cuentas).
   @Column({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     type: 'int',
     nullable: true,
   })
-  idDestinoGasto?: number | null;
+  idPlanCuentas?: number | null;
 
-  @ManyToOne(() => DestinoGasto, {
+  @ManyToOne(() => PlanCuentas, {
     nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     referencedColumnName: 'id',
   })
-  destinoGasto?: DestinoGasto;
+  planCuentas?: PlanCuentas;
 
   // Presente cuando el movimiento nace de generar un recibo. Cada línea de
   // recibo_detalle genera su propio movimiento_caja (INGRESO si es

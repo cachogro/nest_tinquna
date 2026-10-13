@@ -73,4 +73,14 @@ export class CuentaBancaria extends Auditoria {
     nullable: true,
   })
   fechaSaldoInicial?: string;
+
+  // Opcional por cuenta: si maneja chequera, cada pago con forma CHEQUE que
+  // sale de la cuenta consume un cheque de sus talonarios
+  // (contabilidad.talonario_cheque).
+  @Column({
+    name: 'maneja_cheques',
+    type: 'boolean',
+    default: false,
+  })
+  manejaCheques: boolean;
 }

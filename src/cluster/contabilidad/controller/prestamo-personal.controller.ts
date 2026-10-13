@@ -24,7 +24,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { PrestamoPersonalService } from '../services/prestamo-personal.service';
 import { PrestamoPersonal } from '../entities/prestamo-personal.entity';
@@ -36,6 +37,7 @@ import { FiltroPrestamoPersonalDto } from '../dto/prestamo-personal/filtro-prest
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class PrestamoPersonalController {
   constructor(private readonly prestamoPersonalService: PrestamoPersonalService) {}
 

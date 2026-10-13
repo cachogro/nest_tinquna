@@ -29,7 +29,8 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { MovimientoCajaService } from '../services/movimiento-caja.service';
 import { CajaFlujoExcelService } from '../services/caja-flujo-excel.service';
@@ -45,10 +46,13 @@ import {
   AccionPeriodo,
   AccionPeriodoCajaDto,
 } from '../dto/movimiento-caja/accion-periodo-caja.dto';
+import { RequierePermisoExcel } from 'src/security/decorators/requiere-permiso.decorator';
+import { PERMISO_DESCARGAR_EXCEL_CONTABILIDAD } from 'src/security/enums/permisos';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class CajaController {
   constructor(
     private readonly movimientoCajaService: MovimientoCajaService,
@@ -79,7 +83,7 @@ export class CajaController {
           facturaRecibo: 'REC:R-0084',
           entregaFondosA: 'IVAR CALLAHUANCA',
           concepto: 'COMPRA DE DIESEL',
-          idDestinoGasto: 21,
+          idPlanCuentas: 21,
           tipo: 'EGRESO',
           monto: 1260,
         },
@@ -93,7 +97,7 @@ export class CajaController {
           facturaRecibo: 'REC:R-0009',
           entregaFondosA: 'RAFAEL DOUCHEN',
           concepto: 'VENTA DE DIESEL DE 400 LTRS. A 7.-BS DEL GALPON DE ARRIBA',
-          idDestinoGasto: 2,
+          idPlanCuentas: 2,
           tipo: 'INGRESO',
           monto: 2800,
         },
@@ -109,7 +113,7 @@ export class CajaController {
           nroComprobante: '4613159797',
           idPersona: '15',
           concepto: 'ANTICIPO A CTA SACO MINERAL',
-          idDestinoGasto: 13,
+          idPlanCuentas: 13,
           tipo: 'EGRESO',
           monto: 3500,
         },
@@ -126,7 +130,7 @@ export class CajaController {
   })
   @ApiNotFoundResponse({
     description:
-      'No se encontró la caja, la persona, la forma de pago, el destino del gasto, o el movimiento a actualizar.',
+      'No se encontró la caja, la persona, la forma de pago, el plan de cuentas, o el movimiento a actualizar.',
   })
   @ApiUnauthorizedResponse({
     description: 'No autorizado. Token no proporcionado o inválido.',
@@ -202,12 +206,13 @@ export class CajaController {
     return await this.movimientoCajaService.listar(filtro);
   }
 
+  @RequierePermisoExcel(PERMISO_DESCARGAR_EXCEL_CONTABILIDAD)
   @Get('movimiento-caja/excel')
   @Auth()
   @ApiOperation({
     summary: 'Exportar la caja de flujo a Excel o PDF (una caja o el libro completo)',
     description:
-      'Genera el .xlsx de un único período mensual del libro, por eso gestión y mes son obligatorios. Sin `completo` exporta una caja en una moneda con el formato del libro físico (fecha, concepto, entrega de fondos a, factura y/o recibo, N° cpte., destino del gasto, ingreso, egreso, saldo); ahí `idCaja` y `moneda` son obligatorios. Con `completo=true` exporta el libro completo como la hoja "CAJA DE FLUJO" del modelo físico: en una sola lista ordenada por fecha y hora de registro, la caja en Bs., la caja en $us. y cada cuenta bancaria (aperturadas o con movimientos en el mes), cada una con su grupo INGRESO / EGRESO / SALDO, sumas totales, resumen por cuenta y firmas; `moneda` se ignora e `idCaja` es opcional (por defecto la caja principal). Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta apaisada (por la cantidad de columnas), márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
+      'Genera el .xlsx de un único período mensual del libro, por eso gestión y mes son obligatorios. Sin `completo` exporta una caja en una moneda con el formato del libro físico (fecha, concepto, entrega de fondos a, factura y/o recibo, N° cpte., plan de cuentas, ingreso, egreso, saldo); ahí `idCaja` y `moneda` son obligatorios. Con `completo=true` exporta el libro completo como la hoja "CAJA DE FLUJO" del modelo físico: en una sola lista ordenada por fecha y hora de registro, la caja en Bs., la caja en $us. y cada cuenta bancaria (aperturadas o con movimientos en el mes), cada una con su grupo INGRESO / EGRESO / SALDO, sumas totales, resumen por cuenta y firmas; `moneda` se ignora e `idCaja` es opcional (por defecto la caja principal). Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta apaisada (por la cantidad de columnas), márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
   @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({ description: 'Caja inactiva o filtros inválidos.' })

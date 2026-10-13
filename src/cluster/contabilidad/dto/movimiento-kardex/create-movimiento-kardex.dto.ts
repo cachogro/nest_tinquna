@@ -108,13 +108,13 @@ export class CreateMovimientoKardexDto {
 
   @ApiPropertyOptional({
     example: 8,
-    description: 'Id del destino del gasto (parametrica.destino_gasto).',
+    description: 'Id del plan de cuentas (parametrica.plan_cuentas).',
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 
   @ApiPropertyOptional({
     example: '20',
@@ -123,6 +123,15 @@ export class CreateMovimientoKardexDto {
   @IsOptional()
   @IsString()
   idCobrador?: string;
+
+  @ApiPropertyOptional({
+    example: '7',
+    description:
+      'Id de la persona (persona_ci, `autorizado = true`) que autorizó la operación. Solo se usa cuando la línea es el pago de una deuda personal (HABER en un kardex PERSONAL/ASOCIADO): queda en el recibo de ingreso que se genera.',
+  })
+  @IsOptional()
+  @IsString({ message: 'El id de la persona que autorizó debe ser una cadena de texto.' })
+  idPersonaAutorizo?: string;
 
   @ApiPropertyOptional({
     example: '42',

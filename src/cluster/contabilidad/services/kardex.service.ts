@@ -15,9 +15,12 @@ import { aplicarOrden } from 'src/common/utils/query-orden.util';
 import { Kardex, TipoKardex } from '../entities/kardex.entity';
 import { generarCodigoKardex } from '../kardex-codigo.util';
 import { AbrirKardexDto } from '../dto/kardex/abrir-kardex.dto';
+import { CerrarKardexDto } from '../dto/kardex/cerrar-kardex.dto';
+import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
 import { FiltrosKardexDto } from '../dto/kardex/filtros-kardex.dto';
 import { KardexPaginadoDto } from '../dto/kardex/kardex-paginado.dto';
 import { KardexActividadService } from './kardex-actividad.service';
+import { KardexInteresService } from './kardex-interes.service';
 
 @Injectable()
 export class KardexService {
@@ -38,6 +41,7 @@ export class KardexService {
     private readonly dataSource: DataSource,
 
     private readonly kardexActividadService: KardexActividadService,
+    private readonly kardexInteresService: KardexInteresService,
   ) {}
 
   // ------------------------------------------------------------------ helpers
@@ -45,8 +49,32 @@ export class KardexService {
     return new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
   }
 
-  private gestionActual(): number {
-    return new Date(Date.now() - 4 * 60 * 60 * 1000).getUTCFullYear();
+  private texto(fecha: string): string {
+    const [anio, mes, dia] = fecha.split('-');
+    return `${dia}/${mes}/${anio}`;
+  }
+
+  /** Las columnas `date` pueden llegar como string o Date según el driver. */
+  private iso(fecha: string | Date): string {
+    return fecha instanceof Date
+      ? fecha.toISOString().slice(0, 10)
+      : String(fecha).slice(0, 10);
+  }
+
+  /**
+   * Fecha (YYYY-MM-DD) con la que se abre o se cierra un kardex: la indicada
+   * (carga de kardex históricos) o, si no viene, hoy. Nunca futura.
+   */
+  private fechaOperacion(fecha: string | undefined, etiqueta: string): string {
+    const hoy = this.hoy();
+    if (!fecha) return hoy;
+    const dia = fecha.slice(0, 10);
+    if (dia > hoy) {
+      throw new BadRequestException(
+        `La fecha de ${etiqueta} (${this.texto(dia)}) no puede ser futura.`,
+      );
+    }
+    return dia;
   }
 
   private normalizar(valor?: string): string | null {
@@ -170,8 +198,9 @@ export class KardexService {
   }
 
   /**
-   * Siguiente código del tipo (cada sigla KA, KS, KP, KC lleva su propia
-   * numeración): toma el número más alto ya usado en los códigos de ese tipo
+   * Código para el primer kardex de un titular; los que nacen de un cierre
+   * conservan el del anterior. Siguiente código del tipo (cada sigla KA, KS,
+   * KP, KC lleva su propia numeración): toma el número más alto ya usado en los códigos de ese tipo
    * y le suma 1. Debe llamarse dentro de la transacción que inserta el
    * kardex: el bloqueo evita que dos altas simultáneas tomen el mismo código.
    */
@@ -212,6 +241,7 @@ export class KardexService {
     }
 
     const saldoInicial = dto.saldoInicial ?? 0;
+    const fechaApertura = this.fechaOperacion(dto.fechaApertura, 'apertura');
     const esPersonaOAsociado = dto.tipo === 'PERSONAL' || dto.tipo === 'ASOCIADO';
 
     const guardado = await this.dataSource.transaction(async (manager) => {
@@ -225,14 +255,14 @@ export class KardexService {
           idCliente: dto.tipo === 'CLIENTE' ? String(dto.idCliente) : null,
           numero: 1,
           codigo,
-          gestion: dto.gestion ?? this.gestionActual(),
+          gestion: dto.gestion ?? Number(fechaApertura.slice(0, 4)),
           descripcion: this.normalizar(dto.descripcion),
           estado: 'ABIERTO',
           saldoInicial,
           saldoActual: saldoInicial,
           saldoCierre: null,
           idKardexAnterior: null,
-          fechaApertura: this.hoy(),
+          fechaApertura,
           usuarioRegistro: user.usuario,
         }),
       );
@@ -247,6 +277,7 @@ export class KardexService {
   async cerrar(
     id: string,
     user: Usuario,
+    dto: CerrarKardexDto = {},
   ): Promise<{ cerrado: Kardex; nuevo: Kardex }> {
     const kardex = await this.kardexRepository.findOne({ where: { id } });
     if (!kardex) {
@@ -254,7 +285,29 @@ export class KardexService {
     }
     if (kardex.estado === 'CERRADO') {
       throw new BadRequestException(
-        `El kardex ${kardex.codigo} ya está cerrado.`,
+        `El kardex ${kardex.codigo} N°${kardex.numero} ya está cerrado.`,
+      );
+    }
+    // Los intereses por mora se resuelven (cargar / condonar) antes de cerrar.
+    await this.kardexInteresService.validarCierre(kardex);
+
+    // El cierre es también la apertura del kardex siguiente, y su año la
+    // gestión de ese kardex.
+    const fechaCierre = this.fechaOperacion(dto.fechaCierre, 'cierre');
+    const fechaApertura = this.iso(kardex.fechaApertura);
+    if (fechaCierre < fechaApertura) {
+      throw new BadRequestException(
+        `La fecha de cierre (${this.texto(fechaCierre)}) no puede ser anterior a la apertura del kardex ${kardex.codigo} (${this.texto(fechaApertura)}).`,
+      );
+    }
+    const { ultima } = await this.dataSource.manager
+      .createQueryBuilder(MovimientoKardex, 'm')
+      .select('MAX(m.fecha)', 'ultima')
+      .where('m.idKardex = :id AND m.activo = true', { id: kardex.id })
+      .getRawOne<{ ultima: string | Date | null }>();
+    if (ultima && fechaCierre < this.iso(ultima)) {
+      throw new BadRequestException(
+        `La fecha de cierre (${this.texto(fechaCierre)}) no puede ser anterior al último movimiento del kardex ${kardex.codigo} (${this.texto(this.iso(ultima))}).`,
       );
     }
 
@@ -264,12 +317,11 @@ export class KardexService {
       await manager.update(Kardex, kardex.id, {
         estado: 'CERRADO',
         saldoCierre,
-        fechaCierre: this.hoy(),
+        fechaCierre,
         cerradoPor: user.usuario,
         usuarioUltimaModificacion: user.usuario,
       });
 
-      const codigo = await this.siguienteCodigo(manager, kardex.tipo);
       const nuevo = await manager.save(
         manager.create(Kardex, {
           tipo: kardex.tipo,
@@ -277,17 +329,17 @@ export class KardexService {
           idPersona: kardex.idPersona,
           idCliente: kardex.idCliente,
           numero: kardex.numero + 1,
-          // El kardex que se genera al cerrar es uno nuevo: toma el siguiente
-          // código de su sigla, igual que uno abierto a mano.
-          codigo,
-          gestion: this.gestionActual(),
+          // El código es del titular: el kardex que nace del cierre lo
+          // conserva y solo avanza el número.
+          codigo: kardex.codigo,
+          gestion: Number(fechaCierre.slice(0, 4)),
           descripcion: kardex.descripcion,
           estado: 'ABIERTO',
           saldoInicial: saldoCierre,
           saldoActual: saldoCierre,
           saldoCierre: null,
           idKardexAnterior: kardex.id,
-          fechaApertura: this.hoy(),
+          fechaApertura: fechaCierre,
           usuarioRegistro: user.usuario,
         }),
       );
@@ -326,7 +378,7 @@ export class KardexService {
           siguiente.estado === 'CERRADO';
         if (tuvoActividad) {
           throw new BadRequestException(
-            `No se puede reabrir: el kardex ${siguiente.codigo} ya tiene movimientos. Reabrí y regularizá ese primero.`,
+            `No se puede reabrir: el kardex ${siguiente.codigo} N°${siguiente.numero} ya tiene movimientos. Reabrí y regularizá ese primero.`,
           );
         }
         await manager.delete(Kardex, siguiente.id);
@@ -477,6 +529,8 @@ export class KardexService {
     // ACTIVO / INACTIVO (baja lógica por días sin movimientos, ver
     // KardexActividadService): los inactivos siguen apareciendo.
     await this.kardexActividadService.completar(data);
+    // Intereses por mora: van aparte del saldo (ver KardexInteresService).
+    await this.kardexInteresService.completar(data);
 
     return {
       data,
@@ -496,6 +550,7 @@ export class KardexService {
       throw new NotFoundException('No se encontró el kardex.');
     }
     await this.kardexActividadService.completar([kardex]);
+    await this.kardexInteresService.completar([kardex]);
     return kardex;
   }
 

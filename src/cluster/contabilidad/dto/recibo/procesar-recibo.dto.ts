@@ -11,6 +11,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ReciboDetalleDto } from './recibo-detalle.dto';
+import { MedioPagoDto } from '../medio-pago.dto';
 
 /**
  * Cuerpo del `PATCH /contabilidad/recibo/:id/procesar`: solo aplica a un
@@ -24,11 +25,11 @@ export class ProcesarReciboDto {
   @ApiProperty({
     type: [ReciboDetalleDto],
     description:
-      'Cómo se subdivide el monto total del recibo entre kardex personal, kardex de actor productivo minero, y efectivo directo. La suma debe ser igual al `montoTotal` ya guardado en el recibo. Cada línea puede tener su propio `idDestinoGasto` y genera su propio movimiento de caja de flujo.',
+      'Cómo se subdivide el monto total del recibo entre kardex personal, kardex de actor productivo minero, y efectivo directo. La suma debe ser igual al `montoTotal` ya guardado en el recibo. Cada línea puede tener su propio `idPlanCuentas` y genera su propio movimiento de caja de flujo.',
     example: [
-      { destino: 'PERSONAL', idPersona: '18', monto: 150000, idDestinoGasto: 8 },
-      { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 100000, idDestinoGasto: 12 },
-      { destino: 'EFECTIVO', monto: 50000, idDestinoGasto: 3 },
+      { destino: 'PERSONAL', idPersona: '18', monto: 150000, idPlanCuentas: 8 },
+      { destino: 'ACTOR', idActorProductivoMinero: '4', monto: 100000, idPlanCuentas: 12 },
+      { destino: 'EFECTIVO', monto: 50000, idPlanCuentas: 3 },
     ],
   })
   @IsArray({ message: 'Los detalles deben ser una lista.' })
@@ -67,4 +68,20 @@ export class ProcesarReciboDto {
   @IsString({ message: 'El N° de comprobante debe ser una cadena de texto.' })
   @MaxLength(30, { message: 'El N° de comprobante no puede exceder los 30 caracteres.' })
   nroComprobante?: string;
+
+  @ApiPropertyOptional({
+    type: [MedioPagoDto],
+    description:
+      'Pago MIXTO: los medios por los que se mueve el dinero del recibo (por ejemplo, la mitad en efectivo y el resto por QR). La suma de los montos debe ser igual a el `montoTotal` del recibo. Si se envía, reemplaza a `idFormaPago` / `idCuentaBancaria` / `nroComprobante`, que quedan con los datos del primer medio. Con un solo medio no hace falta: alcanza con esos tres campos.',
+    example: [
+      { idFormaPago: 1, monto: 500 },
+      { idFormaPago: 2, monto: 500, idCuentaBancaria: 1, nroComprobante: '4613159797' },
+    ],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Los medios de pago deben ser una lista.' })
+  @ArrayMinSize(1, { message: 'Indicá al menos un medio de pago.' })
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  pagos?: MedioPagoDto[];
 }

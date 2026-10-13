@@ -17,10 +17,15 @@ export class UserRoleGuard implements CanActivate {
   canActivate(
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
-    const validRoles: string[] = this.reflector.get(
+    // Los roles de la ruta mandan; si la ruta no pide ninguno (@Auth() a
+    // secas) se usan los del controlador (@RoleProtected en la clase).
+    const rolesRuta: string[] = this.reflector.get(
       META_ROLES,
       context.getHandler(),
     );
+    const validRoles: string[] = rolesRuta?.length
+      ? rolesRuta
+      : this.reflector.get(META_ROLES, context.getClass());
 
     if (!validRoles) return true;
     if (validRoles.length === 0) return true;

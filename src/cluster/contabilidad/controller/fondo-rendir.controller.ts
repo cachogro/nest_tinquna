@@ -27,7 +27,8 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { FondoRendirService } from '../services/fondo-rendir.service';
 import { FondoRendirExcelService } from '../services/fondo-rendir-excel.service';
@@ -38,10 +39,13 @@ import { CreateFondoRendirDetalleDto } from '../dto/fondo-rendir/create-fondo-re
 import { FiltroFondoRendirDto } from '../dto/fondo-rendir/filtro-fondo-rendir.dto';
 import { ReponerFondoRendirDto } from '../dto/fondo-rendir/reponer-fondo-rendir.dto';
 import { FiltroFondoRendirExcelDto } from '../dto/fondo-rendir/filtro-fondo-rendir-excel.dto';
+import { RequierePermisoExcel } from 'src/security/decorators/requiere-permiso.decorator';
+import { PERMISO_DESCARGAR_EXCEL_CONTABILIDAD } from 'src/security/enums/permisos';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class FondoRendirController {
   constructor(
     private readonly fondoRendirService: FondoRendirService,
@@ -68,7 +72,7 @@ export class FondoRendirController {
           concepto: 'ADELANTO PARA COMPRA DE MATERIALES',
           monto: 100,
           idFormaPago: 1,
-          idDestinoGasto: 13,
+          idPlanCuentas: 13,
           idPersonaAutorizo: '7',
         },
       },
@@ -82,7 +86,7 @@ export class FondoRendirController {
     description: 'Datos inválidos, destinatario inactivo, o la caja/cuenta bancaria no está aperturada.',
   })
   @ApiNotFoundResponse({
-    description: 'No se encontró la persona, el actor, el destino del gasto, o quien autoriza.',
+    description: 'No se encontró la persona, el actor, el plan de cuentas, o quien autoriza.',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
@@ -123,7 +127,7 @@ export class FondoRendirController {
   @ApiBadRequestResponse({
     description: 'El fondo está cerrado con deuda.',
   })
-  @ApiNotFoundResponse({ description: 'No se encontró el fondo, la línea, o el destino del gasto.' })
+  @ApiNotFoundResponse({ description: 'No se encontró el fondo, la línea, o el plan de cuentas.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async justificar(
@@ -216,7 +220,7 @@ export class FondoRendirController {
   @ApiBadRequestResponse({
     description: 'El fondo no tiene excedente por reponer, o la caja/cuenta bancaria no está aperturada.',
   })
-  @ApiNotFoundResponse({ description: 'No se encontró el fondo, el destino del gasto, o quien autoriza.' })
+  @ApiNotFoundResponse({ description: 'No se encontró el fondo, el plan de cuentas, o quien autoriza.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
   async reponer(
@@ -291,12 +295,13 @@ export class FondoRendirController {
     return await this.fondoRendirService.listar(filtro);
   }
 
+  @RequierePermisoExcel(PERMISO_DESCARGAR_EXCEL_CONTABILIDAD)
   @Get('fondo-rendir/excel')
   @Auth()
   @ApiOperation({
     summary: 'Exportar la rendición de cuentas de un destinatario a Excel o PDF',
     description:
-      'Genera el .xlsx "RENDICIÓN DE CUENTAS" de una persona o un actor productivo minero (excluyentes), mezclando cronológicamente sus entregas de fondo (columna CARGO) y todas sus líneas de justificación (columna DESCARGO, de cualquiera de sus fondos, no solo los abiertos en el período) con saldo corriente, igual formato que el modelo físico de la empresa. Con `mes` es el reporte MENSUAL de ese mes; sin `mes`, el ANUAL (toda la gestión). Al final marca "POR REPONER A" (si se justificó de más) o "SALDO PENDIENTE POR RENDIR" (si falta justificar), según corresponda. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
+      'Genera el .xlsx "RENDICIÓN DE CUENTAS" de una persona o un actor productivo minero (excluyentes), con la columna N° FONDO (el `id` del fondo, su N° de seguimiento) en cada fila, mezclando cronológicamente sus entregas de fondo (columna CARGO) y todas sus líneas de justificación (columna DESCARGO, de cualquiera de sus fondos, no solo los abiertos en el período) con saldo corriente, igual formato que el modelo físico de la empresa. Con `mes` es el reporte MENSUAL de ese mes; sin `mes`, el ANUAL (toda la gestión). Al final marca "POR REPONER A" (si se justificó de más) o "SALDO PENDIENTE POR RENDIR" (si falta justificar), según corresponda. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
   @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({

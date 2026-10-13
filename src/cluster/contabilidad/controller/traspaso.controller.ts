@@ -27,7 +27,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { TraspasoService } from '../services/traspaso.service';
 import { Traspaso } from '../entities/traspaso.entity';
@@ -37,10 +38,13 @@ import { TraspasoPaginadoDto } from '../dto/traspaso/traspaso-paginado.dto';
 import { FiltroTraspasoExcelDto } from '../dto/traspaso/filtro-traspaso-excel.dto';
 import { TraspasoExcelService } from '../services/traspaso-excel.service';
 import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
+import { RequierePermisoExcel } from 'src/security/decorators/requiere-permiso.decorator';
+import { PERMISO_DESCARGAR_EXCEL_CONTABILIDAD } from 'src/security/enums/permisos';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class TraspasoController {
   constructor(
     private readonly traspasoService: TraspasoService,
@@ -54,7 +58,7 @@ export class TraspasoController {
   @ApiOperation({
     summary: 'Registrar o actualizar un traspaso interno caja <-> banco',
     description:
-      'Sin `id` registra el traspaso; con `id` lo actualiza. Un traspaso mueve fondos propios de la empresa entre la caja de flujo y una cuenta bancaria: no es un ingreso/egreso real del negocio ni una transacción con un tercero, es la misma plata cambiando de custodia. DEPOSITO: sale de la caja (EGRESO) y entra al banco (HABER). RETIRO: sale del banco (DEBE) y entra a la caja (INGRESO). La caja de flujo siempre es la de la empresa (Caja id=1, "CAJA PRINCIPAL"), no se envía. `idDestinoGasto` (opcional, igual que en un recibo) debe ser un destino de EGRESO si tipo=DEPOSITO o de INGRESO si tipo=RETIRO (según su `esEgreso`); se refleja tanto en el movimiento de la caja de flujo como en el de la libreta de bancos, y en ambos queda EXCLUIDO del resumen de "cuánto se gastó/ingresó" de `/contabilidad/reportes/destino-gasto`, porque un traspaso no es un gasto/ingreso real del negocio; sirve para otros reportes contables que sí quieran clasificar/filtrar traspasos. Genera en una sola transacción un movimiento en `/contabilidad/movimiento-caja` y otro en `/contabilidad/libreta-banco`, enlazados entre sí; ambos requieren que la caja y la cuenta ya estén aperturadas. La moneda del traspaso se deriva de la moneda de la cuenta bancaria (BS o USD). Al ACTUALIZAR (con `id`) solo se pueden corregir fecha, concepto, N° de comprobante, destino del gasto y monto: no se puede cambiar el tipo ni la cuenta bancaria (para eso hay que desactivar el traspaso y registrar uno nuevo), y falla si el movimiento de caja o el de banco ya cayeron en un período cerrado.',
+      'Sin `id` registra el traspaso; con `id` lo actualiza. Un traspaso mueve fondos propios de la empresa entre la caja de flujo y una cuenta bancaria: no es un ingreso/egreso real del negocio ni una transacción con un tercero, es la misma plata cambiando de custodia. DEPOSITO: sale de la caja (EGRESO) y entra al banco (HABER). RETIRO: sale del banco (DEBE) y entra a la caja (INGRESO). La caja de flujo siempre es la de la empresa (Caja id=1, "CAJA PRINCIPAL"), no se envía. `idPlanCuentas` (opcional, igual que en un recibo) debe ser uno de EGRESO si tipo=DEPOSITO o de INGRESO si tipo=RETIRO (según su `esEgreso`); se refleja tanto en el movimiento de la caja de flujo como en el de la libreta de bancos, y en ambos queda EXCLUIDO del resumen de "cuánto se gastó/ingresó" de `/contabilidad/reportes/plan-cuentas`, porque un traspaso no es un gasto/ingreso real del negocio; sirve para otros reportes contables que sí quieran clasificar/filtrar traspasos. Genera en una sola transacción un movimiento en `/contabilidad/movimiento-caja` y otro en `/contabilidad/libreta-banco`, enlazados entre sí; ambos requieren que la caja y la cuenta ya estén aperturadas. La moneda del traspaso se deriva de la moneda de la cuenta bancaria (BS o USD). Al ACTUALIZAR (con `id`) solo se pueden corregir fecha, concepto, N° de comprobante, plan de cuentas y monto: no se puede cambiar el tipo ni la cuenta bancaria (para eso hay que desactivar el traspaso y registrar uno nuevo), y falla si el movimiento de caja o el de banco ya cayeron en un período cerrado.',
   })
   @ApiBody({
     type: CreateTraspasoDto,
@@ -67,7 +71,7 @@ export class TraspasoController {
           tipo: 'DEPOSITO',
           nroComprobante: '4478708896',
           concepto: 'DEPÓSITO DE EFECTIVO DE CAJA PRINCIPAL A CTA BANCO UNIÓN',
-          idDestinoGasto: 5,
+          idPlanCuentas: 5,
           monto: 1000,
           idPersonaAutorizo: '7',
         },
@@ -79,7 +83,7 @@ export class TraspasoController {
           idCuentaBancaria: 1,
           tipo: 'RETIRO',
           concepto: 'RETIRO DE BANCO UNIÓN PARA REPONER CAJA PRINCIPAL',
-          idDestinoGasto: 9,
+          idPlanCuentas: 9,
           monto: 500,
           idPersonaAutorizo: '7',
         },
@@ -93,11 +97,11 @@ export class TraspasoController {
   })
   @ApiBadRequestResponse({
     description:
-      'Datos inválidos, la caja o la cuenta bancaria todavía no fueron aperturadas, el destino del gasto no corresponde con el tipo (DEPOSITO exige uno de egreso, RETIRO uno de ingreso), se intentó cambiar el tipo/cuenta al actualizar, alguno de los dos movimientos ya pertenece a un período cerrado, o la persona indicada en idPersonaAutorizo no está autorizada o está inactiva.',
+      'Datos inválidos, la caja o la cuenta bancaria todavía no fueron aperturadas, el plan de cuentas no corresponde con el tipo (DEPOSITO exige uno de egreso, RETIRO uno de ingreso), se intentó cambiar el tipo/cuenta al actualizar, alguno de los dos movimientos ya pertenece a un período cerrado, o la persona indicada en idPersonaAutorizo no está autorizada o está inactiva.',
   })
   @ApiNotFoundResponse({
     description:
-      'No se encontró la caja, la cuenta bancaria, el destino del gasto, la persona que autorizó (idPersonaAutorizo), el traspaso a actualizar, o los movimientos que generó.',
+      'No se encontró la caja, la cuenta bancaria, el plan de cuentas, la persona que autorizó (idPersonaAutorizo), el traspaso a actualizar, o los movimientos que generó.',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
@@ -140,12 +144,13 @@ export class TraspasoController {
     return await this.traspasoService.cambiarEstado(id, activo, user);
   }
 
+  @RequierePermisoExcel(PERMISO_DESCARGAR_EXCEL_CONTABILIDAD)
   @Get('traspaso/reporte/excel')
   @Auth()
   @ApiOperation({
     summary: 'Exportar el libro de traspasos caja <-> banco a Excel o PDF',
     description:
-      'Genera el .xlsx "LIBRO DE TRASPASOS CAJA - BANCO" con todos los traspasos que cumplan los filtros, sin paginar y en orden cronológico: fecha, tipo, estado, concepto, cuenta bancaria, N° de comprobante, destino del gasto, moneda, importe (depósito caja → banco / retiro banco → caja), usuario que lo registró y observación (quién y cuándo lo desactivó). Los totales solo suman los VIGENTES y van separados por moneda (Bs. / $us); los desactivados salen tachados. Al pie trae un resumen con cantidad e importes por estado y moneda. Todos los filtros son opcionales: sin filtros sale el libro completo. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
+      'Genera el .xlsx "LIBRO DE TRASPASOS CAJA - BANCO" con todos los traspasos que cumplan los filtros, sin paginar y en orden cronológico: fecha, tipo, estado, concepto, cuenta bancaria, N° de comprobante, plan de cuentas, moneda, importe (depósito caja → banco / retiro banco → caja), usuario que lo registró y observación (quién y cuándo lo desactivó). Los totales solo suman los VIGENTES y van separados por moneda (Bs. / $us); los desactivados salen tachados. Al pie trae un resumen con cantidad e importes por estado y moneda. Todos los filtros son opcionales: sin filtros sale el libro completo. Con `formato=PDF` devuelve el mismo reporte en PDF: hoja carta, márgenes estrechos, encabezado de columnas repetido y páginas numeradas.',
   })
   @ApiOkResponse({ description: 'Archivo .xlsx o .pdf generado correctamente.' })
   @ApiBadRequestResponse({ description: 'Filtros inválidos (ej. fecha desde posterior a fecha hasta).' })

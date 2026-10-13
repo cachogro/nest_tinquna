@@ -42,6 +42,20 @@ export class CreateMovimientoCajaDto {
   @IsIn(['BS', 'USD'], { message: 'La moneda debe ser BS o USD.' })
   moneda: 'BS' | 'USD';
 
+  @ApiPropertyOptional({
+    example: 6.96,
+    description:
+      'Tipo de cambio (Bs. por 1 USD) del día en que entra o sale el monto. Obligatorio si `moneda` = USD; se ignora en BS. Solo informativo: no convierte el monto.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 4 },
+    { message: 'El tipo de cambio debe ser numérico con hasta 4 decimales.' },
+  )
+  @IsPositive({ message: 'El tipo de cambio debe ser mayor a 0.' })
+  tipoCambio?: number;
+
   @ApiProperty({ example: '2025-07-01', description: 'Fecha del movimiento (YYYY-MM-DD).' })
   @IsDateString({}, { message: 'La fecha debe tener el formato YYYY-MM-DD.' })
   fecha: string;
@@ -53,7 +67,7 @@ export class CreateMovimientoCajaDto {
   })
   @IsOptional()
   @IsString({ message: 'El N° de comprobante debe ser una cadena de texto.' })
-  @MaxLength(30, { message: 'El N° de comprobante no puede exceder los 30 caracteres.' })
+  @MaxLength(100, { message: 'El N° de comprobante no puede exceder los 100 caracteres.' })
   nroComprobante?: string;
 
   @ApiPropertyOptional({
@@ -63,7 +77,7 @@ export class CreateMovimientoCajaDto {
   })
   @IsOptional()
   @IsString({ message: 'El campo factura/recibo debe ser una cadena de texto.' })
-  @MaxLength(30, { message: 'El campo factura/recibo no puede exceder los 30 caracteres.' })
+  @MaxLength(100, { message: 'El campo factura/recibo no puede exceder los 100 caracteres.' })
   facturaRecibo?: string;
 
   @ApiPropertyOptional({
@@ -106,13 +120,13 @@ export class CreateMovimientoCajaDto {
 
   @ApiPropertyOptional({
     example: 2,
-    description: 'Id del destino del gasto o categoría del ingreso (parametrica.destino_gasto).',
+    description: 'Id del plan de cuentas o categoría del ingreso (parametrica.plan_cuentas).',
   })
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: 'El destino del gasto no es válido.' })
-  @IsPositive({ message: 'El destino del gasto no es válido.' })
-  idDestinoGasto?: number;
+  @IsInt({ message: 'El plan de cuentas no es válido.' })
+  @IsPositive({ message: 'El plan de cuentas no es válido.' })
+  idPlanCuentas?: number;
 
   @ApiProperty({
     enum: ['INGRESO', 'EGRESO'],

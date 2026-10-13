@@ -10,7 +10,8 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { Auth } from 'src/security/decorators';
+import { Auth, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { ValorizacionMineralReportesService } from '../reports/valorizacion-mineral-reportes.service';
 import { ValorizacionMineralReporteExcelService } from '../reports/valorizacion-mineral-reporte-excel.service';
 import { FiltroReporteValorizacionDto } from '../dto/reportes/filtro-reporte-valorizacion.dto';
@@ -79,6 +80,7 @@ const QUERY_REPORTE = [
 @ApiTags('Reportes de Valorización de Mineral')
 @Controller('comercio_interno/reportes/valorizacion_mineral')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.comercioInternoApi)
 export class ReportesValorizacionMineralController {
   constructor(
     private readonly reportesService: ValorizacionMineralReportesService,

@@ -33,7 +33,8 @@ import {
 import { Response } from 'express';
 
 import { ComercioInternoService } from '../services/comercio-interno.service';
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { PersonaCiService } from '../services/persona-ci.service';
 import { PersonaCi } from '../entities/persona-ci.entity';
 import { UpdatePersonaCiDto } from '../dto/persona-ci/update-persona-ci.dto';
@@ -60,6 +61,7 @@ import { ValorizacionesMineralPaginadasDto } from '../dto/valorizacion/valorizac
 @ApiTags('Registro de Operaciones')
 @Controller('comercio_interno')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.comercioInternoApi)
 export class ComercioInternoController {
   constructor(
     private readonly comercioInternoService: ComercioInternoService,

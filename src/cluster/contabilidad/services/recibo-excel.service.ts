@@ -280,6 +280,14 @@ export class ReciboExcelService {
    * "TRANSFERENCIA - BUN - 1000123456 - USD".
    */
   private formaPago(recibo: Recibo): string {
+    // Pago mixto: "EFECTIVO 500.00 + QR 500.00".
+    const pagos = (recibo.pagos ?? []).filter((p) => p.activo !== false);
+    if (pagos.length > 1) {
+      return [...pagos]
+        .sort((a, b) => a.orden - b.orden)
+        .map((p) => `${p.formaPago?.nombre ?? ''} ${Number(p.monto).toFixed(2)}`)
+        .join(' + ');
+    }
     const forma = recibo.formaPago?.nombre ?? '';
     const cuenta = recibo.cuentaBancaria;
     if (!cuenta) {

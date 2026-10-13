@@ -15,7 +15,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { PagoValorizacionService } from '../services/pago-valorizacion.service';
 import { PagoValorizacion } from '../entities/pago-valorizacion.entity';
@@ -24,6 +25,7 @@ import { CreatePagoValorizacionDto } from '../dto/pago-valorizacion/create-pago-
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class PagoValorizacionController {
   constructor(private readonly pagoService: PagoValorizacionService) {}
 

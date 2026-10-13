@@ -32,6 +32,9 @@ import {
 } from '@nestjs/swagger';
 import { UsuarioService } from '../service/usuario.service';
 import { BitacoraAccesoService } from '../service/bitacora-acceso.service';
+import { PermisoService } from '../service/permiso.service';
+import { GuardarPermisosRolDto } from '../dto/permiso/guardar-permisos-rol.dto';
+import { MatrizPermisosDto } from '../dto/permiso/matriz-permisos.dto';
 import { Usuario } from '../entities/usuario.entity';
 import { CreateUsuarioDto } from '../dto/usuario/create-usuario.dto';
 import { UpdateUsuarioDto } from '../dto/usuario/update-usuario.dto';
@@ -52,6 +55,7 @@ export class AdministradorController {
   constructor(
     private $usuario: UsuarioService,
     private $bitacora: BitacoraAccesoService,
+    private $permiso: PermisoService,
     // private $trayUsers: TrayUsersService,
   ) {}
 
@@ -320,5 +324,71 @@ export class AdministradorController {
   })
   listarBitacoraAcceso(@Query() filtros: FiltrosBitacoraAccesoDto) {
     return this.$bitacora.listarPaginado(filtros);
+  }
+
+  //------------------ roles y permisos de pantalla ----------------------
+
+  @Get('roles_permisos')
+  @Auth(ValidRoles.administrador)
+  @ApiOperation({
+    summary: 'Matriz de roles y permisos de pantalla',
+    description:
+      'Devuelve los roles activos y, agrupados por módulo, los permisos de pantalla con los roles que los tienen ("rolesAsignados") y los roles a los que se les puede otorgar ("rolesPermitidos"). El administrador figura siempre con todos. Solo accesible para administradores.',
+  })
+  @ApiOkResponse({
+    description: 'Matriz obtenida correctamente.',
+    type: MatrizPermisosDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiForbiddenResponse({
+    description:
+      'El usuario autenticado no tiene permisos (requiere administrador).',
+  })
+  obtenerRolesPermisos(): Promise<MatrizPermisosDto> {
+    return this.$permiso.obtenerMatriz();
+  }
+
+  @Post('roles_permisos')
+  @Auth(ValidRoles.administrador)
+  @ApiOperation({
+    summary: 'Guardar los permisos de pantalla de un rol',
+    description:
+      'Reemplaza los permisos del rol por la lista enviada (se envía completa: lo que no venga se le quita). No se puede modificar al administrador ni otorgar un permiso a un rol que no esté en sus "rolesPermitidos". Los usuarios ven el cambio al volver a abrir la aplicación. Solo accesible para administradores.',
+  })
+  @ApiBody({
+    type: GuardarPermisosRolDto,
+    examples: {
+      ejemplo: {
+        summary: 'Permisos del operador',
+        value: {
+          idRol: 2,
+          permisos: [
+            'contabilidad.recibos',
+            'contabilidad.kardex',
+            'config.parametricas',
+          ],
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Permisos guardados. Devuelve la matriz actualizada.',
+    type: MatrizPermisosDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Se intentó modificar al administrador, algún permiso no existe o el rol no puede tener alguno de los permisos enviados.',
+  })
+  @ApiNotFoundResponse({ description: 'El rol no existe o está inactivo.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiForbiddenResponse({
+    description:
+      'El usuario autenticado no tiene permisos (requiere administrador).',
+  })
+  guardarRolesPermisos(
+    @Body() body: GuardarPermisosRolDto,
+    @GetUser() user: Usuario,
+  ): Promise<MatrizPermisosDto> {
+    return this.$permiso.guardarPermisosRol(body, user);
   }
 }

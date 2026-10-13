@@ -43,11 +43,17 @@ export class CajaFlujoExcelService {
       { titulo: 'ENTREGA DE FONDOS A', ancho: 28 },
       { titulo: 'FACTURA Y/O RECIBO', ancho: 15, alineacion: 'center' },
       { titulo: 'Nº CPTE', ancho: 14, alineacion: 'center' },
-      { titulo: 'DESTINO DEL GASTO', ancho: 28, alineacion: 'center' },
+      { titulo: 'PLAN DE CUENTAS', ancho: 28, alineacion: 'center' },
       { titulo: `INGRESO ${simbolo}`, ancho: 15, importe: true },
       { titulo: `EGRESO ${simbolo}`, ancho: 15, importe: true },
       { titulo: `SALDO ${simbolo}`, ancho: 16, importe: true },
     ];
+    // En dólares, el tipo de cambio con el que entró o salió cada monto
+    // (informativo). Va al final para no mover las columnas de importes.
+    const esUsd = filtro.moneda === 'USD';
+    if (esUsd) {
+      columnas.push({ titulo: 'T.C.', ancho: 10, alineacion: 'center' });
+    }
     const totalColumnas = columnas.length;
     const paleta = PALETAS.cajaFlujo;
     const excel = this.contabilidadExcel;
@@ -85,26 +91,28 @@ export class CajaFlujoExcelService {
     const filaEncabezado = 7;
     excel.agregarEncabezado(worksheet, filaEncabezado, columnas, paleta);
 
+    // Primera fila: el saldo con el que arranca el mes (igual que la hoja
+    // "CAJA DE FLUJO" del Excel de la empresa y que el reporte consolidado),
+    // para que el saldo de cada movimiento se pueda seguir desde ahí.
     let fila = filaEncabezado + 1;
-    if (movimientos.length === 0) {
-      excel.agregarFila(
-        worksheet,
-        fila++,
-        columnas,
-        [
-          excel.fecha(`${filtro.gestion}-${String(filtro.mes).padStart(2, '0')}-01`),
-          'SALDO DE APERTURA',
-          '',
-          '',
-          '',
-          'SALDO INICIAL',
-          null,
-          null,
-          saldoInicialPeriodo,
-        ],
-        { relleno: paleta.suave, negrita: true },
-      );
-    }
+    excel.agregarFila(
+      worksheet,
+      fila++,
+      columnas,
+      [
+        excel.fecha(`${filtro.gestion}-${String(filtro.mes).padStart(2, '0')}-01`),
+        'SALDO DE APERTURA',
+        '',
+        '',
+        '',
+        'SALDO INICIAL',
+        null,
+        null,
+        saldoInicialPeriodo,
+        ...(esUsd ? [''] : []),
+      ],
+      { relleno: paleta.suave, negrita: true },
+    );
 
     movimientos.forEach((mov) => {
       excel.agregarFila(worksheet, fila++, columnas, [
@@ -113,10 +121,11 @@ export class CajaFlujoExcelService {
         mov.entregaFondosA ?? '',
         mov.facturaRecibo || '',
         mov.nroComprobante || '',
-        mov.destinoGasto?.nombre ?? '',
+        mov.planCuentas?.nombre ?? '',
         Number(mov.ingreso) > 0 ? Number(mov.ingreso) : null,
         Number(mov.egreso) > 0 ? Number(mov.egreso) : null,
         Number(mov.saldo),
+        ...(esUsd ? [mov.tipoCambio != null ? Number(mov.tipoCambio) : ''] : []),
       ]);
     });
 

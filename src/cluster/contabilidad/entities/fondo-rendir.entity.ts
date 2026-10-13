@@ -4,12 +4,12 @@ import {
   JoinColumn,
   ManyToOne,
   OneToMany,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
 } from 'typeorm';
 import { Auditoria } from 'src/common/entities/auditoria.entity';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
-import { DestinoGasto } from 'src/cluster/parametricas/entities/destino-gasto.entity';
+import { PlanCuentas } from 'src/cluster/parametricas/entities/plan-cuentas.entity';
 import { Recibo } from './recibo.entity';
 import { MovimientoKardex } from './movimiento-kardex.entity';
 import { FondoRendirDetalle } from './fondo-rendir-detalle.entity';
@@ -59,7 +59,11 @@ export type EstadoFondoRendir =
   schema: 'contabilidad',
 })
 export class FondoRendir extends Auditoria {
-  @PrimaryGeneratedColumn({
+  // Es también el N° de seguimiento del fondo (su codificación). No es
+  // autogenerado para el ORM: FondoRendirService.entregar lo toma de la
+  // secuencia antes de insertar, porque tiene que figurar ya en el recibo
+  // de la entrega.
+  @PrimaryColumn({
     type: 'bigint',
   })
   id: string;
@@ -145,21 +149,21 @@ export class FondoRendir extends Auditoria {
   recibo?: Recibo;
 
   @Column({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     type: 'int',
     nullable: true,
   })
-  idDestinoGasto?: number | null;
+  idPlanCuentas?: number | null;
 
-  @ManyToOne(() => DestinoGasto, {
+  @ManyToOne(() => PlanCuentas, {
     nullable: true,
     onDelete: 'RESTRICT',
   })
   @JoinColumn({
-    name: 'id_destino_gasto',
+    name: 'id_plan_cuentas',
     referencedColumnName: 'id',
   })
-  destinoGasto?: DestinoGasto;
+  planCuentas?: PlanCuentas;
 
   @Column({
     name: 'fecha_limite',

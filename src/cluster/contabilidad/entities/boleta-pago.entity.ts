@@ -80,6 +80,15 @@ export class BoletaPago extends Auditoria {
   })
   fechaPago: string;
 
+  // Fecha y hora reales en que se emitió la boleta (a diferencia de
+  // `fechaPago`, la pone el servidor siempre). Igual que
+  // Recibo.fechaHoraGeneracion.
+  @Column({
+    name: 'fecha_hora_generacion',
+    type: 'timestamptz',
+  })
+  fechaHoraGeneracion: Date;
+
   @Column({
     name: 'dias_trabajados',
     type: 'int',

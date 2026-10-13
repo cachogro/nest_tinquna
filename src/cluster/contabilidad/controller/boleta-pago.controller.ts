@@ -26,7 +26,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
+import { RolesModules } from 'src/security/enums/valid-roles';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { BoletaPagoService } from '../services/boleta-pago.service';
 import { BoletaPagoPdfService } from '../services/boleta-pago-pdf.service';
@@ -38,6 +39,7 @@ import { ResumenBoletaPagoDto } from '../dto/boleta-pago/resumen-boleta-pago.dto
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class BoletaPagoController {
   constructor(
     private readonly boletaPagoService: BoletaPagoService,
@@ -81,7 +83,7 @@ export class BoletaPagoController {
           fechaPago: '2026-03-28',
           idFormaPago: 1,
           idPersonaAutorizo: '7',
-          idDestinoGasto: 45,
+          idPlanCuentas: 45,
         },
       },
       pagaMas: {
@@ -97,7 +99,7 @@ export class BoletaPagoController {
           descuentos: [{ idPrestamo: '3', monto: 2000 }],
           idFormaPago: 1,
           idPersonaAutorizo: '7',
-          idDestinoGasto: 45,
+          idPlanCuentas: 45,
         },
       },
     },

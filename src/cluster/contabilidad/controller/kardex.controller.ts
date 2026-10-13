@@ -28,9 +28,9 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 
-import { Auth, GetUser } from 'src/security/decorators';
+import { Auth, GetUser, RoleProtected } from 'src/security/decorators';
 import { Usuario } from 'src/security/entities/usuario.entity';
-import { ValidRoles } from 'src/security/enums/valid-roles';
+import { RolesModules, ValidRoles } from 'src/security/enums/valid-roles';
 import { KardexService } from '../services/kardex.service';
 import { KardexExcelService } from '../services/kardex-excel.service';
 import { DeudasTotalesExcelService } from '../services/deudas-totales-excel.service';
@@ -38,13 +38,17 @@ import { ContabilidadPdfService } from '../services/contabilidad-pdf.service';
 import { FormatoReporteDto } from '../dto/reporte/formato-reporte.dto';
 import { Kardex } from '../entities/kardex.entity';
 import { AbrirKardexDto } from '../dto/kardex/abrir-kardex.dto';
+import { CerrarKardexDto } from '../dto/kardex/cerrar-kardex.dto';
 import { FiltrosKardexDto } from '../dto/kardex/filtros-kardex.dto';
 import { FiltroDeudasTotalesDto } from '../dto/kardex/filtro-deudas-totales.dto';
 import { KardexPaginadoDto } from '../dto/kardex/kardex-paginado.dto';
+import { RequierePermisoExcel } from 'src/security/decorators/requiere-permiso.decorator';
+import { PERMISO_DESCARGAR_EXCEL_CONTABILIDAD } from 'src/security/enums/permisos';
 
 @ApiTags('Contabilidad')
 @Controller('contabilidad')
 @ApiBearerAuth()
+@RoleProtected(...RolesModules.contabilidad)
 export class KardexController {
   constructor(
     private readonly kardexService: KardexService,
@@ -132,16 +136,24 @@ export class KardexController {
   @ApiOperation({
     summary: 'Cerrar un kardex',
     description:
-      'Sella el kardex (`saldo_cierre = saldo_actual`) y abre automáticamente el siguiente (N° + 1) arrastrando ese saldo como `saldo_inicial`. Devuelve el kardex cerrado y el nuevo.',
+      'Sella el kardex (`saldo_cierre = saldo_actual`) y abre automáticamente el siguiente (N° + 1) arrastrando ese saldo como `saldo_inicial`. Devuelve el kardex cerrado y el nuevo. El cuerpo es opcional: con `fechaCierre` se cierra con esa fecha (kardex históricos) en vez de hoy.',
   })
+  @ApiBody({ type: CerrarKardexDto, required: false })
   @ApiParam({ name: 'id', description: 'Id del kardex.', example: '3' })
   @ApiOkResponse({ description: 'Kardex cerrado; se devolvió también el nuevo.' })
-  @ApiBadRequestResponse({ description: 'El kardex ya está cerrado.' })
+  @ApiBadRequestResponse({
+    description:
+      'El kardex ya está cerrado, o la fecha de cierre es futura, anterior a la apertura o anterior al último movimiento.',
+  })
   @ApiNotFoundResponse({ description: 'No se encontró el kardex.' })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
-  async cerrar(@Param('id') id: string, @GetUser() user: Usuario) {
-    return await this.kardexService.cerrar(id, user);
+  async cerrar(
+    @Param('id') id: string,
+    @GetUser() user: Usuario,
+    @Body() body?: CerrarKardexDto,
+  ) {
+    return await this.kardexService.cerrar(id, user, body ?? {});
   }
 
   @Patch('kardex/:id/reabrir')
@@ -257,6 +269,7 @@ export class KardexController {
     return await this.kardexService.findAll(filtros);
   }
 
+  @RequierePermisoExcel(PERMISO_DESCARGAR_EXCEL_CONTABILIDAD)
   @Get('kardex/reporte/deudas-totales/excel')
   @Auth()
   @ApiOperation({
@@ -294,6 +307,7 @@ export class KardexController {
     return await this.kardexService.buscarPorId(id);
   }
 
+  @RequierePermisoExcel(PERMISO_DESCARGAR_EXCEL_CONTABILIDAD)
   @Get('kardex/:id/excel')
   @Auth()
   @ApiOperation({

@@ -2,14 +2,14 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
-import { CategoriaDestinoGasto } from '../parametricas/entities/destino-gasto.entity';
+import { CategoriaPlanCuentas } from '../parametricas/entities/plan-cuentas.entity';
 import { FiltroDashboardDto } from './dto/filtro-dashboard.dto';
 
-const LIMITE_DESTINOS = 8;
+const LIMITE_CUENTAS = 8;
 
 /** Categorías que entran en la ganancia estimada (el resto es solo flujo). */
-const CATEGORIAS_GASTO: CategoriaDestinoGasto[] = ['GASTO_OPERATIVO', 'SUELDOS'];
-const CATEGORIA_OTRO_INGRESO: CategoriaDestinoGasto = 'OTRO_INGRESO';
+const CATEGORIAS_GASTO: CategoriaPlanCuentas[] = ['GASTO_OPERATIVO', 'SUELDOS'];
+const CATEGORIA_OTRO_INGRESO: CategoriaPlanCuentas = 'OTRO_INGRESO';
 
 export interface IngresoEgreso {
   ingreso: number;
@@ -38,9 +38,9 @@ interface FilaFlujo {
   fecha: string;
   medio: 'EFECTIVO' | 'BANCO';
   moneda: 'BS' | 'USD';
-  id_destino_gasto: number | null;
+  id_plan_cuentas: number | null;
   nombre: string | null;
-  categoria: CategoriaDestinoGasto | null;
+  categoria: CategoriaPlanCuentas | null;
   ingreso: string;
   egreso: string;
   ingreso_bs: string;
@@ -61,7 +61,7 @@ interface FilaFlujo {
  * Entrar menos salir es FLUJO, no ganancia (un anticipo de un cliente entra
  * pero se le deben lotes; la compra de mineral sale pero es inversión en un
  * lote). La ganancia estimada usa la utilidad de los lotes liquidados y solo
- * los destinos cuya categoría es gasto u otro ingreso.
+ * las cuentas del plan cuya categoría es gasto u otro ingreso.
  */
 @Injectable()
 export class FlujoDineroService {
@@ -94,17 +94,17 @@ export class FlujoDineroService {
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([fecha, grupo]) => ({ fecha, ...this.sumar(grupo) }));
 
-    const categorias = this.agrupar(filas, (f) => f.categoria ?? 'SIN_DESTINO').map((g) => ({
+    const categorias = this.agrupar(filas, (f) => f.categoria ?? 'SIN_PLAN_CUENTAS').map((g) => ({
       categoria: g.clave,
       ingresoBs: g.ingresoBs,
       egresoBs: g.egresoBs,
       movimientos: g.movimientos,
     }));
-    const destinos = this.agrupar(filas, (f) => String(f.id_destino_gasto ?? 'SIN_DESTINO')).map(
+    const cuentas = this.agrupar(filas, (f) => String(f.id_plan_cuentas ?? 'SIN_PLAN_CUENTAS')).map(
       (g) => ({
-        idDestinoGasto: g.fila.id_destino_gasto,
-        nombre: g.fila.nombre ?? 'SIN DESTINO',
-        categoria: g.fila.categoria ?? 'SIN_DESTINO',
+        idPlanCuentas: g.fila.id_plan_cuentas,
+        nombre: g.fila.nombre ?? 'SIN PLAN DE CUENTAS',
+        categoria: g.fila.categoria ?? 'SIN_PLAN_CUENTAS',
         ingresoBs: g.ingresoBs,
         egresoBs: g.egresoBs,
         movimientos: g.movimientos,
@@ -125,14 +125,14 @@ export class FlujoDineroService {
       hoyFlujo: this.sumar(filasHoy ?? filas.filter((f) => f.fecha === hoy)),
       dias,
       categorias,
-      mayoresEgresos: [...destinos]
+      mayoresEgresos: [...cuentas]
         .filter((d) => d.egresoBs > 0)
         .sort((a, b) => b.egresoBs - a.egresoBs)
-        .slice(0, LIMITE_DESTINOS),
-      mayoresIngresos: [...destinos]
+        .slice(0, LIMITE_CUENTAS),
+      mayoresIngresos: [...cuentas]
         .filter((d) => d.ingresoBs > 0)
         .sort((a, b) => b.ingresoBs - a.ingresoBs)
-        .slice(0, LIMITE_DESTINOS),
+        .slice(0, LIMITE_CUENTAS),
       traspasosExcluidos: traspasos,
       ganancia: {
         lotesLiquidados: lotes.cantidad,
@@ -143,10 +143,10 @@ export class FlujoDineroService {
         gastosOperativosBs: gastosOperativos,
         sueldosBs: sueldos,
         gananciaEstimadaBs: this.r2(utilidadLotes + otrosIngresos - gastosOperativos - sueldos),
-        /** Movimientos sin destino de gasto: no se pudieron clasificar. */
-        sinDestino: {
-          ingresoBs: total('SIN_DESTINO', 'ingresoBs'),
-          egresoBs: total('SIN_DESTINO', 'egresoBs'),
+        /** Movimientos sin plan de cuentas: no se pudieron clasificar. */
+        sinPlanCuentas: {
+          ingresoBs: total('SIN_PLAN_CUENTAS', 'ingresoBs'),
+          egresoBs: total('SIN_PLAN_CUENTAS', 'egresoBs'),
         },
       },
     };
@@ -154,14 +154,14 @@ export class FlujoDineroService {
 
   /**
    * Movimientos vigentes de caja y de libreta, agrupados por día, medio,
-   * moneda y destino. En la libreta HABER es lo que entra y DEBE lo que
+   * moneda y plan de cuentas. En la libreta HABER es lo que entra y DEBE lo que
    * sale. El tipo de cambio de un movimiento en $us es el de la propia
    * libreta o, en su defecto, el del recibo que lo originó.
    */
   private async movimientos(desde: string, hasta: string): Promise<FilaFlujo[]> {
     return this.dataSource.query(
       `WITH mov AS (
-         SELECT m.fecha, 'EFECTIVO' AS medio, m.moneda, m.ingreso, m.egreso, m.id_destino_gasto,
+         SELECT m.fecha, 'EFECTIVO' AS medio, m.moneda, m.ingreso, m.egreso, m.id_plan_cuentas,
                 CASE WHEN m.moneda = 'USD' THEN r.tipo_cambio END AS tc
            FROM contabilidad.movimiento_caja m
            LEFT JOIN contabilidad.recibo r ON r.id = m.id_recibo
@@ -170,7 +170,7 @@ export class FlujoDineroService {
             AND m.fecha BETWEEN $1 AND $2
          UNION ALL
          SELECT l.fecha, 'BANCO' AS medio, cb.moneda, l.haber AS ingreso, l.debe AS egreso,
-                l.id_destino_gasto,
+                l.id_plan_cuentas,
                 CASE WHEN cb.moneda = 'USD' THEN COALESCE(l.tipo_cambio, r.tipo_cambio) END AS tc
            FROM contabilidad.libreta_banco l
            JOIN parametrica.cuenta_bancaria cb ON cb.id = l.id_cuenta_bancaria
@@ -180,7 +180,7 @@ export class FlujoDineroService {
             AND l.fecha BETWEEN $1 AND $2
        )
        SELECT to_char(mov.fecha, 'YYYY-MM-DD') AS fecha, mov.medio, mov.moneda,
-              mov.id_destino_gasto, dg.nombre, dg.categoria,
+              mov.id_plan_cuentas, dg.nombre, dg.categoria,
               SUM(mov.ingreso) AS ingreso,
               SUM(mov.egreso) AS egreso,
               SUM(CASE WHEN mov.moneda = 'BS' THEN mov.ingreso
@@ -193,8 +193,8 @@ export class FlujoDineroService {
               SUM(CASE WHEN mov.moneda = 'USD' AND mov.tc IS NULL THEN mov.egreso ELSE 0 END) AS egreso_usd_sin_tc,
               COUNT(*) AS movimientos
          FROM mov
-         LEFT JOIN parametrica.destino_gasto dg ON dg.id = mov.id_destino_gasto
-        GROUP BY mov.fecha, mov.medio, mov.moneda, mov.id_destino_gasto, dg.nombre, dg.categoria`,
+         LEFT JOIN parametrica.plan_cuentas dg ON dg.id = mov.id_plan_cuentas
+        GROUP BY mov.fecha, mov.medio, mov.moneda, mov.id_plan_cuentas, dg.nombre, dg.categoria`,
       [desde, hasta],
     );
   }
@@ -266,7 +266,7 @@ export class FlujoDineroService {
     return flujo;
   }
 
-  /** Suma en Bs. por una clave (categoría o destino); `fila` es la primera del grupo. */
+  /** Suma en Bs. por una clave (categoría o cuenta del plan); `fila` es la primera del grupo. */
   private agrupar(filas: FilaFlujo[], clave: (f: FilaFlujo) => string) {
     const grupos = new Map<
       string,

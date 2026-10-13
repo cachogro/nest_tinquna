@@ -12,6 +12,7 @@ import {
   conceptoConRecepcion,
   muestreroRecepcionRecibo,
 } from '../recibo-recepcion.util';
+import { fechaConHoraEmision } from '../fecha-hora.util';
 
 const LOGO_PATH = join(process.cwd(), 'uploads', 'logo.png');
 
@@ -330,8 +331,21 @@ export class ReciboPdfHorizontalService {
     );
 
     // Tipo de pago + N.º de cheque / comprobante en la misma línea
-    const formaPago = (recibo.formaPago?.codigo ?? '').toUpperCase();
-    const anchoTipoPago = anchoInterno * 0.55;
+    // Pago mixto: "EFECTIVO 500,00 + QR 500,00" y los comprobantes de los
+    // medios bancarios, en vez de una sola forma de pago.
+    const pagosMixtos = (recibo.pagos ?? [])
+      .filter((p) => p.activo !== false)
+      .sort((a, b) => a.orden - b.orden);
+    const esMixto = pagosMixtos.length > 1;
+    const formaPago = esMixto
+      ? pagosMixtos
+          .map(
+            (p) =>
+              `${(p.formaPago?.codigo ?? '').toUpperCase()} ${this.formatearMontoDecimal(p.monto)}`,
+          )
+          .join(' + ')
+      : (recibo.formaPago?.codigo ?? '').toUpperCase();
+    const anchoTipoPago = anchoInterno * (esMixto ? 0.68 : 0.55);
     const yTipoPago = y;
     y = this.campo(
       doc,
@@ -343,7 +357,12 @@ export class ReciboPdfHorizontalService {
       anchoEtiqueta,
     );
 
-    const nroComprobante = recibo.nroComprobante ?? '';
+    const nroComprobante = esMixto
+      ? pagosMixtos
+          .map((p) => p.nroComprobante)
+          .filter(Boolean)
+          .join(' / ')
+      : (recibo.nroComprobante ?? '');
     if (nroComprobante) {
       const etiquetaComprobante = formaPago === 'CHEQUE' ? 'Cheq.:' : 'Comp.:';
       this.campo(
@@ -381,7 +400,11 @@ export class ReciboPdfHorizontalService {
       y,
       anchoInterno,
       'Fecha:',
-      this.formatearFechaCorta(recibo.fecha),
+      fechaConHoraEmision(
+        this.formatearFechaCorta(recibo.fecha),
+        recibo.fecha,
+        recibo.fechaHoraGeneracion,
+      ),
       anchoEtiqueta,
     );
 
