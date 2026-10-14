@@ -54,3 +54,20 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Paquete de despliegue (puede incluir una copia de la base)
+/deploy/.paquete
+/deploy/*.tar.gz
+
+# Archivos que no son del back (documentos, respaldos y scripts de base de datos)
+/sql
+/backups
+/informes
+/docs
+/scripts
+/ANULADO
+*.sql
+*.pdf
+*.docx
+*.xlsx
+*.xls
