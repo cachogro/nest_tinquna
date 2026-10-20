@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Borders, Cell, PaperSize, Workbook, Worksheet } from 'exceljs';
 
-export const NOMBRE_EMPRESA = 'EMPRESA MINERA TINKURIQUNA S.R.L.';
+import { datosEmpresa, empresaConNit, ubicacionEmpresa } from 'src/common/datos-empresa';
 
 export const MESES = [
   'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
@@ -85,8 +85,8 @@ const FUENTE = 'Calibri';
 export class ContabilidadExcelService {
   crearLibro(): Workbook {
     const workbook = new Workbook();
-    workbook.creator = NOMBRE_EMPRESA;
-    workbook.company = NOMBRE_EMPRESA;
+    workbook.creator = datosEmpresa().razonSocial;
+    workbook.company = datosEmpresa().razonSocial;
     workbook.created = new Date();
     workbook.modified = new Date();
     return workbook;
@@ -108,7 +108,7 @@ export class ContabilidadExcelService {
         margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 },
       },
       headerFooter: {
-        oddFooter: `&L&8${NOMBRE_EMPRESA}&R&8Página &P de &N`,
+        oddFooter: `&L&8${empresaConNit()}&R&8Página &P de &N`,
       },
     });
     worksheet.columns = columnas.map((c) => ({ width: c.ancho }));
@@ -122,11 +122,19 @@ export class ContabilidadExcelService {
     titulo: string,
     subtitulo?: string,
   ): void {
-    this.celdaCombinada(worksheet, 1, 1, totalColumnas, NOMBRE_EMPRESA, {
-      font: { name: FUENTE, bold: true, size: 18 },
-      alignment: { horizontal: 'center', vertical: 'middle' },
+    // Razón social y NIT: de Paramétricas › Sueldos y planillas › Empleador.
+    const empresa = datosEmpresa();
+    const celdaEmpresa = this.celdaCombinada(worksheet, 1, 1, totalColumnas, '', {
+      alignment: { horizontal: 'center', vertical: 'middle', wrapText: true },
     });
-    worksheet.getRow(1).height = 28;
+    celdaEmpresa.value = {
+      richText: [
+        { text: empresa.razonSocial, font: { name: FUENTE, bold: true, size: 18 } },
+        ...(empresa.nit ? [{ text: `\nNIT ${empresa.nit}`, font: { name: FUENTE, size: 10 } }] : []),
+        ...(ubicacionEmpresa() ? [{ text: `\n${ubicacionEmpresa()}`, font: { name: FUENTE, size: 9 } }] : []),
+      ],
+    };
+    worksheet.getRow(1).height = 28 + (empresa.nit ? 13 : 0) + (ubicacionEmpresa() ? 12 : 0);
 
     this.celdaCombinada(worksheet, 2, 1, totalColumnas, titulo, {
       font: { name: FUENTE, bold: true, size: 14 },

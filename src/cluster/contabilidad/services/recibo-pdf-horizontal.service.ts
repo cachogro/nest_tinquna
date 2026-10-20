@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 const PDFDocument = require('pdfkit-table');
 import { join } from 'path';
+import { nitBajoLogo } from 'src/common/datos-empresa';
 import * as fs from 'fs';
 import { Recibo } from '../entities/recibo.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
@@ -173,6 +174,7 @@ export class ReciboPdfHorizontalService {
     if (fs.existsSync(LOGO_PATH)) {
       doc.image(LOGO_PATH, xi, y + 4, { width: logoAncho });
     }
+    nitBajoLogo(doc, xi, y + 20);
 
     const xDerecha = xi + logoAncho + 6;
     const anchoDerecha = anchoInterno - logoAncho - 6;
@@ -310,6 +312,26 @@ export class ReciboPdfHorizontalService {
       montoEnLetras(recibo.montoTotal, recibo.moneda),
       anchoEtiqueta,
     );
+
+    // Pago con descuento (EGRESO con reparto a kardex): parte del monto se
+    // descontó de la deuda y solo el resto se entregó (y figura en Tipo pago).
+    const descontado = recibo.tipo === 'EGRESO'
+      ? (recibo.detalles ?? [])
+          .filter((d) => d.activo !== false && d.destino !== 'EFECTIVO')
+          .reduce((s, d) => s + Number(d.monto), 0)
+      : 0;
+    if (descontado > 0) {
+      const simbolo = recibo.moneda === 'USD' ? '$us' : 'Bs.';
+      y = this.campo(
+        doc,
+        xi,
+        y,
+        anchoInterno,
+        'Descuento:',
+        `${this.formatearMontoDecimal(descontado)} ${simbolo} de su deuda · Entregado: ${this.formatearMontoDecimal(Number(recibo.montoTotal) - descontado)} ${simbolo}`,
+        anchoEtiqueta,
+      );
+    }
 
     // Tipo de pago + N.º de cheque / comprobante en la misma línea
     // Pago mixto: "EFECTIVO 500,00 + QR 500,00" y los comprobantes de los

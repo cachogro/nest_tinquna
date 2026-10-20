@@ -75,19 +75,23 @@ export class PagoDeudaKardexService {
   private async kardexDePagoConRecibo(
     dto: CreateMovimientoKardexDto,
   ): Promise<Kardex | null> {
-    if (dto.id || dto.tipo !== 'HABER') return null;
+    if (dto.id || dto.tipo !== 'HABER') {
+      if (dto.pagos?.length) {
+        throw new BadRequestException('El pago mixto solo se usa al registrar el pago de una deuda (HABER).');
+      }
+      return null;
+    }
 
     const kardex = await this.kardexRepository.findOne({
       where: { id: dto.idKardex },
     });
-    // Sin kardex, cerrado o de otro tipo: lo resuelve (o rechaza) el flujo
-    // de la línea directa.
-    if (
-      !kardex ||
-      kardex.estado === 'CERRADO' ||
-      !kardex.idPersona ||
-      !TIPOS_KARDEX_PERSONA.includes(kardex.tipo)
-    ) {
+    if (!kardex || kardex.estado === 'CERRADO') return null;
+    // Pago mixto: siempre por recibo, sea cual sea el tipo de kardex (una
+    // línea directa no puede repartirse entre caja y banco).
+    if (dto.pagos?.length) return kardex;
+    // Sin pago mixto, solo la deuda personal va por recibo; el resto lo
+    // resuelve (o rechaza) el flujo de la línea directa.
+    if (!kardex.idPersona || !TIPOS_KARDEX_PERSONA.includes(kardex.tipo)) {
       return null;
     }
 
@@ -107,6 +111,15 @@ export class PagoDeudaKardexService {
   ): Promise<MovimientoKardex> {
     await this.movimientoKardexService.validarReferenciasOpcionales(dto);
 
+    // Titular del kardex: persona (PERSONAL/ASOCIADO), actor o cliente.
+    const titular =
+      kardex.tipo === 'ACTOR'
+        ? { destino: 'ACTOR', idActorProductivoMinero: String(kardex.idActorProductivoMinero) }
+        : kardex.tipo === 'CLIENTE'
+          ? { destino: 'CLIENTE', idCliente: String(kardex.idCliente) }
+          : { destino: 'PERSONAL', idPersona: String(kardex.idPersona) };
+    const { destino, ...contraparte } = titular;
+
     const reciboDto = {
       tipo: 'INGRESO',
       fecha: dto.fecha,
@@ -117,12 +130,13 @@ export class PagoDeudaKardexService {
       idFormaPago: dto.idFormaPago,
       idCuentaBancaria: dto.idCuentaBancaria,
       nroComprobante: dto.nroComprobante,
-      idPersona: kardex.idPersona,
+      pagos: dto.pagos,
+      ...contraparte,
       idPersonaAutorizo: dto.idPersonaAutorizo,
       detalles: [
         {
-          destino: 'PERSONAL',
-          idPersona: kardex.idPersona,
+          destino,
+          ...contraparte,
           monto: dto.monto,
           idPlanCuentas: dto.idPlanCuentas,
           lote: dto.lote,

@@ -294,7 +294,7 @@ export class MovimientoKardexService {
 
     const movs = await manager.find(MovimientoKardex, {
       where: { idKardex, activo: true },
-      order: { numeroLinea: 'ASC', id: 'ASC' },
+      order: { fecha: 'ASC', numeroLinea: 'ASC', id: 'ASC' },
     });
 
     // A diferencia de la libreta de bancos, en el kardex el DEBE (anticipo
@@ -732,7 +732,7 @@ export class MovimientoKardexService {
     const movimientos = await this.movimientoRepository.find({
       where: { idKardex },
       relations: { subcuenta: true, formaPago: true, cobrador: true },
-      order: { numeroLinea: 'ASC', id: 'ASC' },
+      order: { fecha: 'ASC', numeroLinea: 'ASC', id: 'ASC' },
     });
 
     return { kardex, movimientos };
@@ -750,9 +750,10 @@ export class MovimientoKardexService {
         formaPago: true,
         cobrador: true,
         cuentaBancaria: { entidadFinanciera: true },
-        recibo: { ventaLote: true },
+        // pagos: medios de un pago mixto, para mostrarlos todos en el reporte.
+        recibo: { ventaLote: true, pagos: { formaPago: true } },
       },
-      order: { numeroLinea: 'ASC', id: 'ASC' },
+      order: { fecha: 'ASC', numeroLinea: 'ASC', id: 'ASC' },
     });
   }
 
@@ -772,7 +773,7 @@ export class MovimientoKardexService {
     const [data, total] = await this.movimientoRepository.findAndCount({
       where: { idKardex },
       relations: { subcuenta: true, formaPago: true, cobrador: true },
-      order: { numeroLinea: 'DESC', id: 'DESC' },
+      order: { fecha: 'DESC', numeroLinea: 'DESC', id: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
     });

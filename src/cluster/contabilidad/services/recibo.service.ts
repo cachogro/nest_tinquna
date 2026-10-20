@@ -34,6 +34,7 @@ import {
   repartidorMediosPago,
   resolverMediosPago,
 } from '../medios-pago.util';
+import { validarNoSuperaDeuda } from '../kardex-posteo.util';
 import { CreateReciboDto } from '../dto/recibo/create-recibo.dto';
 import { ProcesarReciboDto } from '../dto/recibo/procesar-recibo.dto';
 import { ReciboDetalleDto } from '../dto/recibo/recibo-detalle.dto';
@@ -51,6 +52,7 @@ import { MovimientoCajaService } from './movimiento-caja.service';
 import { LibretaBancoService } from './libreta-banco.service';
 import { KardexActividadService } from './kardex-actividad.service';
 import { aBolivianos, resolverTipoCambio, validarMonedaCuenta } from '../moneda.util';
+import { validarMesEnCurso } from '../mes-en-curso.util';
 
 // La caja de flujo (Caja id=1, "CAJA PRINCIPAL") es el registro maestro de
 // la empresa: todo recibo, además de postear en los kardex de sus detalles,
@@ -480,7 +482,7 @@ export class ReciboService {
 
     const movs = await manager.find(MovimientoKardex, {
       where: { idKardex, activo: true },
-      order: { fecha: 'ASC', id: 'ASC' },
+      order: { fecha: 'ASC', numeroLinea: 'ASC', id: 'ASC' },
     });
 
     let running = this.r2(Number(kardex.saldoInicial));
@@ -741,6 +743,31 @@ export class ReciboService {
    * hubiera). Con un solo medio no queda ninguna fila: ese vive en la
    * cabecera del recibo.
    */
+  /**
+   * Recibo de EGRESO con reparto a kardex = PAGO CON DESCUENTO (ej. se le
+   * pagan 10.000 por mineral a una cooperativa y se le descuentan 3.000 de
+   * sus anticipos): el reparto baja la deuda sin mover dinero y solo la
+   * porción EFECTIVO sale de caja/banco, sin volverse deuda nueva.
+   */
+  private esPagoConDescuento(
+    tipo: 'INGRESO' | 'EGRESO',
+    detalles: ReciboDetalleDto[] | undefined,
+  ): boolean {
+    return tipo === 'EGRESO' && !!detalles?.some((d) => d.destino !== 'EFECTIVO');
+  }
+
+  /** Lo que efectivamente se paga o se cobra: lo que cubren los medios de pago. */
+  private montoConDinero(
+    tipo: 'INGRESO' | 'EGRESO',
+    detalles: ReciboDetalleDto[] | undefined,
+    montoTotal: number,
+  ): number {
+    if (!this.esPagoConDescuento(tipo, detalles)) return this.r2(Number(montoTotal));
+    return this.r2(
+      detalles!.filter((d) => d.destino === 'EFECTIVO').reduce((s, d) => s + Number(d.monto), 0),
+    );
+  }
+
   private async guardarPagos(
     manager: EntityManager,
     idRecibo: string,
@@ -809,6 +836,7 @@ export class ReciboService {
     detalles: ReciboDetalleDto[] | undefined,
     medios: MedioPagoResuelto[],
     moneda: MonedaCaja,
+    tipo: 'INGRESO' | 'EGRESO',
   ): Promise<{
     cajaEmpresa: Caja | null;
     kardexPorDetalle: Map<number, Kardex>;
@@ -853,9 +881,14 @@ export class ReciboService {
 
     const kardexPorDetalle = new Map<number, Kardex>();
     const planCuentasPorDetalle = new Map<number, number | null>();
+    // En un pago con descuento lo entregado en EFECTIVO es pago, no anticipo:
+    // no va al kardex de la contraparte.
+    const pagoConDescuento = this.esPagoConDescuento(tipo, detalles);
     for (let i = 0; i < detalles.length; i++) {
       const detalle = detalles[i];
-      if (detalle.destino === 'PERSONAL') {
+      if (pagoConDescuento && detalle.destino === 'EFECTIVO') {
+        // sin kardex
+      } else if (detalle.destino === 'PERSONAL') {
         kardexPorDetalle.set(
           i,
           await this.obtenerKardexAbiertoPersonal(String(detalle.idPersona)),
@@ -901,13 +934,32 @@ export class ReciboService {
       );
     }
 
+    // Lo que se paga o descuenta de cada deuda (líneas de reparto) no puede
+    // superar lo que se debe. Solo en Bs.: en USD el kardex se convierte con
+    // el tipo de cambio del recibo y se deja a criterio de quien lo emite.
+    if (moneda === 'BS') {
+      const porKardex = new Map<string, { kardex: Kardex; monto: number }>();
+      detalles.forEach((d, i) => {
+        const k = kardexPorDetalle.get(i);
+        if (!k || d.destino === 'EFECTIVO') return;
+        const acum = porKardex.get(k.id) ?? { kardex: k, monto: 0 };
+        acum.monto = this.r2(acum.monto + Number(d.monto));
+        porKardex.set(k.id, acum);
+      });
+      for (const { kardex, monto } of porKardex.values()) {
+        validarNoSuperaDeuda(kardex, monto, tipo === 'EGRESO' ? 'El descuento' : 'El pago');
+      }
+    }
+
     return { cajaEmpresa, kardexPorDetalle, planCuentasPorDetalle };
   }
 
   /**
    * Postea la línea de kardex de cada detalle (si corresponde) y el
    * movimiento de caja de flujo de esa misma línea, cada uno con su propio
-   * `idPlanCuentas`. Las líneas PERSONAL/ACTOR postean HABER en su kardex
+   * `idPlanCuentas`. Excepción, el PAGO CON DESCUENTO (EGRESO con reparto,
+   * ver `esPagoConDescuento`): el reparto solo baja el kardex (sin caja) y
+   * el EFECTIVO solo sale de caja/banco (sin DEBE en el kardex). Las líneas PERSONAL/ACTOR postean HABER en su kardex
    * (saldan una deuda existente) y SIEMPRE un INGRESO en caja (valor
    * recuperado por la empresa, sea cual sea el tipo del recibo). Las líneas
    * EFECTIVO postean en caja según el tipo del recibo (INGRESO si el
@@ -939,6 +991,8 @@ export class ReciboService {
     );
 
     const tramosDe = repartidorMediosPago(medios);
+    const pagoConDescuento = this.esPagoConDescuento(recibo.tipo, detalles);
+    const sinMedio: MedioPagoResuelto = { formaPago: null, cuentaBancaria: null, nroComprobante: null, monto: 0 };
 
     for (let i = 0; i < detalles.length; i++) {
       const detalleDto = detalles[i];
@@ -947,10 +1001,13 @@ export class ReciboService {
       let idMovimientoKardex: string | null = null;
 
       const esEfectivo = detalleDto.destino === 'EFECTIVO';
+      // Descuento de deuda dentro de un pago con descuento: baja el kardex
+      // sin mover dinero (no consume medios de pago ni toca caja/banco).
+      const esDescuento = pagoConDescuento && !esEfectivo;
       // Medios que cubren esta línea; el primero es el que queda anotado en
       // su línea de kardex.
-      const tramos = tramosDe(monto);
-      const medioLinea = tramos[0]?.medio ?? medios[0];
+      const tramos = esDescuento ? [] : tramosDe(monto);
+      const medioLinea = esDescuento ? sinMedio : (tramos[0]?.medio ?? medios[0]);
 
       const kardex = kardexPorDetalle.get(i);
       if (kardex) {
@@ -1113,7 +1170,12 @@ export class ReciboService {
     dto: CreateReciboDto,
     user: Usuario,
   ): Promise<(manager: EntityManager) => Promise<Recibo>> {
-    const medios = await this.resolverMedios(dto.pagos, dto.montoTotal, dto);
+    // En un pago con descuento los medios cubren solo lo entregado.
+    const medios = await this.resolverMedios(
+      dto.pagos,
+      this.montoConDinero(dto.tipo, dto.detalles, dto.montoTotal),
+      dto,
+    );
     const principal = medios[0];
     const beneficiario = await this.resolverBeneficiario(dto);
     // Quien autorizó: distinto de la contraparte física (`idPersona`).
@@ -1148,6 +1210,7 @@ export class ReciboService {
           dto.detalles,
           medios,
           moneda,
+          dto.tipo,
         )
       : null;
 
@@ -1224,7 +1287,11 @@ export class ReciboService {
       );
     }
 
-    const medios = await this.mediosParaProcesar(recibo, dto);
+    const medios = await this.mediosParaProcesar(
+      recibo,
+      dto,
+      this.montoConDinero(recibo.tipo, dto.detalles, recibo.montoTotal),
+    );
     const principal = medios[0];
     const cabeceraPago = {
       idFormaPago: principal.formaPago?.id ?? null,
@@ -1238,6 +1305,7 @@ export class ReciboService {
       dto.detalles,
       medios,
       recibo.moneda,
+      recibo.tipo,
     );
 
     return this.dataSource.transaction(async (manager) => {
@@ -1279,13 +1347,14 @@ export class ReciboService {
   private async mediosParaProcesar(
     recibo: Recibo,
     dto: ProcesarReciboDto,
+    montoConDinero: number,
   ): Promise<MedioPagoResuelto[]> {
     if (dto.pagos?.length) {
-      return this.resolverMedios(dto.pagos, recibo.montoTotal, {});
+      return this.resolverMedios(dto.pagos, montoConDinero, {});
     }
     if (dto.idFormaPago) {
       const mismaForma = dto.idFormaPago === recibo.idFormaPago;
-      return this.resolverMedios(undefined, recibo.montoTotal, {
+      return this.resolverMedios(undefined, montoConDinero, {
         idFormaPago: dto.idFormaPago,
         idCuentaBancaria:
           dto.idCuentaBancaria ??
@@ -1302,14 +1371,21 @@ export class ReciboService {
       order: { orden: 'ASC', id: 'ASC' },
     });
     if (guardados.length > 1) {
-      return guardados.map((pago) => ({
+      const medios = guardados.map((pago) => ({
         formaPago: pago.formaPago ?? null,
         cuentaBancaria: pago.cuentaBancaria ?? null,
         nroComprobante: pago.nroComprobante ?? null,
         monto: this.r2(Number(pago.monto)),
       }));
+      const suma = this.r2(medios.reduce((s, m) => s + m.monto, 0));
+      if (suma !== montoConDinero) {
+        throw new BadRequestException(
+          `Los medios de pago del borrador suman ${suma}, pero lo que se entrega es ${montoConDinero} (el resto se descuenta de la deuda): indica los medios de pago al procesar.`,
+        );
+      }
+      return medios;
     }
-    return this.resolverMedios(undefined, recibo.montoTotal, {
+    return this.resolverMedios(undefined, montoConDinero, {
       idFormaPago: recibo.idFormaPago ?? undefined,
       idCuentaBancaria:
         dto.idCuentaBancaria ?? recibo.idCuentaBancaria ?? undefined,
@@ -1440,6 +1516,8 @@ export class ReciboService {
     recibo: Recibo,
     codigo: string,
   ): Promise<void> {
+    // Anular revierte caja/banco en la fecha del recibo: solo en el mes en curso.
+    validarMesEnCurso(recibo.fecha, `El recibo ${codigo} no se puede anular`);
     const [origen] = await this.dataSource.query(
       `SELECT 'un préstamo al personal' AS origen
          FROM contabilidad.prestamo_personal WHERE id_recibo = $1 AND activo = true
@@ -1544,6 +1622,8 @@ export class ReciboService {
       .leftJoinAndSelect('cuentaBancaria.entidadFinanciera', 'entidadFinanciera')
       .leftJoinAndSelect('r.pagos', 'pagos')
       .leftJoinAndSelect('pagos.formaPago', 'formaPagoMixto')
+      // Para aclarar en el libro los pagos con descuento de deuda.
+      .leftJoinAndSelect('r.detalles', 'detalles')
       .orderBy('r.fecha', 'ASC')
       .addOrderBy('r.serie', 'ASC')
       .addOrderBy('r.numero', 'ASC')

@@ -319,7 +319,7 @@ export class ParametricasController {
   @ApiOperation({
     summary: 'Registrar o actualizar un tipo de persona',
     description:
-      'Si no se envía el campo id se registra un nuevo tipo de persona (solo si no existe ya uno con el mismo código). Si se envía el id, se actualiza el registro. El código, nombre y descripción se guardan siempre en MAYÚSCULAS.',
+      'Solo se pide el nombre. Si no se envía el campo id se registra un nuevo tipo de persona (solo si no existe ya uno con el mismo nombre). Si se envía el id, se actualiza el registro. El nombre se guarda siempre en MAYÚSCULAS.',
   })
   @ApiBody({
     type: UpdatePersonaTipoDto,
@@ -327,18 +327,14 @@ export class ParametricasController {
       crear: {
         summary: 'Registrar tipo de persona',
         value: {
-          codigo: 'INT',
           nombre: 'PERSONAL INTERNO',
-          descripcion: 'TRABAJADOR DE LA EMPRESA',
         },
       },
       actualizar: {
         summary: 'Actualizar tipo de persona',
         value: {
           id: 3,
-          codigo: 'INT',
           nombre: 'PERSONAL INTERNO',
-          descripcion: 'TRABAJADOR DEPENDIENTE DE LA EMPRESA',
         },
       },
     },
@@ -348,7 +344,7 @@ export class ParametricasController {
     type: PersonaTipo,
   })
   @ApiConflictResponse({
-    description: 'Ya existe un tipo de persona con ese código.',
+    description: 'Ya existe un tipo de persona con ese nombre.',
   })
   @ApiNotFoundResponse({
     description: 'No se encontró el tipo de persona a actualizar.',

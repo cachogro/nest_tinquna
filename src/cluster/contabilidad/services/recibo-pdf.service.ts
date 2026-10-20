@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 const PDFDocument = require('pdfkit-table');
 import { join } from 'path';
+import { nitBajoLogo } from 'src/common/datos-empresa';
 import * as fs from 'fs';
 import { Recibo } from '../entities/recibo.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
@@ -180,6 +181,7 @@ export class ReciboPdfService {
     if (fs.existsSync(LOGO_PATH)) {
       doc.image(LOGO_PATH, xi, y, { width: logoAncho });
     }
+    nitBajoLogo(doc, xi, y + 23);
 
     // --- Caja de info (Recibo N° / Bs. / $us.), arriba a la derecha ---
     const cajaAncho = 120;

@@ -91,9 +91,23 @@ export class KardexExcelService {
     excel.agregarEncabezado(worksheet, filaEncabezado, COLUMNAS, paleta);
 
     let fila = filaEncabezado + 1;
-    movimientos.forEach((mov) => {
+    // Deuda con la que se abrió el kardex (arrastrada del registro anterior /
+    // migrada del Excel, o el saldo del kardex anterior): de ahí parte el saldo.
+    const saldoInicial = Number(kardex.saldoInicial ?? 0);
+    if (saldoInicial !== 0) {
+      excel.agregarFila(
+        worksheet,
+        fila++,
+        COLUMNAS,
+        [null, excel.fecha(kardex.fechaApertura), '', 'SALDO ANTERIOR', null, null, null, null, null, null, null, null, saldoInicial, null],
+        { relleno: paleta.suave, negrita: true },
+      );
+    }
+    // N° correlativo en el orden del kardex (por fecha): una línea con fecha
+    // anterior registrada después no rompe la numeración del reporte.
+    movimientos.forEach((mov, i) => {
       excel.agregarFila(worksheet, fila++, COLUMNAS, [
-        mov.numeroLinea,
+        i + 1,
         excel.fecha(mov.fecha),
         mov.facturaRecibo || mov.nroComprobante || '',
         mov.detalle,
@@ -156,6 +170,16 @@ export class KardexExcelService {
    * de comprobante: "QR - UNION - 123578955".
    */
   private tipoPago(mov: MovimientoKardex): string {
+    // Pago mixto: "EFECTIVO 1000.00 + TRANSFERENCIA 3000.00".
+    const pagos = (mov.recibo?.pagos ?? []).filter((p) => p.activo !== false);
+    if (pagos.length > 1) {
+      return [...pagos]
+        .sort((x, y) => x.orden - y.orden)
+        .map((p) => `${(p.formaPago?.nombre ?? '').toUpperCase()} ${Number(p.monto).toFixed(2)}`)
+        .join(' + ');
+    }
+    // Descuento de deuda dentro de un pago (sin dinero).
+    if (!mov.formaPago && mov.recibo && Number(mov.haber) > 0) return 'DESCUENTO';
     const forma = mov.formaPago?.nombre?.toUpperCase() ?? '';
     if (!mov.cuentaBancaria) {
       return forma;

@@ -6,7 +6,7 @@ import { CreatePersonaTipoDto } from './create-persona-tipo.dto';
 /**
  * Se usa como cuerpo único del `POST /parametricas/persona-tipo`:
  * sin `id` registra, con `id` actualiza. Al ser un solo tipo (no una unión)
- * el ValidationPipe global sí valida `codigo`, `nombre` y `descripcion`.
+ * el ValidationPipe global sí valida `nombre`.
  */
 export class UpdatePersonaTipoDto extends CreatePersonaTipoDto {
   @ApiPropertyOptional({

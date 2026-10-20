@@ -110,6 +110,14 @@ export class PersonaCi extends Auditoria {
   })
   fechaNacimiento?: string;
 
+  // Opcionales, solo personal interno: los pide la planilla de sueldos.
+  @Column({ name: 'nacionalidad', type: 'varchar', length: 40, nullable: true })
+  nacionalidad?: string | null;
+
+  /** 'F' | 'M'. */
+  @Column({ name: 'sexo', type: 'varchar', length: 1, nullable: true })
+  sexo?: string | null;
+
   @Column({
     name: 'fecha_inicio_laboral',
     type: 'date',
@@ -123,6 +131,15 @@ export class PersonaCi extends Auditoria {
     nullable: true,
   })
   fechaFinLabores?: string;
+
+  // Retiro (despido, renuncia, fin de contrato...). Se registra desde
+  // Personal interno o al emitir el finiquito; la persona sigue activa para
+  // poder pagarle los días trabajados y el finiquito.
+  @Column({ name: 'motivo_retiro', type: 'varchar', length: 100, nullable: true })
+  motivoRetiro?: string | null;
+
+  @Column({ name: 'observacion_retiro', type: 'varchar', length: 255, nullable: true })
+  observacionRetiro?: string | null;
 
   @Column({
     name: 'direccion',

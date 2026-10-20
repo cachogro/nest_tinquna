@@ -23,6 +23,18 @@ import { BoletaPagoPdfService } from './services/boleta-pago-pdf.service';
 import { PrestamoPersonal } from './entities/prestamo-personal.entity';
 import { MovimientoPrestamo } from './entities/movimiento-prestamo.entity';
 import { BoletaPago } from './entities/boleta-pago.entity';
+import { BoletaPagoDetalle } from './entities/boleta-pago-detalle.entity';
+import { PersonalPlanilla } from './entities/personal-planilla.entity';
+import { Vacacion } from './entities/vacacion.entity';
+import { PersonalBeneficio } from './entities/personal-beneficio.entity';
+import { Asistencia } from './entities/asistencia.entity';
+import { AsistenciaService } from './services/asistencia.service';
+import { HorarioTrabajo } from 'src/cluster/parametricas/entities/horario-trabajo.entity';
+import { PlanillaCalculoService } from './services/planilla-calculo.service';
+import { PersonalPlanillaService } from './services/personal-planilla.service';
+import { PlanillaSueldosExcelService } from './services/planilla-sueldos-excel.service';
+import { PlanillaFirmasExcelService } from './services/planilla-firmas-excel.service';
+import { PersonalPlanillaController } from './controller/personal-planilla.controller';
 import { ReportePlanCuentasService } from './services/reporte-plan-cuentas.service';
 import { LibretaBancoService } from './services/libreta-banco.service';
 import { KardexService } from './services/kardex.service';
@@ -97,6 +109,7 @@ import { KardexInteresEvento } from './entities/kardex-interes-evento.entity';
     ReporteContabilidadController,
     PrestamoPersonalController,
     BoletaPagoController,
+    PersonalPlanillaController,
     VentaLoteController,
     PagoValorizacionController,
     ChequeController,
@@ -130,6 +143,11 @@ import { KardexInteresEvento } from './entities/kardex-interes-evento.entity';
     PrestamoPersonalService,
     BoletaPagoService,
     BoletaPagoPdfService,
+    PlanillaCalculoService,
+    AsistenciaService,
+    PersonalPlanillaService,
+    PlanillaSueldosExcelService,
+    PlanillaFirmasExcelService,
     VentaLoteService,
     PagoValorizacionService,
     ChequeService,
@@ -156,6 +174,12 @@ import { KardexInteresEvento } from './entities/kardex-interes-evento.entity';
         PrestamoPersonal,
         MovimientoPrestamo,
         BoletaPago,
+        BoletaPagoDetalle,
+        PersonalPlanilla,
+        Vacacion,
+        PersonalBeneficio,
+        Asistencia,
+        HorarioTrabajo,
         PersonaCi,
         RecepcionMineral,
         ValorizacionMineral,

@@ -11,16 +11,24 @@ import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.enti
 import { PersonaAutorizo } from '../persona-autorizo.util';
 import { Recibo } from './recibo.entity';
 import { MovimientoPrestamo } from './movimiento-prestamo.entity';
+import { BoletaPagoDetalle } from './boleta-pago-detalle.entity';
 
 export type EstadoBoletaPago = 'PAGADA' | 'ANULADA';
+
+/**
+ * SUELDO: la boleta mensual. AGUINALDO, FINIQUITO y RETROACTIVO no llevan
+ * salario básico: su monto va en `otrosIngresos`, con el desglose en
+ * `detalles` (tipo INGRESO).
+ */
+export type TipoBoletaPago = 'SUELDO' | 'AGUINALDO' | 'FINIQUITO' | 'RETROACTIVO';
 
 /**
  * Boleta de pago del sueldo de un empleado por un periodo (`fechaDesde` a
  * `fechaHasta`, ej. 28 de febrero a 28 de marzo).
  *
  * Por ley muestra el salario completo:
- *   totalGanado        = salarioBase + bonoAntiguedad + otrosIngresos
- *   totalDescuentosLey = aporteLaboral + rcIva + otrosDescuentosLey
+ *   totalGanado        = salarioBase + bonoAntiguedad + montoHorasExtra + montoDominicales + otrosIngresos
+ *   totalDescuentosLey = aporteLaboral + rcIva + otrosDescuentosLey + descuentoAtrasos
  *   liquidoPagable     = totalGanado - totalDescuentosLey
  *
  * Internamente se le descuenta lo destinado a sus préstamos
@@ -46,6 +54,14 @@ export class BoletaPago extends Auditoria {
     type: 'int',
   })
   numero: number;
+
+  @Column({
+    name: 'tipo',
+    type: 'varchar',
+    length: 15,
+    default: 'SUELDO',
+  })
+  tipo: TipoBoletaPago;
 
   @Column({
     name: 'id_persona',
@@ -112,8 +128,28 @@ export class BoletaPago extends Auditoria {
   @Column({ name: 'bono_antiguedad', type: 'numeric', precision: 16, scale: 2, default: 0 })
   bonoAntiguedad: number;
 
+  // Cantidad de horas extra y su importe (al doble de la hora normal, según
+  // el recargo configurado).
+  @Column({ name: 'horas_extra', type: 'numeric', precision: 8, scale: 2, default: 0 })
+  horasExtra: number;
+
+  @Column({ name: 'monto_horas_extra', type: 'numeric', precision: 16, scale: 2, default: 0 })
+  montoHorasExtra: number;
+
+  // Domingos trabajados en el periodo y su importe (haber diario * factor).
+  @Column({ name: 'dias_dominicales', type: 'numeric', precision: 6, scale: 2, default: 0 })
+  diasDominicales: number;
+
+  @Column({ name: 'monto_dominicales', type: 'numeric', precision: 16, scale: 2, default: 0 })
+  montoDominicales: number;
+
   @Column({ name: 'otros_ingresos', type: 'numeric', precision: 16, scale: 2, default: 0 })
   otrosIngresos: number;
+
+  // Beneficios del mes (lactancia, natalidad...): suma de sus líneas INGRESO
+  // con idPersonalBeneficio en el detalle.
+  @Column({ name: 'monto_beneficios', type: 'numeric', precision: 16, scale: 2, default: 0 })
+  montoBeneficios: number;
 
   @Column({ name: 'total_ganado', type: 'numeric', precision: 16, scale: 2 })
   totalGanado: number;
@@ -129,11 +165,28 @@ export class BoletaPago extends Auditoria {
   @Column({ name: 'otros_descuentos_ley', type: 'numeric', precision: 16, scale: 2, default: 0 })
   otrosDescuentosLey: number;
 
+  // Atrasos, salidas antes de hora y faltas sin justificar del periodo (solo
+  // si al emitir se pidió descontarlos). Suma en totalDescuentosLey.
+  @Column({ name: 'descuento_atrasos', type: 'numeric', precision: 16, scale: 2, default: 0 })
+  descuentoAtrasos: number;
+
+  @Column({ name: 'minutos_atraso', type: 'int', default: 0 })
+  minutosAtraso: number;
+
+  @Column({ name: 'dias_falta', type: 'numeric', precision: 5, scale: 1, default: 0 })
+  diasFalta: number;
+
   @Column({ name: 'total_descuentos_ley', type: 'numeric', precision: 16, scale: 2 })
   totalDescuentosLey: number;
 
   @Column({ name: 'liquido_pagable', type: 'numeric', precision: 16, scale: 2 })
   liquidoPagable: number;
+
+  // Aportes que paga la empresa encima del sueldo (CNS, riesgo profesional,
+  // Pro Vivienda...). No tocan el líquido: son costo de la empresa y deuda
+  // con cada entidad (detalle en `detalles`, tipo APORTE_PATRONAL).
+  @Column({ name: 'total_aporte_patronal', type: 'numeric', precision: 16, scale: 2, default: 0 })
+  totalAportePatronal: number;
 
   // ----------------------------------------------------------------- interno
   @Column({
@@ -192,4 +245,9 @@ export class BoletaPago extends Auditoria {
   // Líneas DESCUENTO_SUELDO de los préstamos descontados en esta boleta.
   @OneToMany(() => MovimientoPrestamo, (mov) => mov.boletaPago)
   descuentosPrestamo?: MovimientoPrestamo[];
+
+  // Descuentos laborales y aportes patronales calculados, y los rubros de
+  // aguinaldo / finiquito / retroactivo.
+  @OneToMany(() => BoletaPagoDetalle, (d) => d.boletaPago)
+  detalles?: BoletaPagoDetalle[];
 }

@@ -22,6 +22,7 @@ import { MovimientoCajaService } from './movimiento-caja.service';
 import { LibretaBancoService } from './libreta-banco.service';
 import { monedaDeCuenta, resolverTipoCambio } from '../moneda.util';
 import { resolverPersonaAutorizo } from '../persona-autorizo.util';
+import { validarMesEnCurso } from '../mes-en-curso.util';
 
 const RELACIONES = {
   caja: true,
@@ -363,6 +364,7 @@ export class TraspasoService {
     if (!traspaso) {
       throw new NotFoundException('No se encontró el traspaso.');
     }
+    validarMesEnCurso(traspaso.fecha, activo ? 'No se puede reactivar el traspaso' : 'No se puede anular el traspaso');
 
     const movCaja = await this.movimientoCajaRepository.findOne({
       where: { idTraspaso: traspaso.id },

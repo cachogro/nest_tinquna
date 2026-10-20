@@ -177,7 +177,7 @@ export class PrestamoPersonalService {
   ): Promise<void> {
     const movs = await manager.find(MovimientoPrestamo, {
       where: { idPrestamo, activo: true },
-      order: { numeroLinea: 'ASC', id: 'ASC' },
+      order: { fecha: 'ASC', numeroLinea: 'ASC', id: 'ASC' },
     });
 
     let running = 0;

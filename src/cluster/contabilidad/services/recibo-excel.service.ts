@@ -271,6 +271,17 @@ export class ReciboExcelService {
     if (recibo.estado === 'BORRADOR') {
       return 'Pendiente de procesar';
     }
+    // Pago con descuento: el importe es el del recibo, pero parte se
+    // descontó de la deuda y no salió de caja/banco.
+    if (recibo.tipo === 'EGRESO') {
+      const descontado = (recibo.detalles ?? [])
+        .filter((d) => d.activo !== false && d.destino !== 'EFECTIVO')
+        .reduce((s, d) => s + Number(d.monto), 0);
+      if (descontado > 0) {
+        const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return `Incluye descuento de deuda ${fmt(descontado)}; entregado ${fmt(Number(recibo.montoTotal) - descontado)}`;
+      }
+    }
     return '';
   }
 

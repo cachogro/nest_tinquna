@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { Kardex } from './entities/kardex.entity';
 import { MovimientoKardex } from './entities/movimiento-kardex.entity';
@@ -101,7 +101,7 @@ export async function recalcularSaldoKardex(
 
   const movs = await manager.find(MovimientoKardex, {
     where: { idKardex, activo: true },
-    order: { numeroLinea: 'ASC', id: 'ASC' },
+    order: { fecha: 'ASC', numeroLinea: 'ASC', id: 'ASC' },
   });
 
   let running = r2(Number(kardex.saldoInicial));
@@ -112,4 +112,25 @@ export async function recalcularSaldoKardex(
     }
   }
   await manager.update(Kardex, kardex.id, { saldoActual: running });
+}
+
+/**
+ * Un pago o descuento de deuda no puede superar lo que se debe en el kardex
+ * (quedaría con saldo negativo, es decir, pagado de más). Los kardex de
+ * CLIENTE quedan fuera: ahí un saldo a favor es normal (pagan anticipos por
+ * lotes antes de liquidarlos). Las líneas directas del kardex no pasan por
+ * acá (sirven, por ejemplo, para cargar movimientos históricos).
+ */
+export function validarNoSuperaDeuda(kardex: Kardex, montoBs: number, que: string): void {
+  if (kardex.tipo === 'CLIENTE') return;
+  const deuda = Math.round(Number(kardex.saldoActual ?? 0) * 100) / 100;
+  const monto = Math.round(Number(montoBs) * 100) / 100;
+  if (monto > deuda) {
+    const fmt = (n: number) => n.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    throw new BadRequestException(
+      deuda > 0
+        ? `${que} (Bs ${fmt(monto)}) supera la deuda del kardex ${kardex.codigo} (Bs ${fmt(deuda)}).`
+        : `El kardex ${kardex.codigo} no tiene deuda (saldo Bs ${fmt(deuda)}): no hay nada que pagar o descontar.`,
+    );
+  }
 }

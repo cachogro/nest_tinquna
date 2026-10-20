@@ -21,6 +21,7 @@ import { Kardex } from '../entities/kardex.entity';
 import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
 import { aBolivianos, resolverTipoCambio } from '../moneda.util';
 import { recalcularSaldoKardex } from '../kardex-posteo.util';
+import { validarMesEnCurso } from '../mes-en-curso.util';
 import {
   origenDeMovimiento,
   origenesDeMovimientos,
@@ -302,7 +303,9 @@ export class MovimientoCajaService {
 
       const movs = await manager.find(MovimientoCaja, {
         where: { idPeriodoCaja: periodo.id, activo: true },
-        order: { folio: 'ASC', id: 'ASC' },
+        // Por fecha: un movimiento con fecha anterior (dentro del mes abierto)
+        // queda en su lugar y recalcula los saldos siguientes.
+        order: { fecha: 'ASC', folio: 'ASC', id: 'ASC' },
       });
 
       const saldoInicial = running;
@@ -364,6 +367,15 @@ export class MovimientoCajaService {
     },
     user: Usuario,
   ): Promise<MovimientoCaja> {
+    // Antes de la apertura no hay saldo del cual partir: el saldo corrido
+    // quedaría mal para toda la caja.
+    const apertura = (datos.moneda === 'BS' ? caja.fechaSaldoInicialBs : caja.fechaSaldoInicialUsd)?.slice(0, 10);
+    if (apertura && datos.fecha.slice(0, 10) < apertura) {
+      throw new BadRequestException(
+        `La caja "${caja.nombre}" se aperturó el ${apertura.split('-').reverse().join('/')} en ${datos.moneda}: no se pueden registrar movimientos con fecha anterior.`,
+      );
+    }
+    validarMesEnCurso(datos.fecha, `Caja ${caja.nombre}`);
     const [gestion, mes] = this.gestionMesDeFecha(datos.fecha);
     const periodo = await this.obtenerOCrearPeriodoMensual(
       manager,
@@ -601,6 +613,9 @@ export class MovimientoCajaService {
     },
     user: Usuario,
   ): Promise<void> {
+    // Se edita solo dentro del mes en curso (la fecha vieja y la nueva).
+    validarMesEnCurso(mov.fecha, 'Movimiento de caja');
+    validarMesEnCurso(campos.fecha, 'Movimiento de caja');
     const [gestion, mes] = this.gestionMesDeFecha(campos.fecha);
     let idPeriodoCaja = mov.idPeriodoCaja;
     let folio = mov.folio;
@@ -655,6 +670,7 @@ export class MovimientoCajaService {
     activo: boolean,
     user: Usuario,
   ): Promise<void> {
+    validarMesEnCurso(mov.fecha, activo ? 'No se puede reactivar el movimiento de caja' : 'No se puede anular el movimiento de caja');
     await manager.update(MovimientoCaja, mov.id, {
       activo,
       usuarioUltimaModificacion: user.usuario,
@@ -731,7 +747,7 @@ export class MovimientoCajaService {
       qb.andWhere('p.mes = :m', { m: filtro.mes });
     }
 
-    qb.orderBy('m.folio', 'ASC').addOrderBy('m.id', 'ASC');
+    qb.orderBy('m.fecha', 'ASC').addOrderBy('m.folio', 'ASC').addOrderBy('m.id', 'ASC');
     const lista = await qb.getMany();
     // `origen` le dice a la bandeja qué filas se gestionan desde otro
     // documento (no se editan ni desactivan acá).

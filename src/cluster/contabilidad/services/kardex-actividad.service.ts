@@ -15,7 +15,8 @@ const DIA_MS = 24 * 60 * 60 * 1000;
  *   - su último movimiento activo (la fecha del movimiento o el día en que
  *     se registró, la que sea posterior: un movimiento cargado hoy con fecha
  *     pasada también cuenta como actividad de hoy),
- *   - su apertura,
+ *   - su apertura y el día en que el kardex se cargó al sistema (un kardex
+ *     migrado con fecha de apertura antigua no nace inactivo),
  *   - su última reactivación manual.
  *
  * El estado se calcula al vuelo (no se guarda, no hay proceso programado):
@@ -92,19 +93,28 @@ export class KardexActividadService {
     };
   }
 
-  /** Último movimiento activo de cada kardex (YYYY-MM-DD, hora de Bolivia). */
+  /**
+   * Última actividad registrada de cada kardex (YYYY-MM-DD, hora de Bolivia):
+   * su último movimiento activo o el día en que el kardex se cargó al
+   * sistema, lo que sea posterior. Así un kardex MIGRADO hoy con fecha de
+   * apertura antigua (y su deuda arrastrada del Excel) no nace INACTIVO.
+   */
   private async ultimosMovimientos(ids: string[]): Promise<Map<string, string>> {
     const mapa = new Map<string, string>();
     if (ids.length === 0) {
       return mapa;
     }
     const filas: { id_kardex: string; fecha: string | Date }[] = await this.dataSource.query(
-      `SELECT m.id_kardex,
-              MAX(GREATEST(m.fecha, (m.fecha_registro AT TIME ZONE 'America/La_Paz')::date)) AS fecha
-         FROM contabilidad.movimiento_kardex m
-        WHERE m.activo = true
-          AND m.id_kardex = ANY($1::bigint[])
-        GROUP BY m.id_kardex`,
+      `SELECT k.id AS id_kardex,
+              GREATEST(
+                (k.fecha_registro AT TIME ZONE 'America/La_Paz')::date,
+                MAX(GREATEST(m.fecha, (m.fecha_registro AT TIME ZONE 'America/La_Paz')::date))
+              ) AS fecha
+         FROM contabilidad.kardex k
+         LEFT JOIN contabilidad.movimiento_kardex m
+                ON m.id_kardex = k.id AND m.activo = true
+        WHERE k.id = ANY($1::bigint[])
+        GROUP BY k.id, k.fecha_registro`,
       [ids],
     );
     filas.forEach((f) => mapa.set(String(f.id_kardex), this.iso(f.fecha)));

@@ -48,9 +48,18 @@ import { Caja } from './entities/caja.entity';
 import { CajaService } from './services/caja.service';
 import { Cliente } from './entities/cliente.entity';
 import { ClienteService } from './services/cliente.service';
+import { ParametroPlanilla } from './entities/parametro-planilla.entity';
+import { ConceptoPlanilla } from './entities/concepto-planilla.entity';
+import { BeneficioPlanilla } from './entities/beneficio-planilla.entity';
+import { EscalaPlanilla } from './entities/escala-planilla.entity';
+import { TipoContrato } from './entities/tipo-contrato.entity';
+import { HorarioTrabajo, HorarioTrabajoDia } from './entities/horario-trabajo.entity';
+import { DatosEmpleador } from './entities/datos-empleador.entity';
+import { PlanillaConfigService } from './services/planilla-config.service';
+import { PlanillaConfigController } from './controller/planilla-config.controller';
 
 @Module({
-  controllers: [ParametricasController],
+  controllers: [ParametricasController, PlanillaConfigController],
   providers: [
     CodificacionService,
     ParametricasService,
@@ -70,6 +79,7 @@ import { ClienteService } from './services/cliente.service';
     CodificacionLoteService,
     LugarAcopioService,
     FormaPagoService,
+    PlanillaConfigService,
   ],
   imports: [
     ConfigModule,
@@ -101,11 +111,19 @@ import { ClienteService } from './services/cliente.service';
         LugarAcopio,
         Caja,
         Cliente,
+        ParametroPlanilla,
+        ConceptoPlanilla,
+        BeneficioPlanilla,
+        EscalaPlanilla,
+        TipoContrato,
+        HorarioTrabajo,
+        HorarioTrabajoDia,
+        DatosEmpleador,
       ],
       'ci',
     ),
     forwardRef(() => SecurityModule),
   ],
-  exports: [TypeOrmModule],
+  exports: [TypeOrmModule, PlanillaConfigService],
 })
 export class ParametricasModule {}

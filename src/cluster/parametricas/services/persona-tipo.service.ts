@@ -41,27 +41,33 @@ export class PersonaTipoService {
     return personaTipo;
   }
 
+  /** Rechaza el nombre si ya lo usa otro tipo (sin contar `excluirId`). */
+  private async validarNombreUnico(
+    nombre: string,
+    excluirId?: number,
+  ): Promise<void> {
+    const qb = this.personaTipoRepository
+      .createQueryBuilder('personaTipo')
+      .where('personaTipo.nombre = :nombre', { nombre });
+    if (excluirId) {
+      qb.andWhere('personaTipo.id <> :id', { id: excluirId });
+    }
+    if (await qb.getOne()) {
+      throw new ConflictException(
+        `Ya existe un tipo de persona con el nombre "${nombre}".`,
+      );
+    }
+  }
+
   async create(
     createDto: CreatePersonaTipoDto,
     user: Usuario,
   ): Promise<PersonaTipo> {
-    const codigo = this.normalizar(createDto.codigo);
     const nombre = this.normalizar(createDto.nombre);
-
-    // Crear solo si no existe otro con el mismo código.
-    const existe = await this.personaTipoRepository.findOne({
-      where: { codigo },
-    });
-    if (existe) {
-      throw new ConflictException(
-        `Ya existe un tipo de persona con el código "${codigo}".`,
-      );
-    }
+    await this.validarNombreUnico(nombre);
 
     const personaTipo = this.personaTipoRepository.create({
-      codigo,
       nombre,
-      descripcion: this.normalizar(createDto.descripcion),
       usuarioRegistro: user.usuario,
     });
 
@@ -75,22 +81,10 @@ export class PersonaTipoService {
     const id = Number(updateDto.id);
     const personaTipo = await this.obtenerPersonaTipo(id);
 
-    const codigo = this.normalizar(updateDto.codigo);
+    const nombre = this.normalizar(updateDto.nombre);
+    await this.validarNombreUnico(nombre, id);
 
-    const duplicado = await this.personaTipoRepository
-      .createQueryBuilder('personaTipo')
-      .where('personaTipo.codigo = :codigo', { codigo })
-      .andWhere('personaTipo.id <> :id', { id })
-      .getOne();
-    if (duplicado) {
-      throw new ConflictException(
-        `Ya existe un tipo de persona con el código "${codigo}".`,
-      );
-    }
-
-    personaTipo.codigo = codigo;
-    personaTipo.nombre = this.normalizar(updateDto.nombre);
-    personaTipo.descripcion = this.normalizar(updateDto.descripcion);
+    personaTipo.nombre = nombre;
     personaTipo.usuarioUltimaModificacion = user.usuario;
 
     return await this.personaTipoRepository.save(personaTipo);
@@ -111,7 +105,7 @@ export class PersonaTipoService {
 
   async findAll(): Promise<PersonaTipo[]> {
     return await this.personaTipoRepository.find({
-      order: { codigo: 'ASC' },
+      order: { nombre: 'ASC' },
     });
   }
 }

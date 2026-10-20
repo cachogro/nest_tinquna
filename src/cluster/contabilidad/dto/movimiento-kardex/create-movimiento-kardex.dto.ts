@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
@@ -10,7 +12,9 @@ import {
   IsPositive,
   IsString,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { MedioPagoDto } from '../medio-pago.dto';
 
 /**
  * Cuerpo único del `POST /contabilidad/movimiento-kardex`:
@@ -183,4 +187,20 @@ export class CreateMovimientoKardexDto {
   )
   @IsPositive({ message: 'El monto debe ser mayor a 0.' })
   monto: number;
+
+  @ApiPropertyOptional({
+    type: [MedioPagoDto],
+    description:
+      'Pago de deuda MIXTO (solo al registrar un HABER): los medios por los que entra el dinero, por ejemplo una parte en efectivo y el resto por transferencia. La suma debe ser igual a `monto`. Genera un recibo de INGRESO ya PROCESADO para cualquier tipo de kardex (persona, asociado, actor o cliente). Reemplaza a `idFormaPago` / `idCuentaBancaria` / `nroComprobante`.',
+    example: [
+      { idFormaPago: 1, monto: 300 },
+      { idFormaPago: 3, monto: 700, idCuentaBancaria: 1, nroComprobante: '4613159797' },
+    ],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Los medios de pago deben ser una lista.' })
+  @ArrayMinSize(1, { message: 'Indicá al menos un medio de pago.' })
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  pagos?: MedioPagoDto[];
 }

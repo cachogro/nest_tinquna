@@ -28,6 +28,7 @@ import {
   recalcularSaldoKardex,
   siguienteNumeroLineaKardex,
 } from '../kardex-posteo.util';
+import { validarMesEnCurso } from '../mes-en-curso.util';
 import {
   origenDeMovimiento,
   origenesDeMovimientos,
@@ -396,7 +397,8 @@ export class LibretaBancoService {
 
       const movs = await manager.find(LibretaBanco, {
         where: { idPeriodoBanco: periodo.id, activo: true },
-        order: { folio: 'ASC', id: 'ASC' },
+        // Por fecha: ver recalcularCaja.
+        order: { fecha: 'ASC', folio: 'ASC', id: 'ASC' },
       });
 
       const saldoInicial = running;
@@ -464,6 +466,14 @@ export class LibretaBancoService {
     },
     user: Usuario,
   ): Promise<LibretaBanco> {
+    // Antes de la apertura no hay saldo del cual partir.
+    const apertura = cuenta.fechaSaldoInicial ? String(cuenta.fechaSaldoInicial).slice(0, 10) : null;
+    if (apertura && datos.fecha.slice(0, 10) < apertura) {
+      throw new BadRequestException(
+        `La cuenta bancaria "${cuenta.numeroCuenta}" se aperturó el ${apertura.split('-').reverse().join('/')}: no se pueden registrar movimientos con fecha anterior.`,
+      );
+    }
+    validarMesEnCurso(datos.fecha, `Cuenta ${cuenta.numeroCuenta}`);
     const [gestion, mes] = this.gestionMesDeFecha(datos.fecha);
     const periodo = await this.obtenerOCrearPeriodoMensual(
       manager,
@@ -783,6 +793,9 @@ export class LibretaBancoService {
     },
     user: Usuario,
   ): Promise<void> {
+    // Se edita solo dentro del mes en curso (la fecha vieja y la nueva).
+    validarMesEnCurso(mov.fecha, 'Movimiento de banco');
+    validarMesEnCurso(campos.fecha, 'Movimiento de banco');
     const [gestion, mes] = this.gestionMesDeFecha(campos.fecha);
     let idPeriodoBanco = mov.idPeriodoBanco;
     let folio = mov.folio;
@@ -842,6 +855,7 @@ export class LibretaBancoService {
     activo: boolean,
     user: Usuario,
   ): Promise<void> {
+    validarMesEnCurso(mov.fecha, activo ? 'No se puede reactivar el movimiento de banco' : 'No se puede anular el movimiento de banco');
     await manager.update(LibretaBanco, mov.id, {
       activo,
       usuarioUltimaModificacion: user.usuario,
@@ -931,6 +945,7 @@ export class LibretaBancoService {
     // para que, sin filtro de gestión, no se mezclen los años.
     qb.orderBy('p.gestion', 'ASC')
       .addOrderBy('p.mes', 'ASC')
+      .addOrderBy('l.fecha', 'ASC')
       .addOrderBy('l.folio', 'ASC')
       .addOrderBy('l.id', 'ASC');
     const lista = await qb.getMany();

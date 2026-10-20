@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 const PDFDocument = require('pdfkit-table');
 import { join } from 'path';
+import { nitBajoLogo } from 'src/common/datos-empresa';
 import * as fs from 'fs';
 import { BoletaPago } from '../entities/boleta-pago.entity';
 import { Usuario } from 'src/security/entities/usuario.entity';
@@ -26,8 +27,17 @@ const MESES = [
 
 const ETIQUETAS_COPIA = ['Original', 'Copia 1', 'Copia 2'];
 
-// Filas de detalle por columna (ingresos / descuentos de ley / préstamos).
+// Filas de detalle por columna (ingresos / descuentos de ley / préstamos):
+// al menos 3; hasta 5 si algún rubro las necesita (finiquito, horas extra).
 const FILAS_DETALLE = 3;
+const FILAS_DETALLE_MAX = 5;
+
+const TITULOS: Record<string, string> = {
+  SUELDO: 'BOLETA DE PAGO',
+  AGUINALDO: 'BOLETA DE AGUINALDO',
+  FINIQUITO: 'FINIQUITO',
+  RETROACTIVO: 'BOLETA DE RETROACTIVO',
+};
 
 interface Fila {
   etiqueta: string;
@@ -128,6 +138,7 @@ export class BoletaPagoPdfService {
     if (fs.existsSync(LOGO_PATH)) {
       doc.image(LOGO_PATH, xi, y, { width: logoAncho });
     }
+    nitBajoLogo(doc, xi, y + 23);
 
     // --- Caja de info (Boleta N° / Fecha de pago / Emitido / Recibo N°) ---
     const cajaAncho = 130;
@@ -169,7 +180,7 @@ export class BoletaPagoPdfService {
       .fillColor('#000000')
       .font('Helvetica-Bold')
       .fontSize(13)
-      .text('BOLETA DE PAGO', tituloX, tituloY + 7, {
+      .text(TITULOS[boleta.tipo] ?? 'BOLETA DE PAGO', tituloX, tituloY + 7, {
         width: tituloAncho,
         align: 'center',
       });
@@ -216,11 +227,7 @@ export class BoletaPagoPdfService {
     const columnas: Columna[] = [
       {
         titulo: 'INGRESOS',
-        filas: [
-          { etiqueta: 'Salario básico', monto: Number(boleta.salarioBase) },
-          { etiqueta: 'Bono de antigüedad', monto: Number(boleta.bonoAntiguedad) },
-          { etiqueta: 'Otros ingresos', monto: Number(boleta.otrosIngresos) },
-        ],
+        filas: this.filasIngresos(boleta),
         etiquetaTotal: 'TOTAL GANADO',
         total: Number(boleta.totalGanado),
       },
@@ -230,6 +237,9 @@ export class BoletaPagoPdfService {
           { etiqueta: 'Aporte laboral (Gestora)', monto: Number(boleta.aporteLaboral) },
           { etiqueta: 'RC-IVA', monto: Number(boleta.rcIva) },
           { etiqueta: 'Otros descuentos', monto: Number(boleta.otrosDescuentosLey) },
+          ...(Number(boleta.descuentoAtrasos) > 0
+            ? [{ etiqueta: this.etiquetaAtrasos(boleta), monto: Number(boleta.descuentoAtrasos) }]
+            : []),
         ],
         etiquetaTotal: 'TOTAL DESCUENTOS',
         total: Number(boleta.totalDescuentosLey),
@@ -246,9 +256,13 @@ export class BoletaPagoPdfService {
 
     const sep = 6;
     const anchoColumna = (anchoInterno - sep * (columnas.length - 1)) / columnas.length;
+    const filasDetalle = Math.min(
+      FILAS_DETALLE_MAX,
+      Math.max(FILAS_DETALLE, ...columnas.map((c) => c.filas.length)),
+    );
     let altoTabla = 0;
     columnas.forEach((col, i) => {
-      altoTabla = this.dibujarColumna(doc, col, xi + i * (anchoColumna + sep), y, anchoColumna);
+      altoTabla = this.dibujarColumna(doc, col, xi + i * (anchoColumna + sep), y, anchoColumna, filasDetalle);
     });
     y += altoTabla + 6;
 
@@ -312,13 +326,89 @@ export class BoletaPagoPdfService {
   }
 
   /**
-   * Una columna con título, FILAS_DETALLE filas (etiqueta / monto) y el
+   * Ingresos de la boleta. SUELDO: básico, bono, horas extra y dominicales (si hay) y otros.
+   * AGUINALDO / FINIQUITO / RETROACTIVO: sus rubros (detalle INGRESO); si
+   * sobran filas, el resto se suma en "Otros rubros".
+   */
+  private filasIngresos(boleta: BoletaPago): Fila[] {
+    if (boleta.tipo && boleta.tipo !== 'SUELDO') {
+      const rubros: Fila[] = (boleta.detalles ?? [])
+        .filter((d) => d.tipo === 'INGRESO')
+        .sort((a, b) => a.orden - b.orden)
+        .map((d) => ({ etiqueta: d.nombre, monto: Number(d.monto) }));
+      if (rubros.length > FILAS_DETALLE_MAX) {
+        const resto = rubros.slice(FILAS_DETALLE_MAX - 1);
+        return [
+          ...rubros.slice(0, FILAS_DETALLE_MAX - 1),
+          { etiqueta: `Otros rubros (${resto.length})`, monto: resto.reduce((s, f) => s + f.monto, 0) },
+        ];
+      }
+      return rubros.length ? rubros : [{ etiqueta: 'Otros ingresos', monto: Number(boleta.otrosIngresos) }];
+    }
+    const filas: Fila[] = [
+      { etiqueta: 'Salario básico', monto: Number(boleta.salarioBase) },
+      { etiqueta: 'Bono de antigüedad', monto: Number(boleta.bonoAntiguedad) },
+    ];
+    // "4 h × 25,00": el valor de cada una no se guarda, sale de importe / cantidad.
+    const porUnidad = (cantidad: number, monto: number) =>
+      cantidad > 0
+        ? ` × ${(monto / cantidad).toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : '';
+    if (Number(boleta.montoHorasExtra) > 0) {
+      const horas = Number(boleta.horasExtra);
+      filas.push({
+        etiqueta: `Horas extra (${horas} h${porUnidad(horas, Number(boleta.montoHorasExtra))})`,
+        monto: Number(boleta.montoHorasExtra),
+      });
+    }
+    if (Number(boleta.montoDominicales) > 0) {
+      const dias = Number(boleta.diasDominicales);
+      filas.push({
+        etiqueta: `Dominicales (${dias} d${porUnidad(dias, Number(boleta.montoDominicales))})`,
+        monto: Number(boleta.montoDominicales),
+      });
+    }
+    // Beneficios (lactancia, natalidad...): una fila por cada uno; si no
+    // entran, una sola fila con la suma.
+    const beneficios: Fila[] = (boleta.detalles ?? [])
+      .filter((d) => d.tipo === 'INGRESO' && d.idPersonalBeneficio)
+      .sort((a, b) => a.orden - b.orden)
+      .map((d) => ({ etiqueta: d.nombre, monto: Number(d.monto) }));
+    if (!beneficios.length && Number(boleta.montoBeneficios) > 0) {
+      beneficios.push({ etiqueta: 'Beneficios', monto: Number(boleta.montoBeneficios) });
+    }
+    // Sin beneficios, "Otros ingresos" va siempre (como antes); con ellos, solo si hay.
+    const otros = !beneficios.length || Number(boleta.otrosIngresos) > 0;
+    const libres = FILAS_DETALLE_MAX - filas.length - (otros ? 1 : 0);
+    if (beneficios.length > libres) {
+      filas.push({
+        etiqueta: `Beneficios (${beneficios.length})`,
+        monto: beneficios.reduce((s, f) => s + f.monto, 0),
+      });
+    } else {
+      filas.push(...beneficios);
+    }
+    if (otros) filas.push({ etiqueta: 'Otros ingresos', monto: Number(boleta.otrosIngresos) });
+    return filas;
+  }
+
+  /**
+   * Una columna con título, `filasDetalle` filas (etiqueta / monto) y el
    * total. Devuelve su alto.
    */
-  private dibujarColumna(doc: any, col: Columna, x: number, y: number, ancho: number): number {
-    const altoFila = 10;
+  private dibujarColumna(
+    doc: any,
+    col: Columna,
+    x: number,
+    y: number,
+    ancho: number,
+    filasDetalle = FILAS_DETALLE,
+  ): number {
+    // Con más de 3 filas se achica cada fila: la tabla crece como mucho 8 pt
+    // para no pisar las firmas (son 3 copias por hoja carta).
+    const altoFila = filasDetalle <= FILAS_DETALLE ? 10 : 58 / (filasDetalle + 2);
     const anchoMonto = 52;
-    const alto = altoFila * (FILAS_DETALLE + 2) + 2;
+    const alto = altoFila * (filasDetalle + 2) + 2;
 
     doc.rect(x, y, ancho, altoFila).fill('#DDDDDD');
     doc
@@ -328,7 +418,7 @@ export class BoletaPagoPdfService {
       .text(col.titulo, x, y + 2, { width: ancho, align: 'center' });
 
     doc.font('Helvetica').fontSize(7);
-    for (let i = 0; i < FILAS_DETALLE; i++) {
+    for (let i = 0; i < filasDetalle; i++) {
       const fila = col.filas[i];
       if (!fila) continue;
       const yf = y + altoFila * (i + 1) + 1;
@@ -342,7 +432,7 @@ export class BoletaPagoPdfService {
       });
     }
 
-    const yTotal = y + altoFila * (FILAS_DETALLE + 1) + 2;
+    const yTotal = y + altoFila * (filasDetalle + 1) + 2;
     doc.moveTo(x, yTotal).lineTo(x + ancho, yTotal).lineWidth(0.5).stroke();
     doc.font('Helvetica-Bold').fontSize(7);
     doc.text(col.etiquetaTotal, x + 3, yTotal + 2, { width: ancho - anchoMonto - 6 });
@@ -353,6 +443,15 @@ export class BoletaPagoPdfService {
 
     doc.rect(x, y, ancho, alto).lineWidth(0.75).stroke();
     return alto;
+  }
+
+  /** "Atrasos 45 min · 1 falta" (lo descontado en la boleta). */
+  private etiquetaAtrasos(boleta: BoletaPago): string {
+    const partes = ['Atrasos'];
+    if (Number(boleta.minutosAtraso) > 0) partes.push(`${boleta.minutosAtraso} min`);
+    const faltas = Number(boleta.diasFalta);
+    if (faltas > 0) partes.push(`${faltas} falta${faltas === 1 ? '' : 's'}`);
+    return partes.join(' · ');
   }
 
   private descuentosOrdenados(boleta: BoletaPago) {

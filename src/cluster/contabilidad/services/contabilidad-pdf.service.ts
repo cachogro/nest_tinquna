@@ -5,7 +5,7 @@ import { Response } from 'express';
 const PDFDocument = require('pdfkit-table') as PDFKit.PDFDocument;
 
 import { FormatoReporte } from '../dto/reporte/formato-reporte.dto';
-import { NOMBRE_EMPRESA } from './contabilidad-excel.service';
+import { empresaConNit } from 'src/common/datos-empresa';
 
 // Hoja carta en puntos (72 por pulgada) y margen "estrecho" de 0,5".
 const CARTA = { ancho: 612, alto: 792 };
@@ -56,6 +56,8 @@ interface Hoja {
   celdas: Celda[];
   /** Filas del encabezado de columnas, que se repiten en cada página. */
   encabezado?: { desde: number; hasta: number };
+  /** Ancho mínimo por columna (1 = primera), en fracción del ancho útil. */
+  anchosMinimos?: Record<number, number>;
 }
 
 interface FilaEnPagina {
@@ -67,6 +69,13 @@ interface FilaEnPagina {
 export interface OpcionesPdf {
   /** Hoja apaisada: la caja de flujo y el kardex, que son los de muchas columnas. */
   horizontal?: boolean;
+  /**
+   * Ancho mínimo de columnas puntuales (número de columna, 1 = primera,
+   * -1 = última) en
+   * fracción del ancho útil de la hoja. Para columnas vacías a propósito,
+   * como la de firma de la planilla de sueldos, que si no quedan angostas.
+   */
+  anchosMinimos?: Record<number, number>;
 }
 
 /**
@@ -130,7 +139,9 @@ export class ContabilidadPdfService {
     });
 
     for (const worksheet of workbook.worksheets) {
-      this.dibujarHoja(doc, this.leerHoja(worksheet), pagina);
+      const hoja = this.leerHoja(worksheet);
+      hoja.anchosMinimos = opciones.anchosMinimos;
+      this.dibujarHoja(doc, hoja, pagina);
     }
     this.numerarPaginas(doc, pagina);
 
@@ -369,7 +380,7 @@ export class ContabilidadPdfService {
     hoja: Hoja,
     util: number,
   ): { anchos: number[]; base: number } {
-    const medidas = TAMANOS_BASE.map((base) => this.medir(doc, hoja, base));
+    const medidas = TAMANOS_BASE.map((base) => this.medir(doc, hoja, base, util));
     const entran = medidas.filter((m) => m.total <= util);
     const holgada = entran.find((m) => m.total <= util * (1 - HOLGURA_TEXTO));
     // Sin holgura suficiente: la letra legible más chica, que es la que más
@@ -424,6 +435,7 @@ export class ContabilidadPdfService {
     doc: PDFKit.PDFDocument,
     hoja: Hoja,
     base: number,
+    util: number,
   ): {
     base: number;
     minimos: number[];
@@ -451,6 +463,12 @@ export class ContabilidadPdfService {
         );
         minimos[i] = Math.max(minimos[i], palabra + 2 * margen.x + 1);
       }
+    }
+    for (const [col, fraccion] of Object.entries(hoja.anchosMinimos ?? {})) {
+      // Negativos desde el final: -1 = última columna.
+      const n = Number(col);
+      const i = n < 0 ? hoja.columnas + n : n - 1;
+      if (i >= 0 && i < hoja.columnas) minimos[i] = Math.max(minimos[i], fraccion * util);
     }
 
     const total = minimos.reduce((t, a) => t + a, 0);
@@ -662,15 +680,20 @@ export class ContabilidadPdfService {
       let x = caja.x + margen.x;
       if (celda.horizontal === 'center') x += (ancho - anchoLinea) / 2;
       if (celda.horizontal === 'right') x += ancho - anchoLinea;
+      const xInicio = x;
       for (const parte of celda.partes ?? [
         { texto: celda.texto, negrita: celda.negrita },
       ]) {
         doc.font(this.fuente(parte.negrita, celda.cursiva));
-        doc.text(parte.texto, x, y, {
-          lineBreak: false,
-          strike: celda.tachado,
-        });
+        // Sin `strike`: con lineBreak false pdfkit no conoce el ancho y la
+        // línea del tachado sale con coordenadas NaN (error 500). Se tacha a
+        // mano abajo.
+        doc.text(parte.texto, x, y, { lineBreak: false });
         x += doc.widthOfString(parte.texto);
+      }
+      if (celda.tachado) {
+        const yMedio = y + doc.currentLineHeight() / 2;
+        doc.save().lineWidth(0.6).moveTo(xInicio, yMedio).lineTo(x, yMedio).stroke(celda.color).restore();
       }
     } else {
       doc.text(celda.texto, caja.x + margen.x, y, {
@@ -741,7 +764,7 @@ export class ContabilidadPdfService {
     for (let i = 0; i < rango.count; i++) {
       doc.switchToPage(rango.start + i);
       doc.font('Helvetica').fontSize(7).fillColor('#444444');
-      doc.text(NOMBRE_EMPRESA, MARGEN, y, { lineBreak: false });
+      doc.text(empresaConNit(), MARGEN, y, { lineBreak: false });
       const numero = `Página ${i + 1} de ${rango.count}`;
       doc.text(numero, pagina.ancho - MARGEN - doc.widthOfString(numero), y, {
         lineBreak: false,

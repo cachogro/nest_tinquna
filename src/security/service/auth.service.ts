@@ -17,6 +17,7 @@ import { Rol } from '../entities/rol.entity';
 import { Persona } from '../entities/persona.entity';
 import { RefreshToken } from '../entities/refresh-token.entity';
 import { LoginUsuarioDto } from '../dto/auth/login-usuario.dto';
+import { CambiarContrasenaDto } from '../dto/auth/cambiar-contrasena.dto';
 import { JwtPayload } from '../models/interfaces/jwt-payload';
 import { ConfigService } from '@nestjs/config';
 import { hashToken } from '../helpers/token.helpers';
@@ -286,6 +287,56 @@ export class AuthService {
     });
 
     return { message: 'Sesión cerrada correctamente' };
+  }
+
+  /**
+   * El usuario logueado cambia su propia contraseña. Revoca todos sus
+   * refresh tokens (cierra la sesión en otros equipos) y devuelve un par
+   * nuevo para que la sesión actual siga abierta.
+   */
+  public async cambiarContrasena(
+    idUsuario: string,
+    dto: CambiarContrasenaDto,
+    meta?: SolicitudMeta,
+  ): Promise<{ token: string; refreshToken: string }> {
+    const usuario = await this.usuarioRepository.findOne({
+      where: { id: idUsuario },
+      select: { id: true, usuario: true, contrasena: true },
+    });
+    if (!usuario) throw new NotFoundException('No se ha encontrado al usuario');
+
+    if (!bcrypt.compareSync(dto.contrasenaActual, usuario.contrasena)) {
+      throw new BadRequestException('La contraseña actual no es correcta');
+    }
+    if (dto.contrasenaActual === dto.contrasenaNueva) {
+      throw new BadRequestException(
+        'La contraseña nueva debe ser distinta de la actual',
+      );
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    await this.usuarioRepository.update(usuario.id, {
+      contrasena: await bcrypt.hash(dto.contrasenaNueva, salt),
+      cambioClave: false,
+      usuarioUltimaModificacion: usuario.usuario,
+    });
+
+    await this.refreshTokenRepository.update(
+      { idUsuario: usuario.id, revocado: false },
+      { activo: false, revocado: true, fechaRevocacion: new Date() },
+    );
+
+    await this.$bitacora.registrar({
+      idUsuario: usuario.id,
+      usuarioIngresado: usuario.usuario,
+      tipoEvento: TipoEventoBitacora.CAMBIO_CONTRASENA,
+      descripcion: 'El usuario cambió su contraseña desde Mi perfil',
+      exitoso: true,
+      ip: meta?.ip,
+      userAgent: meta?.userAgent,
+    });
+
+    return this.getJwtTokens({ id: usuario.id }, meta);
   }
 
   public async getUserById(id: string): Promise<Usuario> {

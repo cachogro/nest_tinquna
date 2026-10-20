@@ -31,6 +31,7 @@ import { LibretaBancoService } from './libreta-banco.service';
 import { MovimientoKardexService } from './movimiento-kardex.service';
 import { PersonaAutorizo, resolverPersonaAutorizo } from '../persona-autorizo.util';
 import { validarMonedaCuenta } from '../moneda.util';
+import { validarNoSuperaDeuda } from '../kardex-posteo.util';
 
 const RELACIONES = {
   persona: true,
@@ -379,6 +380,7 @@ export class BienDacionPagoService {
         'Este bien no tiene valor acordado: indicá el monto que se abona al kardex (montoAmortizar).',
       );
     }
+    validarNoSuperaDeuda(kardex, monto, 'Lo que se abona por el bien');
 
     await this.dataSource.transaction(async (manager) => {
       const linea =
@@ -437,6 +439,9 @@ export class BienDacionPagoService {
         dto.montoAmortizar ??
           (acordado > 0 ? Math.min(acordado, montoVenta) : montoVenta),
       );
+      if (montoAmortizar > 0) {
+        validarNoSuperaDeuda(kardex, montoAmortizar, 'Lo que se abona de la venta');
+      }
     }
 
     const medio = await this.resolverMedioPago(dto, 'la venta');

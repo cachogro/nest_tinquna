@@ -23,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from '../service/auth.service';
 import { LoginUsuarioDto } from '../dto/auth/login-usuario.dto';
+import { CambiarContrasenaDto } from '../dto/auth/cambiar-contrasena.dto';
 import { RefreshTokenGuard } from '../guards/refresh-token.guard';
 import { Auth, GetUser, RawHeaders } from '../decorators';
 import { Usuario } from '../entities/usuario.entity';
@@ -126,6 +127,30 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: 'Token inválido o ausente.' })
   checkAuthStatus(@GetUser() user: Usuario) {
     return this.$usuario.estadoSesion(user);
+  }
+
+  @Post('cambiar_contrasena')
+  @Auth()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Cambiar mi contraseña',
+    description:
+      'El usuario autenticado cambia su contraseña (pide la actual). Cierra sus sesiones en otros equipos y devuelve tokens nuevos para la sesión actual.',
+  })
+  @ApiBody({ type: CambiarContrasenaDto })
+  @ApiResponse({ status: HttpStatus.CREATED, type: TokenResponseDto })
+  @ApiBadRequestResponse({
+    description: 'Contraseña actual incorrecta o la nueva no cumple las reglas.',
+  })
+  cambiarContrasena(
+    @GetUser() user: Usuario,
+    @Body() dto: CambiarContrasenaDto,
+    @Req() request: Request,
+  ) {
+    return this.$usuario.cambiarContrasena(user.id, dto, {
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    });
   }
 
   @Get('private')

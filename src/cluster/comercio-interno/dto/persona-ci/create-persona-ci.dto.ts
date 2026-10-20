@@ -4,6 +4,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsDateString,
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -163,4 +164,23 @@ export class CreatePersonaCiDto {
   )
   @IsPositive({ message: 'El salario mensual debe ser mayor a 0.' })
   salarioMensual?: number;
+
+  @ApiPropertyOptional({
+    description: 'Nacionalidad (opcional, personal de la empresa). Sale en la planilla de sueldos.',
+    example: 'BOLIVIANA',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  nacionalidad?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Sexo: F o M (opcional, personal de la empresa). Sale en la planilla de sueldos.',
+    enum: ['F', 'M'],
+    nullable: true,
+  })
+  @IsOptional()
+  @IsIn(['F', 'M'], { message: 'El sexo debe ser F o M.' })
+  sexo?: string | null;
 }
