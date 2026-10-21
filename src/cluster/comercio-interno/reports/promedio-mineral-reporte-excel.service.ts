@@ -198,7 +198,7 @@ export class PromedioMineralReporteExcelService {
     return query
       .orderBy('promedio.fecha', 'ASC')
       .addOrderBy('promedio.id', 'ASC')
-      .addOrderBy('recepcion.codigoOperacion', 'ASC')
+      .addOrderBy('recepcion.correlativo', 'ASC')
       .getMany();
   }
 

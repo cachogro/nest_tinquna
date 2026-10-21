@@ -83,13 +83,29 @@ export class BitacoraAccesoService {
       query.andWhere('bitacora.exitoso = :exitoso', { exitoso });
     }
 
+    // 'YYYY-MM-DD' llega como medianoche UTC (20:00 del día anterior en
+    // Bolivia): se toma ese día calendario y se arma en hora local.
     if (fechaDesde) {
-      query.andWhere('bitacora.fechaRegistro >= :fechaDesde', { fechaDesde });
+      const fechaInicio = new Date(
+        fechaDesde.getUTCFullYear(),
+        fechaDesde.getUTCMonth(),
+        fechaDesde.getUTCDate(),
+      );
+      query.andWhere('bitacora.fechaRegistro >= :fechaDesde', {
+        fechaDesde: fechaInicio,
+      });
     }
 
     if (fechaHasta) {
-      const fechaFin = new Date(fechaHasta);
-      fechaFin.setHours(23, 59, 59, 999);
+      const fechaFin = new Date(
+        fechaHasta.getUTCFullYear(),
+        fechaHasta.getUTCMonth(),
+        fechaHasta.getUTCDate(),
+        23,
+        59,
+        59,
+        999,
+      );
       query.andWhere('bitacora.fechaRegistro <= :fechaHasta', {
         fechaHasta: fechaFin,
       });

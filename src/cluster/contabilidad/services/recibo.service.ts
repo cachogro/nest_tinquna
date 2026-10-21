@@ -452,6 +452,10 @@ export class ReciboService {
     manager: EntityManager,
     serie: SerieRecibo,
   ): Promise<number> {
+    // Dos recibos de la misma serie a la vez tomarían el mismo MAX + 1 y el
+    // segundo chocaría con uq_recibo_serie_numero: se serializa por serie
+    // hasta el fin de la transacción.
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`recibo:${serie}`]);
     const { max } = await manager
       .createQueryBuilder(Recibo, 'r')
       .select('COALESCE(MAX(r.numero), 0)', 'max')

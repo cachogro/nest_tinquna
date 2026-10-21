@@ -118,6 +118,12 @@ export class PersonaCi extends Auditoria {
   @Column({ name: 'sexo', type: 'varchar', length: 1, nullable: true })
   sexo?: string | null;
 
+  // Tratamiento (Sr., Lic., Ing....) para memorándums y documentos. Null =
+  // Sr. / Sra. según el sexo, o solo el nombre si tampoco hay sexo
+  // (ver tratamientoPersona).
+  @Column({ name: 'tratamiento', type: 'varchar', length: 15, nullable: true })
+  tratamiento?: string | null;
+
   @Column({
     name: 'fecha_inicio_laboral',
     type: 'date',

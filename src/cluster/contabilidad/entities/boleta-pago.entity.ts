@@ -28,7 +28,7 @@ export type TipoBoletaPago = 'SUELDO' | 'AGUINALDO' | 'FINIQUITO' | 'RETROACTIVO
  *
  * Por ley muestra el salario completo:
  *   totalGanado        = salarioBase + bonoAntiguedad + montoHorasExtra + montoDominicales + otrosIngresos
- *   totalDescuentosLey = aporteLaboral + rcIva + otrosDescuentosLey + descuentoAtrasos
+ *   totalDescuentosLey = aporteLaboral + rcIva + otrosDescuentosLey + descuentoAtrasos + descuentoSanciones
  *   liquidoPagable     = totalGanado - totalDescuentosLey
  *
  * Internamente se le descuenta lo destinado a sus préstamos
@@ -169,6 +169,11 @@ export class BoletaPago extends Auditoria {
   // si al emitir se pidió descontarlos). Suma en totalDescuentosLey.
   @Column({ name: 'descuento_atrasos', type: 'numeric', precision: 16, scale: 2, default: 0 })
   descuentoAtrasos: number;
+
+  // Sanciones de memorándums (días de haber o multas) descontadas en esta
+  // boleta; detalle en `detalles` (tipo SANCION). Suma en totalDescuentosLey.
+  @Column({ name: 'descuento_sanciones', type: 'numeric', precision: 16, scale: 2, default: 0 })
+  descuentoSanciones: number;
 
   @Column({ name: 'minutos_atraso', type: 'int', default: 0 })
   minutosAtraso: number;

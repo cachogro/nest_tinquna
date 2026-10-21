@@ -109,6 +109,8 @@ export class PrestamoPersonalService {
   }
 
   private async siguienteNumero(manager: EntityManager): Promise<number> {
+    // Serializa el correlativo hasta el fin de la transacción (ver ReciboService).
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['prestamo_personal']);
     const row = await manager
       .createQueryBuilder(PrestamoPersonal, 'p')
       .select('COALESCE(MAX(p.numero), 0)', 'max')

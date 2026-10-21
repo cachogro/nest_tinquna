@@ -240,6 +240,7 @@ export class BoletaPagoPdfService {
           ...(Number(boleta.descuentoAtrasos) > 0
             ? [{ etiqueta: this.etiquetaAtrasos(boleta), monto: Number(boleta.descuentoAtrasos) }]
             : []),
+          ...this.filasSanciones(boleta),
         ],
         etiquetaTotal: 'TOTAL DESCUENTOS',
         total: Number(boleta.totalDescuentosLey),
@@ -446,6 +447,27 @@ export class BoletaPagoPdfService {
   }
 
   /** "Atrasos 45 min · 1 falta" (lo descontado en la boleta). */
+  /**
+   * Sanciones de memorándums: una fila por memorándum ("Sanción memo 021/2026")
+   * o, si no entran en la columna, una sola con el total.
+   */
+  private filasSanciones(boleta: BoletaPago): Fila[] {
+    if (!(Number(boleta.descuentoSanciones) > 0)) return [];
+    const lineas = (boleta.detalles ?? []).filter((d) => d.tipo === 'SANCION');
+    if (lineas.length === 1) {
+      const cite = lineas[0].nombre.split('MEMO ').pop() ?? '';
+      // "TINKURIQUNA/RRHH/MEMO/021/2026" → "021/2026"
+      const corto = cite.split('/').slice(-2).join('/');
+      return [{ etiqueta: `Sanción memo ${corto}`, monto: Number(lineas[0].monto) }];
+    }
+    return [
+      {
+        etiqueta: `Sanciones (${lineas.length} memos)`,
+        monto: Number(boleta.descuentoSanciones),
+      },
+    ];
+  }
+
   private etiquetaAtrasos(boleta: BoletaPago): string {
     const partes = ['Atrasos'];
     if (Number(boleta.minutosAtraso) > 0) partes.push(`${boleta.minutosAtraso} min`);

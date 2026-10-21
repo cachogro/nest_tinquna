@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, LessThanOrEqual, Repository } from 'typeorm';
+import { Between, IsNull, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 
 import { PersonaCi } from 'src/cluster/comercio-interno/entities/persona-ci.entity';
 import { PlanillaConfigService } from 'src/cluster/parametricas/services/planilla-config.service';
@@ -15,6 +15,7 @@ import { BoletaPago, TipoBoletaPago } from '../entities/boleta-pago.entity';
 import { BoletaPagoDetalle, TipoBoletaPagoDetalle } from '../entities/boleta-pago-detalle.entity';
 import { Vacacion } from '../entities/vacacion.entity';
 import { PersonalBeneficio } from '../entities/personal-beneficio.entity';
+import { Memorandum } from '../entities/memorandum.entity';
 import { AsistenciaService } from './asistencia.service';
 import { CalcularBoletaPagoDto } from '../dto/boleta-pago/create-boleta-pago.dto';
 import {
@@ -39,6 +40,8 @@ export interface LineaDetalle {
   orden: number;
   /** Solo en las líneas de beneficios (lactancia, natalidad...). */
   idPersonalBeneficio?: string | null;
+  /** Solo en las líneas SANCION (memorándum descontado). */
+  idMemorandum?: string | null;
 }
 
 /** Cuota de un beneficio ya pagada en una boleta. */
@@ -73,6 +76,8 @@ export interface CalculoBoleta {
   descuentoAtrasos: number;
   minutosAtraso: number;
   diasFalta: number;
+  /** Sanciones de memorándums pendientes descontadas (solo sueldo), con su línea SANCION en `detalles`. */
+  descuentoSanciones: number;
   totalDescuentosLey: number;
   liquidoPagable: number;
   totalAportePatronal: number;
@@ -113,6 +118,9 @@ export class PlanillaCalculoService {
 
     @InjectRepository(PersonalBeneficio, 'ci')
     private readonly personalBeneficioRepository: Repository<PersonalBeneficio>,
+
+    @InjectRepository(Memorandum, 'ci')
+    private readonly memorandumRepository: Repository<Memorandum>,
 
     private readonly asistenciaService: AsistenciaService,
   ) {}
@@ -336,9 +344,9 @@ export class PlanillaCalculoService {
     c: Omit<
       CalculoBoleta,
       | 'totalGanado' | 'totalDescuentosLey' | 'liquidoPagable' | 'totalAportePatronal' | 'aporteLaboral'
-      | 'descuentoAtrasos' | 'minutosAtraso' | 'diasFalta'
+      | 'descuentoAtrasos' | 'minutosAtraso' | 'diasFalta' | 'descuentoSanciones'
     > &
-      Partial<Pick<CalculoBoleta, 'descuentoAtrasos' | 'minutosAtraso' | 'diasFalta'>>,
+      Partial<Pick<CalculoBoleta, 'descuentoAtrasos' | 'minutosAtraso' | 'diasFalta' | 'descuentoSanciones'>>,
     aporteLaboralManual: number | undefined,
     lineasConceptos: LineaDetalle[],
   ): CalculoBoleta {
@@ -353,7 +361,10 @@ export class PlanillaCalculoService {
     const manual = aporteLaboralManual != null;
     const aporteLaboral = manual ? this.r2(aporteLaboralManual) : this.suma(laborales.map((l) => l.monto));
     const descuentoAtrasos = this.r2(c.descuentoAtrasos ?? 0);
-    const totalDescuentosLey = this.r2(aporteLaboral + c.rcIva + c.otrosDescuentosLey + descuentoAtrasos);
+    const descuentoSanciones = this.r2(c.descuentoSanciones ?? 0);
+    const totalDescuentosLey = this.r2(
+      aporteLaboral + c.rcIva + c.otrosDescuentosLey + descuentoAtrasos + descuentoSanciones,
+    );
     const liquidoPagable = this.r2(totalGanado - totalDescuentosLey);
     if (liquidoPagable < 0) {
       throw new BadRequestException(
@@ -363,6 +374,7 @@ export class PlanillaCalculoService {
     return {
       ...c,
       descuentoAtrasos,
+      descuentoSanciones,
       minutosAtraso: c.minutosAtraso ?? 0,
       diasFalta: c.diasFalta ?? 0,
       totalGanado,
@@ -374,6 +386,43 @@ export class PlanillaCalculoService {
       explicacion:
         c.tipo === 'SUELDO' ? { ...c.explicacion, aporteLaboralManual: manual } : c.explicacion,
     };
+  }
+
+  /**
+   * Sanciones (importe > 0) de memorándums EMITIDOS de la persona con fecha
+   * hasta `hasta` que todavía no se descontaron en ninguna boleta, como
+   * líneas SANCION del detalle.
+   */
+  async sancionesPendientes(idPersona: string, hasta: string): Promise<LineaDetalle[]> {
+    const memos = await this.memorandumRepository.find({
+      where: {
+        idPersona: String(idPersona),
+        estado: 'EMITIDO',
+        activo: true,
+        idBoletaPago: IsNull(),
+        importeSancion: MoreThan(0),
+        fecha: LessThanOrEqual(hasta),
+      },
+      order: { fecha: 'ASC', id: 'ASC' },
+    });
+    return memos.map((m, i) => {
+      const dias = Number(m.diasSancion);
+      const sancion = m.tipoSancion === 'DIAS'
+        ? `${String(dias).replace('.', ',')} ${dias > 1 ? 'DÍAS' : 'DÍA'}`
+        : 'MULTA';
+      return {
+        tipo: 'SANCION' as const,
+        idConceptoPlanilla: null,
+        codigo: 'SANCION',
+        nombre: `SANCIÓN ${sancion} · MEMO ${m.cite}`.slice(0, 150),
+        entidad: null,
+        porcentaje: null,
+        base: null,
+        monto: this.r2(m.importeSancion),
+        orden: i,
+        idMemorandum: m.id,
+      };
+    });
   }
 
   // ------------------------------------------------------------------ sueldo
@@ -502,6 +551,14 @@ export class PlanillaCalculoService {
       ? this.r2(dto.descuentoAtrasos)
       : dto.descontarAtrasos ? atrasos.monto : 0;
 
+    // Sanciones de memorándums EMITIDOS hasta el fin del periodo que aún no
+    // entraron a una boleta: se descuentan salvo descontarSanciones = false
+    // (quedan pendientes para la próxima).
+    const sanciones = await this.sancionesPendientes(persona.id, fechaHasta);
+    const descontarSanciones = dto.descontarSanciones !== false;
+    const lineasSancion = descontarSanciones ? sanciones : [];
+    const descuentoSanciones = this.suma(lineasSancion.map((l) => l.monto));
+
     return this.cerrar(
       {
         tipo: 'SUELDO',
@@ -522,7 +579,8 @@ export class PlanillaCalculoService {
         descuentoAtrasos,
         minutosAtraso: descontar ? atrasos.minutosDescontables : 0,
         diasFalta: descontar ? atrasos.diasFalta : 0,
-        detalles: pagados.map((b) => b.linea),
+        descuentoSanciones,
+        detalles: [...pagados.map((b) => b.linea), ...lineasSancion],
         explicacion: {
           // `lineas` = los que tocan en el mes (pagados o no, según `incluidos`).
           beneficios: {
@@ -531,6 +589,8 @@ export class PlanillaCalculoService {
             omitidos: beneficios.omitidos,
           },
           atrasos: { ...atrasos, descontado: descontar, manual: dto.descuentoAtrasos != null },
+          // `lineas` = sanciones pendientes (descontadas o no, según `descontadas`).
+          sanciones: { descontadas: descontarSanciones, lineas: sanciones },
           configurado: !!cfg,
           tipoContrato: cfg?.tipoContrato?.descripcion ?? null,
           salarioMensual,

@@ -6,9 +6,10 @@ import { BoletaPago } from './boleta-pago.entity';
  * INGRESO: rubros de aguinaldo, finiquito o retroactivo (indemnización,
  * desahucio, vacaciones...). DESCUENTO_LABORAL / APORTE_PATRONAL: cada
  * descuento o aporte calculado, con copia del concepto (código, nombre,
- * entidad, porcentaje) tal como estaba al emitir.
+ * entidad, porcentaje) tal como estaba al emitir. SANCION: sanción de un
+ * memorándum descontada en la boleta de sueldo (`idMemorandum`).
  */
-export type TipoBoletaPagoDetalle = 'INGRESO' | 'DESCUENTO_LABORAL' | 'APORTE_PATRONAL';
+export type TipoBoletaPagoDetalle = 'INGRESO' | 'DESCUENTO_LABORAL' | 'APORTE_PATRONAL' | 'SANCION';
 
 @Entity({
   name: 'boleta_pago_detalle',
@@ -56,4 +57,8 @@ export class BoletaPagoDetalle extends Auditoria {
   // mes ya pagada, para no pagarla dos veces.
   @Column({ name: 'id_personal_beneficio', type: 'bigint', nullable: true })
   idPersonalBeneficio?: string | null;
+
+  // Línea SANCION: memorándum cuya sanción se descontó (no se descuenta dos veces).
+  @Column({ name: 'id_memorandum', type: 'bigint', nullable: true })
+  idMemorandum?: string | null;
 }

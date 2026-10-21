@@ -13,6 +13,7 @@ import { ConceptoPlanilla } from 'src/cluster/parametricas/entities/concepto-pla
 import { Kardex } from '../entities/kardex.entity';
 import { BoletaPago, TipoBoletaPago } from '../entities/boleta-pago.entity';
 import { BoletaPagoDetalle } from '../entities/boleta-pago-detalle.entity';
+import { Memorandum } from '../entities/memorandum.entity';
 import { PersonalPlanilla } from '../entities/personal-planilla.entity';
 import { Vacacion } from '../entities/vacacion.entity';
 import { PrestamoPersonal } from '../entities/prestamo-personal.entity';
@@ -220,6 +221,8 @@ export class BoletaPagoService {
   }
 
   private async siguienteNumero(manager: EntityManager): Promise<number> {
+    // Serializa el correlativo hasta el fin de la transacción (ver ReciboService).
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['boleta_pago']);
     const row = await manager
       .createQueryBuilder(BoletaPago, 'b')
       .select('COALESCE(MAX(b.numero), 0)', 'max')
@@ -542,6 +545,7 @@ export class BoletaPagoService {
           descuentoAtrasos: calculo.descuentoAtrasos,
           minutosAtraso: calculo.minutosAtraso,
           diasFalta: calculo.diasFalta,
+          descuentoSanciones: calculo.descuentoSanciones,
           totalDescuentosLey: calculo.totalDescuentosLey,
           liquidoPagable: calculo.liquidoPagable,
           totalAportePatronal: calculo.totalAportePatronal,
@@ -565,6 +569,27 @@ export class BoletaPagoService {
             }),
           ),
         );
+      }
+
+      // Sanciones de memorándums descontadas: quedan ligadas a esta boleta.
+      // Solo si siguen pendientes (otra boleta pudo descontarlas mientras tanto).
+      const idsMemorandum = calculo.detalles
+        .map((d) => d.idMemorandum)
+        .filter((id): id is string => !!id);
+      if (idsMemorandum.length) {
+        const r = await manager
+          .createQueryBuilder()
+          .update(Memorandum)
+          .set({ idBoletaPago: boleta.id, usuarioUltimaModificacion: user.usuario })
+          .where('id IN (:...ids)', { ids: idsMemorandum })
+          .andWhere('id_boleta_pago IS NULL')
+          .andWhere("estado = 'EMITIDO'")
+          .execute();
+        if ((r.affected ?? 0) !== idsMemorandum.length) {
+          throw new ConflictException(
+            'Alguna sanción de memorándum ya se descontó en otra boleta o fue anulada. Vuelva a calcular la boleta.',
+          );
+        }
       }
 
       for (const { prestamo, monto } of descuentos) {
@@ -690,7 +715,8 @@ export class BoletaPagoService {
     >();
     for (const b of boletas) {
       for (const d of b.detalles ?? []) {
-        if (d.tipo === 'INGRESO' || columnas.has(d.codigo)) continue;
+        // Sanciones: van en su propia columna (descuentoSanciones), no son de ninguna entidad.
+        if (d.tipo === 'INGRESO' || d.tipo === 'SANCION' || columnas.has(d.codigo)) continue;
         columnas.set(d.codigo, {
           codigo: d.codigo,
           nombre: d.nombre,
@@ -723,7 +749,7 @@ export class BoletaPagoService {
       const cfg = cfgPorPersona.get(String(b.idPersona));
       const montos: Record<string, number> = {};
       for (const d of b.detalles ?? []) {
-        if (d.tipo !== 'INGRESO') montos[d.codigo] = this.r2((montos[d.codigo] ?? 0) + Number(d.monto));
+        if (d.tipo !== 'INGRESO' && d.tipo !== 'SANCION') montos[d.codigo] = this.r2((montos[d.codigo] ?? 0) + Number(d.monto));
       }
       if (
         Number(b.aporteLaboral) > 0 &&
@@ -762,6 +788,7 @@ export class BoletaPagoService {
         rcIva: this.r2(b.rcIva),
         otrosDescuentosLey: this.r2(b.otrosDescuentosLey),
         descuentoAtrasos: this.r2(b.descuentoAtrasos),
+        descuentoSanciones: this.r2(b.descuentoSanciones),
         minutosAtraso: Number(b.minutosAtraso ?? 0),
         diasFalta: Number(b.diasFalta ?? 0),
         totalDescuentosLey: this.r2(b.totalDescuentosLey),
@@ -806,6 +833,7 @@ export class BoletaPagoService {
         rcIva: sumar('rcIva'),
         otrosDescuentosLey: sumar('otrosDescuentosLey'),
         descuentoAtrasos: sumar('descuentoAtrasos'),
+        descuentoSanciones: sumar('descuentoSanciones'),
         totalDescuentosLey: sumar('totalDescuentosLey'),
         liquidoPagable: sumar('liquidoPagable'),
         totalAportePatronal: sumar('totalAportePatronal'),

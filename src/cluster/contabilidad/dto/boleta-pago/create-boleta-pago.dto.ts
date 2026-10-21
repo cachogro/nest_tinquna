@@ -238,6 +238,16 @@ export class CreateBoletaPagoDto extends DatosPagoDto {
   descontarAtrasos?: boolean;
 
   @ApiPropertyOptional({
+    example: true,
+    default: true,
+    description:
+      'Descontar las sanciones de memorándums EMITIDOS hasta el fin del periodo que aún no se descontaron (línea SANCION del detalle). false = quedan pendientes para la próxima boleta.',
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'descontarSanciones debe ser verdadero o falso.' })
+  descontarSanciones?: boolean;
+
+  @ApiPropertyOptional({
     example: 45.5,
     description: 'Monto de atrasos a mano (Bs.). Si se envía, se usa este en lugar del calculado.',
   })
@@ -299,5 +309,6 @@ export class CalcularBoletaPagoDto extends PickType(CreateBoletaPagoDto, [
   'rcIva',
   'otrosDescuentosLey',
   'descontarAtrasos',
+  'descontarSanciones',
   'descuentoAtrasos',
 ] as const) {}

@@ -129,7 +129,7 @@ export class PromedioMineralService {
 
     const columnaOrden =
       orderBy === 'codigoOperacion'
-        ? 'recepcion.codigoOperacion'
+        ? 'recepcion.correlativo'
         : orderBy === 'peso'
           ? 'valorizacion.pesoNetoSecoKilogramos'
           : 'valorizacion.id';

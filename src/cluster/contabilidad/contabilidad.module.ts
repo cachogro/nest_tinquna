@@ -35,6 +35,10 @@ import { PersonalPlanillaService } from './services/personal-planilla.service';
 import { PlanillaSueldosExcelService } from './services/planilla-sueldos-excel.service';
 import { PlanillaFirmasExcelService } from './services/planilla-firmas-excel.service';
 import { PersonalPlanillaController } from './controller/personal-planilla.controller';
+import { MemorandumController } from './controller/memorandum.controller';
+import { MemorandumService } from './services/memorandum.service';
+import { MemorandumPdfService } from './services/memorandum-pdf.service';
+import { Memorandum } from './entities/memorandum.entity';
 import { ReportePlanCuentasService } from './services/reporte-plan-cuentas.service';
 import { LibretaBancoService } from './services/libreta-banco.service';
 import { KardexService } from './services/kardex.service';
@@ -110,6 +114,7 @@ import { KardexInteresEvento } from './entities/kardex-interes-evento.entity';
     PrestamoPersonalController,
     BoletaPagoController,
     PersonalPlanillaController,
+    MemorandumController,
     VentaLoteController,
     PagoValorizacionController,
     ChequeController,
@@ -146,6 +151,8 @@ import { KardexInteresEvento } from './entities/kardex-interes-evento.entity';
     PlanillaCalculoService,
     AsistenciaService,
     PersonalPlanillaService,
+    MemorandumService,
+    MemorandumPdfService,
     PlanillaSueldosExcelService,
     PlanillaFirmasExcelService,
     VentaLoteService,
@@ -177,6 +184,7 @@ import { KardexInteresEvento } from './entities/kardex-interes-evento.entity';
         BoletaPagoDetalle,
         PersonalPlanilla,
         Vacacion,
+        Memorandum,
         PersonalBeneficio,
         Asistencia,
         HorarioTrabajo,

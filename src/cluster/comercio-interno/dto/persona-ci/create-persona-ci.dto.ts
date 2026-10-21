@@ -183,4 +183,15 @@ export class CreatePersonaCiDto {
   @IsOptional()
   @IsIn(['F', 'M'], { message: 'El sexo debe ser F o M.' })
   sexo?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Tratamiento (Sr., Sra., Lic., Ing., Dr....). Opcional: sin él se usa Sr. o Sra. según el sexo, o solo el nombre si no hay sexo. null lo borra.',
+    example: 'Lic.',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString({ message: 'El tratamiento debe ser texto.' })
+  @MaxLength(15, { message: 'El tratamiento no puede exceder los 15 caracteres.' })
+  tratamiento?: string | null;
 }
