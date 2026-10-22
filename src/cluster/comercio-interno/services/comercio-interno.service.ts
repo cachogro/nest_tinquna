@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -7,6 +8,7 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
+  EntityManager,
   In,
   Repository,
   SelectQueryBuilder,
@@ -21,7 +23,11 @@ import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-p
 import { ConfigService } from '@nestjs/config';
 import { CreateRecepcionMineralDto } from '../dto/recepcion-mineral/create-recepcion-mineral.dto';
 import { UpdateRecepcionMineralDto } from '../dto/recepcion-mineral/update-recepcion-mineral.dto';
-import { EstadoRecepcion } from 'src/cluster/enum/estado-recepcion.enum';
+import {
+  EstadoRecepcion,
+  TRANSICIONES_ESTADO_RECEPCION,
+} from 'src/cluster/enum/estado-recepcion.enum';
+import { ValidRoles } from 'src/security/enums/valid-roles';
 import { FiltrosRegistroMineralDto } from '../dto/recepcion-mineral/filtros-registro-mineral.dto';
 import { CreateRecepcionMineralDetalleDto } from '../dto/recepcion-mineral/create-recepcion-mineral-detalle.dto';
 import { Usuario } from 'src/security/entities/usuario.entity';
@@ -60,7 +66,16 @@ export class ComercioInternoService {
     private readonly configService: ConfigService,
   ) {}
   // codificacion
-  private async obtenerSiguienteCorrelativo(): Promise<number> {
+  /**
+   * Correlativo sin saltos: se toma dentro de la transacción de la recepción
+   * (bloqueo exclusivo + último correlativo + 1), así un guardado que falla no
+   * consume número. Un nextval suelto no se revierte con el rollback y dejaba
+   * huecos. La secuencia solo da el número de partida cuando no hay
+   * recepciones (ej. 2112 tras un reset) y se mantiene al día con setval.
+   */
+  private async obtenerSiguienteCorrelativo(
+    manager: EntityManager,
+  ): Promise<number> {
     const nombreSecuencia = this.configService.get<string>(
       'SECUENCIA_RECEPCION_MINERAL',
     );
@@ -69,10 +84,26 @@ export class ComercioInternoService {
         'No se encuentra configurada la secuencia de recepción de minerales.',
       );
     }
-    const resultado = await this.dataSource.query(
-      `SELECT nextval('${nombreSecuencia}') AS correlativo`,
+    await manager.query(
+      `SELECT pg_advisory_xact_lock(hashtext('comercio_interno.recepcion_mineral.correlativo'))`,
     );
-    return Number(resultado[0].correlativo);
+    const [ultimo] = await manager.query(
+      `SELECT MAX(correlativo) AS max FROM comercio_interno.recepcion_mineral`,
+    );
+    const correlativo =
+      ultimo?.max != null
+        ? Number(ultimo.max) + 1
+        : Number(
+            (
+              await manager.query(
+                `SELECT CASE WHEN is_called THEN last_value + 1 ELSE last_value END AS siguiente FROM ${nombreSecuencia}`,
+              )
+            )[0].siguiente,
+          );
+    await manager.query(`SELECT setval('${nombreSecuencia}', $1, true)`, [
+      correlativo,
+    ]);
+    return correlativo;
   }
   private generarCodigoOperacion(codigo: string, correlativo: number): string {
     const longitud = Number(this.configService.get('CORRELATIVO_LONGITUD', 4));
@@ -157,10 +188,46 @@ export class ComercioInternoService {
 
     return recepcion;
   }
+  /** TRANZADO y CANCELADO son terminales: la recepción ya no se toca. */
   private validarRecepcionEditable(recepcion: RecepcionMineral): void {
-    if (recepcion.idEstado === EstadoRecepcion.LIQUIDADO) {
+    if (Number(recepcion.idEstado) === EstadoRecepcion.TRANZADO) {
       throw new BadRequestException(
-        'La recepción ya fue liquidada y no puede ser modificada.',
+        'La recepción ya fue tranzada y no puede ser modificada.',
+      );
+    }
+    if (Number(recepcion.idEstado) === EstadoRecepcion.CANCELADO) {
+      throw new BadRequestException(
+        'La recepción está cancelada y no puede ser modificada.',
+      );
+    }
+  }
+
+  /**
+   * Con una valorización ya aperturada, la codificación, los pesos, la humedad
+   * y el anticipo quedan fijos (la valorización trabaja con ellos y puede
+   * valorizarse con otra codificación según el informe de laboratorio); el
+   * resto de los datos sigue editable.
+   */
+  private validarCamposFijosConValorizacion(
+    recepcion: RecepcionMineral,
+    dto: UpdateRecepcionMineralDto,
+  ): void {
+    if (!recepcion.idValorizacion) return;
+
+    const mismoNumero = (actual: unknown, nuevo: unknown) =>
+      Math.abs(Number(actual ?? 0) - Number(nuevo ?? 0)) < 0.000001;
+    const cambiados = [
+      String(recepcion.idCodificacion) !== String(dto.idCodificacion) &&
+        'codificación',
+      !mismoNumero(recepcion.balanzaL, dto.balanzaL) && 'balanza L',
+      !mismoNumero(recepcion.balanzaT, dto.balanzaT) && 'balanza T',
+      !mismoNumero(recepcion.humedad, dto.humedad) && 'humedad',
+      !mismoNumero(recepcion.anticipo, dto.anticipo) && 'anticipo',
+    ].filter(Boolean);
+
+    if (cambiados.length) {
+      throw new BadRequestException(
+        `La recepción ya tiene una valorización: no se puede modificar ${cambiados.join(', ')}.`,
       );
     }
   }
@@ -355,21 +422,23 @@ export class ComercioInternoService {
     // Validar detalle
     //await this.validarDetalleRecepcion(idCodificacion, detalles);
 
-    // Obtener correlativo
-    const correlativo = await this.obtenerSiguienteCorrelativo();
-
-    // Generar código
-    const codigoOperacion = this.generarCodigoOperacion(
-      codificacion.codigo,
-      correlativo,
-    );
-
     const queryRunner = this.dataSource.createQueryRunner();
 
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
+      // Obtener correlativo (dentro de la transacción: sin saltos)
+      const correlativo = await this.obtenerSiguienteCorrelativo(
+        queryRunner.manager,
+      );
+
+      // Generar código
+      const codigoOperacion = this.generarCodigoOperacion(
+        codificacion.codigo,
+        correlativo,
+      );
+
       const recepcion = queryRunner.manager.create(RecepcionMineral, {
         correlativo: correlativo.toString(),
         codigoOperacion,
@@ -386,7 +455,7 @@ export class ComercioInternoService {
         lugarAcopio,
         idLaboratorio: idLaboratorio || null,
         observaciones,
-        idEstado: 1,
+        idEstado: EstadoRecepcion.EN_RECEPCION,
         usuarioRegistro: user.usuario,
       });
 
@@ -429,9 +498,16 @@ export class ComercioInternoService {
 
     // Validar que pueda modificarse
     this.validarRecepcionEditable(recepcion);
+    this.validarCamposFijosConValorizacion(recepcion, updateDto);
 
-    // Validar codificación
-    const codificacion = await this.validarCodificacion(idCodificacion);
+    // Validar codificación: solo se exige activa si cambió (una recepción con
+    // una codificación luego desactivada se puede seguir editando).
+    const codificacion =
+      String(recepcion.idCodificacion) === String(idCodificacion)
+        ? await this.codificacionRepository.findOne({
+            where: { id: idCodificacion },
+          })
+        : await this.validarCodificacion(idCodificacion);
 
     // Validar proveedor (persona, actor productivo o externo)
     const proveedor = await this.resolverProveedor(updateDto);
@@ -501,6 +577,23 @@ export class ComercioInternoService {
   ): Promise<RecepcionMineral> {
     const recepcion = await this.obtenerRecepcion(id);
     this.validarRecepcionEditable(recepcion);
+
+    const permitidos =
+      TRANSICIONES_ESTADO_RECEPCION[Number(recepcion.idEstado)] ?? [];
+    if (!permitidos.includes(idEstado)) {
+      throw new BadRequestException(
+        'La recepción no puede pasar a ese estado desde su estado actual.',
+      );
+    }
+    if (
+      idEstado === EstadoRecepcion.CANCELADO &&
+      !user?.roles?.some((rol) => rol.codigo === ValidRoles.administrador)
+    ) {
+      throw new ForbiddenException(
+        'Solo un administrador puede cancelar una recepción.',
+      );
+    }
+
     const estado = await this.estadoRepository.findOne({
       where: {
         id: idEstado,
@@ -544,17 +637,94 @@ export class ComercioInternoService {
     return await query.getMany();
   }
 
+  /**
+   * Reporte completo de recepción (Excel/PDF): los mismos filtros y orden que
+   * el reporte normal, más el actor productivo de la persona y la fecha de
+   * registro, para poder mostrar todos los datos de la recepción.
+   */
+  async findAllRMReporteCompleto(
+    filtros: FiltrosRegistroMineralDto,
+  ): Promise<RecepcionMineral[]> {
+    const query = this.buildRecepcionMineralQuery(filtros)
+      .leftJoinAndSelect('persona.actorProductivoMinero', 'actorPersona')
+      .addSelect('recepcion.fechaRegistro');
+
+    return await query.getMany();
+  }
+
+  /**
+   * Totales del reporte de recepción para todo el rango filtrado (no una
+   * página): general, por código de mineral y por estado. Usa los mismos
+   * filtros que el listado, el Excel y el PDF.
+   */
+  async resumenRMReporte(filtros: FiltrosRegistroMineralDto) {
+    const base = () => {
+      const query = this.recepcionRepository
+        .createQueryBuilder('recepcion')
+        .leftJoin('recepcion.persona', 'persona')
+        .leftJoin('recepcion.codificacion', 'codificacion')
+        .leftJoin('recepcion.estado', 'estado');
+      this.aplicarFiltrosRecepcion(query, filtros);
+      return query;
+    };
+
+    const agregados =
+      'COUNT(recepcion.id) AS "cantidad", ' +
+      'COALESCE(SUM(recepcion.numeroSacos), 0) AS "totalSacos", ' +
+      'COALESCE(SUM(recepcion.balanzaL), 0) AS "totalBalanzaL", ' +
+      'COALESCE(SUM(recepcion.balanzaT), 0) AS "totalBalanzaT", ' +
+      'COALESCE(SUM(recepcion.anticipo), 0) AS "totalAnticipo"';
+
+    const numeros = (fila: any) => ({
+      cantidad: Number(fila?.cantidad ?? 0),
+      totalSacos: Number(fila?.totalSacos ?? 0),
+      totalBalanzaL: Number(fila?.totalBalanzaL ?? 0),
+      totalBalanzaT: Number(fila?.totalBalanzaT ?? 0),
+      totalAnticipo: Number(fila?.totalAnticipo ?? 0),
+    });
+
+    const [general, porCodificacion, porEstado] = await Promise.all([
+      base().select(agregados).getRawOne(),
+      base()
+        .select('codificacion.id', 'idCodificacion')
+        .addSelect('codificacion.codigo', 'codigo')
+        .addSelect('codificacion.nombre', 'nombre')
+        .addSelect(agregados)
+        .groupBy('codificacion.id')
+        .addGroupBy('codificacion.codigo')
+        .addGroupBy('codificacion.nombre')
+        .orderBy('"cantidad"', 'DESC')
+        .getRawMany(),
+      base()
+        .select('estado.id', 'idEstado')
+        .addSelect('estado.nombre', 'nombre')
+        .addSelect(agregados)
+        .groupBy('estado.id')
+        .addGroupBy('estado.nombre')
+        .orderBy('estado.id', 'ASC')
+        .getRawMany(),
+    ]);
+
+    return {
+      ...numeros(general),
+      porCodificacion: porCodificacion.map((f) => ({
+        idCodificacion: f.idCodificacion,
+        codigo: f.codigo,
+        nombre: f.nombre,
+        ...numeros(f),
+      })),
+      porEstado: porEstado.map((f) => ({
+        idEstado: Number(f.idEstado),
+        nombre: f.nombre,
+        ...numeros(f),
+      })),
+    };
+  }
+
   private buildRecepcionMineralQuery(
     filtros: FiltrosRegistroMineralDto,
   ): SelectQueryBuilder<RecepcionMineral> {
-    const {
-      busqueda,
-      codigoOperacion,
-      idCodificacion,
-      idEstado,
-      orderBy = 'fechaRecepcion',
-      orderDirection = 'DESC',
-    } = filtros;
+    const { orderBy = 'fechaRecepcion', orderDirection = 'DESC' } = filtros;
     const query = this.recepcionRepository
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
@@ -563,7 +733,37 @@ export class ComercioInternoService {
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.estado', 'estado')
       .leftJoinAndSelect('recepcion.laboratorio', 'laboratorio')
-      .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'");
+      .leftJoinAndSelect('recepcion.recibos', 'recibo', "recibo.estado <> 'ANULADO'")
+      // usuario_registro es select:false en Auditoria; el listado lo muestra.
+      .addSelect('recepcion.usuarioRegistro');
+
+    this.aplicarFiltrosRecepcion(query, filtros);
+
+    //---------------------------------------------------------
+    // Ordenamiento
+    //---------------------------------------------------------
+
+    aplicarOrden(
+      query,
+      {
+        id: 'recepcion.id',
+        codigoOperacion: 'recepcion.codigoOperacion',
+        fechaRecepcion: 'recepcion.fechaRecepcion',
+        numeroDocumento: 'persona.numeroDocumento',
+        estado: 'estado.nombre',
+      },
+      orderBy,
+      orderDirection,
+    );
+    return query;
+  }
+
+  /** Filtros del listado/reporte de recepción; requiere el alias `persona`. */
+  private aplicarFiltrosRecepcion(
+    query: SelectQueryBuilder<RecepcionMineral>,
+    filtros: FiltrosRegistroMineralDto,
+  ): void {
+    const { busqueda, codigoOperacion, idCodificacion, idEstado } = filtros;
 
     //---------------------------------------------------------
     // Búsqueda
@@ -632,24 +832,6 @@ export class ComercioInternoService {
         fechaHasta: hasta,
       });
     }
-
-    //---------------------------------------------------------
-    // Ordenamiento
-    //---------------------------------------------------------
-
-    aplicarOrden(
-      query,
-      {
-        id: 'recepcion.id',
-        codigoOperacion: 'recepcion.codigoOperacion',
-        fechaRecepcion: 'recepcion.fechaRecepcion',
-        numeroDocumento: 'persona.numeroDocumento',
-        estado: 'estado.nombre',
-      },
-      orderBy,
-      orderDirection,
-    );
-    return query;
   }
 
   async buscarregistroById(id: string): Promise<RecepcionMineral> {

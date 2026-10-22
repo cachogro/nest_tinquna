@@ -38,6 +38,7 @@ interface FilaFlujo {
   medio: 'EFECTIVO' | 'BANCO';
   moneda: 'BS' | 'USD';
   id_plan_cuentas: number | null;
+  codigo: string | null;
   nombre: string | null;
   categoria: CategoriaPlanCuentas | null;
   ingreso: string;
@@ -102,6 +103,7 @@ export class FlujoDineroService {
     const cuentas = this.agrupar(filas, (f) => String(f.id_plan_cuentas ?? 'SIN_PLAN_CUENTAS')).map(
       (g) => ({
         idPlanCuentas: g.fila.id_plan_cuentas,
+        codigo: g.fila.codigo,
         nombre: g.fila.nombre ?? 'SIN PLAN DE CUENTAS',
         categoria: g.fila.categoria ?? 'SIN_PLAN_CUENTAS',
         ingresoBs: g.ingresoBs,
@@ -113,9 +115,13 @@ export class FlujoDineroService {
       categorias.find((c) => c.categoria === categoria)?.[campo] ?? 0;
 
     const utilidadLotes = this.r2(lotes.venta - lotes.invertido);
-    const otrosIngresos = total(CATEGORIA_OTRO_INGRESO, 'ingresoBs');
-    const gastosOperativos = total('GASTO_OPERATIVO', 'egresoBs');
-    const sueldos = total('SUELDOS', 'egresoBs');
+    // Netos: una misma cuenta puede recibir ingresos y egresos (un reintegro
+    // de gasto entra a la cuenta del gasto y lo reduce).
+    const neto = (categoria: string) =>
+      this.r2(total(categoria, 'ingresoBs') - total(categoria, 'egresoBs'));
+    const otrosIngresos = neto(CATEGORIA_OTRO_INGRESO);
+    const gastosOperativos = -neto('GASTO_OPERATIVO');
+    const sueldos = -neto('SUELDOS');
 
     return {
       periodo: { desde, hasta },
@@ -179,7 +185,7 @@ export class FlujoDineroService {
             AND l.fecha BETWEEN $1 AND $2
        )
        SELECT to_char(mov.fecha, 'YYYY-MM-DD') AS fecha, mov.medio, mov.moneda,
-              mov.id_plan_cuentas, dg.nombre, dg.categoria,
+              mov.id_plan_cuentas, dg.codigo, dg.nombre, dg.categoria,
               SUM(mov.ingreso) AS ingreso,
               SUM(mov.egreso) AS egreso,
               SUM(CASE WHEN mov.moneda = 'BS' THEN mov.ingreso
@@ -193,7 +199,7 @@ export class FlujoDineroService {
               COUNT(*) AS movimientos
          FROM mov
          LEFT JOIN parametrica.plan_cuentas dg ON dg.id = mov.id_plan_cuentas
-        GROUP BY mov.fecha, mov.medio, mov.moneda, mov.id_plan_cuentas, dg.nombre, dg.categoria`,
+        GROUP BY mov.fecha, mov.medio, mov.moneda, mov.id_plan_cuentas, dg.codigo, dg.nombre, dg.categoria`,
       [desde, hasta],
     );
   }

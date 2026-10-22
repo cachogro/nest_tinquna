@@ -1,3 +1,4 @@
+import { textoCuenta } from 'src/cluster/parametricas/plan-cuentas.util';
 import { Injectable } from '@nestjs/common';
 import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltroCajaFlujoExcelDto } from '../dto/movimiento-caja/filtro-caja-flujo-excel.dto';
@@ -43,7 +44,7 @@ export class CajaFlujoExcelService {
       { titulo: 'ENTREGA DE FONDOS A', ancho: 28 },
       { titulo: 'FACTURA Y/O RECIBO', ancho: 15, alineacion: 'center' },
       { titulo: 'Nº CPTE', ancho: 14, alineacion: 'center' },
-      { titulo: 'PLAN DE CUENTAS', ancho: 28, alineacion: 'center' },
+      { titulo: 'PLAN DE CUENTAS', ancho: 40, alineacion: 'left' },
       { titulo: `INGRESO ${simbolo}`, ancho: 15, importe: true },
       { titulo: `EGRESO ${simbolo}`, ancho: 15, importe: true },
       { titulo: `SALDO ${simbolo}`, ancho: 16, importe: true },
@@ -121,7 +122,7 @@ export class CajaFlujoExcelService {
         mov.entregaFondosA ?? '',
         mov.facturaRecibo || '',
         mov.nroComprobante || '',
-        mov.planCuentas?.nombre ?? '',
+        textoCuenta(mov.planCuentas),
         Number(mov.ingreso) > 0 ? Number(mov.ingreso) : null,
         Number(mov.egreso) > 0 ? Number(mov.egreso) : null,
         Number(mov.saldo),

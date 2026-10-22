@@ -16,16 +16,10 @@ export class RecepcionMineralReportePdfService {
   ) {}
 
   async generar(filtros: FiltrosRegistroMineralDto): Promise<Buffer> {
-    const registros =
+    // Respeta el orden elegido en la pantalla de reportes (orderBy /
+    // orderDirection), igual que el Excel.
+    const registrosOrdenados =
       await this.comercioInternoService.findAllRMReporte(filtros);
-
-    // El listado sale ordenado por fecha (para el filtro/paginado normal);
-    // acá se reordena por id para que el reporte impreso sea predecible.
-    const registrosOrdenados = [...registros].sort((a, b) => {
-      const idA = BigInt(a.id);
-      const idB = BigInt(b.id);
-      return idA < idB ? -1 : idA > idB ? 1 : 0;
-    });
 
     const anchoPagina = 792; // LETTER horizontal (11in)
     const margen = 30;

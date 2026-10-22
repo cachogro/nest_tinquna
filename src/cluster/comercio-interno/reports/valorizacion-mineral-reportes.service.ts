@@ -208,6 +208,35 @@ export class ValorizacionMineralReportesService {
     };
   }
 
+  /**
+   * Lo que muestra la pantalla de reportes antes de descargar: el resumen
+   * general más el desglose por codificación efectiva, sin las filas.
+   */
+  async resumen(filtros: FiltroReporteValorizacionDto) {
+    const { resumen, valorizaciones } = await this.reporte(filtros);
+
+    const grupos = new Map<string, FilaReporteValorizacion[]>();
+    for (const fila of valorizaciones) {
+      const codigo = fila.codificacion ?? 'SIN CÓDIGO';
+      grupos.set(codigo, [...(grupos.get(codigo) ?? []), fila]);
+    }
+
+    const porCodificacion = [...grupos.entries()]
+      .map(([codigo, filas]) => ({
+        codigo,
+        cantidad: filas.length,
+        totalSacos: this.sumar(filas, (f) => f.numeroSacos ?? 0),
+        totalPesoKg: this.redondear(this.sumar(filas, (f) => f.pesoKg), 2),
+        totalMontoPagarBs: this.redondear(
+          this.sumar(filas, (f) => f.montoPagarBs),
+          2,
+        ),
+      }))
+      .sort((a, b) => b.cantidad - a.cantidad);
+
+    return { ...resumen, porCodificacion };
+  }
+
   private nombreCompleto(persona?: {
     nombres?: string;
     apellidoPaterno?: string;

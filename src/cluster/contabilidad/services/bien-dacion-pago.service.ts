@@ -32,6 +32,7 @@ import { MovimientoKardexService } from './movimiento-kardex.service';
 import { PersonaAutorizo, resolverPersonaAutorizo } from '../persona-autorizo.util';
 import { validarMonedaCuenta } from '../moneda.util';
 import { validarNoSuperaDeuda } from '../kardex-posteo.util';
+import { obtenerCuentaImputable } from 'src/cluster/parametricas/plan-cuentas.util';
 
 const RELACIONES = {
   persona: true,
@@ -249,13 +250,9 @@ export class BienDacionPagoService {
 
     let idPlanCuentas: number | null = null;
     if (dto.idPlanCuentas) {
-      const destino = await this.dataSource.manager.findOne(PlanCuentas, {
-        where: { id: dto.idPlanCuentas },
-      });
-      if (!destino) {
-        throw new NotFoundException('El plan de cuentas seleccionado no existe.');
-      }
-      idPlanCuentas = destino.id;
+            idPlanCuentas = (
+        await obtenerCuentaImputable(this.dataSource.manager, dto.idPlanCuentas)
+      ).id;
     }
 
     const caja = cuentaBancaria

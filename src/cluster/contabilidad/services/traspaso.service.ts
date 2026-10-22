@@ -23,6 +23,7 @@ import { LibretaBancoService } from './libreta-banco.service';
 import { monedaDeCuenta, resolverTipoCambio } from '../moneda.util';
 import { resolverPersonaAutorizo } from '../persona-autorizo.util';
 import { validarMesEnCurso } from '../mes-en-curso.util';
+import { obtenerCuentaImputable } from 'src/cluster/parametricas/plan-cuentas.util';
 
 const RELACIONES = {
   caja: true,
@@ -93,34 +94,19 @@ export class TraspasoService {
   }
 
   /**
-   * Valida el plan de cuentas igual que en un recibo/movimiento de caja,
-   * pero acá además exige que coincida con la dirección del traspaso: un
-   * DEPOSITO es un EGRESO de la caja (sale efectivo), así que necesita un
-   * plan de cuentas marcado `esEgreso = true`; un RETIRO es un INGRESO (entra
-   * efectivo), necesita uno con `esEgreso = false`.
+   * Valida el plan de cuentas igual que en un recibo/movimiento de caja: una
+   * cuenta imputable (tipo D) activa. La dirección (depósito o retiro) la da el
+   * traspaso, no la cuenta.
    */
   private async resolverPlanCuentas(
     idPlanCuentas: number | undefined,
-    tipo: 'DEPOSITO' | 'RETIRO',
   ): Promise<number | null> {
     if (!idPlanCuentas) {
       return null;
     }
-    const destino = await this.planCuentasRepository.findOne({
-      where: { id: idPlanCuentas },
-    });
-    if (!destino) {
-      throw new NotFoundException('No existe el plan de cuentas seleccionado.');
-    }
-    const esperaEgreso = tipo === 'DEPOSITO';
-    if (destino.esEgreso !== esperaEgreso) {
-      throw new BadRequestException(
-        esperaEgreso
-          ? `El plan de cuentas "${destino.nombre}" es de ingreso; un DEPOSITO (sale de caja) necesita uno de egreso.`
-          : `El plan de cuentas "${destino.nombre}" es de egreso; un RETIRO (entra a caja) necesita uno de ingreso.`,
-      );
-    }
-    return destino.id;
+    return (
+      await obtenerCuentaImputable(this.planCuentasRepository.manager, idPlanCuentas)
+    ).id;
   }
 
   // ------------------------------------------------------------------ CRUD
@@ -143,10 +129,7 @@ export class TraspasoService {
       moneda,
     );
     await this.libretaBancoService.obtenerCuentaAperturada(cuentaBancaria.id);
-    const idPlanCuentas = await this.resolverPlanCuentas(
-      dto.idPlanCuentas,
-      dto.tipo,
-    );
+    const idPlanCuentas = await this.resolverPlanCuentas(dto.idPlanCuentas);
     const personaAutorizo = await resolverPersonaAutorizo(
       this.personaRepository,
       dto.idPersonaAutorizo,
@@ -274,10 +257,7 @@ export class TraspasoService {
       );
     }
 
-    const idPlanCuentas = await this.resolverPlanCuentas(
-      dto.idPlanCuentas,
-      dto.tipo,
-    );
+    const idPlanCuentas = await this.resolverPlanCuentas(dto.idPlanCuentas);
     // Mismo autorizador => se conserva el snapshot original (no se pisa con
     // los datos actuales de persona_ci); otro autorizador => snapshot nuevo.
     const personaAutorizo =

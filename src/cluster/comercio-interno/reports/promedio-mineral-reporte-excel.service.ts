@@ -1,5 +1,5 @@
 import { proveedorDeRecepcion } from 'src/cluster/comercio-interno/recepcion-proveedor.util';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Borders, Cell, Fill, Worksheet } from 'exceljs';
 import { Repository } from 'typeorm';
@@ -68,7 +68,7 @@ interface MineralColumna {
   etiqueta: string;
 }
 
-interface Rango {
+export interface Rango {
   desde: string;
   hasta: string;
   etiqueta: string;
@@ -87,7 +87,7 @@ export class PromedioMineralReporteExcelService {
     filtros: FiltroReportePromedioDto,
   ): Promise<{ buffer: Buffer; nombreArchivo: string }> {
     const periodo = filtros.periodo ?? 'diario';
-    const rango = this.resolverRango(periodo, filtros.fecha ?? this.hoy());
+    const rango = this.resolverRango(periodo, filtros);
 
     const promedios = await this.buscarPromedios(rango, filtros);
     const minerales = this.mineralesDe(promedios);
@@ -110,6 +110,77 @@ export class PromedioMineralReporteExcelService {
     return {
       buffer: await this.excelService.generate(workbook),
       nombreArchivo: `reporte-promedios-${periodo}-${filtros.estado && filtros.estado !== 'todos' ? filtros.estado + '-' : ''}${rango.desde}_${rango.hasta}.xlsx`,
+    };
+  }
+
+  /**
+   * Lo que la pantalla de reportes muestra antes de descargar: los totales
+   * del período (mismos lotes que el Excel) y el desglose por estado de venta
+   * y por codificación de lote, sin las filas.
+   */
+  async resumen(filtros: FiltroReportePromedioDto) {
+    const periodo = filtros.periodo ?? 'diario';
+    const rango = this.resolverRango(periodo, filtros);
+    const promedios = await this.buscarPromedios(rango, filtros);
+
+    const peso = (p: PromedioReporte) => Number(p.pesoTotalKilogramos ?? 0);
+    const efectivo = (p: PromedioReporte) =>
+      Number(p.totalEfectivoInvertido ?? 0);
+    const redondear = (valor: number, decimales = 2) =>
+      Math.round(valor * 10 ** decimales) / 10 ** decimales;
+
+    const totales = (grupo: PromedioReporte[]) => ({
+      cantidad: grupo.length,
+      totalPesoKg: redondear(grupo.reduce((a, p) => a + peso(p), 0)),
+      totalEfectivoInvertido: redondear(
+        grupo.reduce((a, p) => a + efectivo(p), 0),
+      ),
+    });
+
+    const agrupar = (clave: (p: PromedioReporte) => string) => {
+      const grupos = new Map<string, PromedioReporte[]>();
+      for (const p of promedios) {
+        const k = clave(p);
+        grupos.set(k, [...(grupos.get(k) ?? []), p]);
+      }
+      return [...grupos.entries()]
+        .map(([nombre, grupo]) => ({ nombre, ...totales(grupo) }))
+        .sort((a, b) => b.cantidad - a.cantidad);
+    };
+
+    // Ley ponderada por peso entre los lotes que tienen ese mineral, igual
+    // que la fila TOTAL DEL PERÍODO del Excel.
+    const leyes = this.mineralesDe(promedios).map((m) => {
+      let suma = 0;
+      let base = 0;
+      for (const p of promedios) {
+        const ley = (p.leyes ?? []).find((l) => l.idMineral === m.idMineral);
+        if (ley?.leyPromedio == null) continue;
+        suma += Number(ley.leyPromedio) * peso(p);
+        base += peso(p);
+      }
+      return {
+        mineral: m.etiqueta,
+        leyPromedio: base > 0 ? redondear(suma / base, 3) : null,
+      };
+    });
+
+    return {
+      rango,
+      ...totales(promedios),
+      totalValorizaciones: promedios.reduce(
+        (a, p) => a + Number(p.cantidadValorizaciones ?? 0),
+        0,
+      ),
+      totalSacos: promedios.reduce(
+        (a, p) => a + Number(p.numeroSacosTotal ?? 0),
+        0,
+      ),
+      leyes,
+      porEstado: agrupar((p) => this.estadoDe(p)),
+      porCodificacionLote: agrupar(
+        (p) => p.codificacionLote?.codigo ?? 'SIN CÓDIGO',
+      ),
     };
   }
 
@@ -650,7 +721,26 @@ export class PromedioMineralReporteExcelService {
    * trabaja en UTC solo para la aritmética de días: `promedio.fecha` es DATE,
    * sin hora ni zona.
    */
-  private resolverRango(periodo: PeriodoReportePromedio, fecha: string): Rango {
+  private resolverRango(
+    periodo: PeriodoReportePromedio,
+    filtros: FiltroReportePromedioDto,
+  ): Rango {
+    if (periodo === 'rango') {
+      const desde = filtros.fechaDesde ?? filtros.fechaHasta ?? this.hoy();
+      const hasta = filtros.fechaHasta ?? filtros.fechaDesde ?? this.hoy();
+      if (desde > hasta) {
+        throw new BadRequestException(
+          'La fecha inicial no puede ser posterior a la final.',
+        );
+      }
+      return {
+        desde,
+        hasta,
+        etiqueta: `Del ${this.fechaBo(desde)} al ${this.fechaBo(hasta)}`,
+      };
+    }
+
+    const fecha = filtros.fecha ?? this.hoy();
     const [a, m, d] = fecha.split('-').map(Number);
     const ref = new Date(Date.UTC(a, m - 1, d));
     const iso = (x: Date) => x.toISOString().slice(0, 10);

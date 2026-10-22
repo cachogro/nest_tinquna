@@ -120,7 +120,7 @@ export class FiltrosPromedioMineralDto extends PaginacionQueryDto {
   orderBy = 'id';
 }
 
-export type PeriodoReportePromedio = 'diario' | 'semanal' | 'mensual';
+export type PeriodoReportePromedio = 'diario' | 'semanal' | 'mensual' | 'rango';
 
 export const ESTADOS_VENTA_REPORTE_PROMEDIO = [
   'todos',
@@ -135,14 +135,15 @@ export type EstadoVentaReportePromedio =
 
 export class FiltroReportePromedioDto {
   @ApiPropertyOptional({
-    enum: ['diario', 'semanal', 'mensual'],
+    enum: ['diario', 'semanal', 'mensual', 'rango'],
     default: 'diario',
     description:
       'diario = solo la fecha indicada; semanal = lunes a domingo de la semana ' +
-      'que contiene la fecha; mensual = el mes completo de la fecha.',
+      'que contiene la fecha; mensual = el mes completo de la fecha; ' +
+      'rango = de fechaDesde a fechaHasta (si falta una, se usa la otra).',
   })
   @IsOptional()
-  @IsIn(['diario', 'semanal', 'mensual'])
+  @IsIn(['diario', 'semanal', 'mensual', 'rango'])
   periodo: PeriodoReportePromedio = 'diario';
 
   @ApiPropertyOptional({
@@ -155,6 +156,26 @@ export class FiltroReportePromedioDto {
     message: 'fecha debe tener formato YYYY-MM-DD.',
   })
   fecha?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-07-01',
+    description: 'Inicio del rango (YYYY-MM-DD), con periodo = rango.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'fechaDesde debe tener formato YYYY-MM-DD.',
+  })
+  fechaDesde?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-07-31',
+    description: 'Fin del rango (YYYY-MM-DD), con periodo = rango.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'fechaHasta debe tener formato YYYY-MM-DD.',
+  })
+  fechaHasta?: string;
 
   @ApiPropertyOptional({
     example: '1',

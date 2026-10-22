@@ -37,6 +37,7 @@ import {
 import { MovimientoCajaService } from './movimiento-caja.service';
 import { LibretaBancoService } from './libreta-banco.service';
 import { KardexActividadService } from './kardex-actividad.service';
+import { obtenerCuentaImputable } from 'src/cluster/parametricas/plan-cuentas.util';
 
 // Caja de flujo de la empresa (Caja id=1, "CAJA PRINCIPAL"), igual que recibos.
 const ID_CAJA_EMPRESA = 1;
@@ -425,13 +426,9 @@ export class PagoValorizacionService {
         }
       }
       if (dto.idPlanCuentas) {
-        const destino = await this.dataSource.manager.findOne(PlanCuentas, {
-          where: { id: dto.idPlanCuentas },
-        });
-        if (!destino) {
-          throw new NotFoundException('El plan de cuentas seleccionado no existe.');
-        }
-        idPlanCuentas = destino.id;
+                idPlanCuentas = (
+          await obtenerCuentaImputable(this.dataSource.manager, dto.idPlanCuentas)
+        ).id;
       }
     }
     const cajaEmpresa = medios.some((medio) => !medio.cuentaBancaria)

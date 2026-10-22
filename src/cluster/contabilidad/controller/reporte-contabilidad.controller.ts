@@ -31,7 +31,7 @@ export class ReporteContabilidadController {
   @ApiOperation({
     summary: 'Resumen de caja + bancos agrupado por plan de cuentas',
     description:
-      'Una fila por plan de cuentas con el total ingresado (ganado), el total egresado (gastado) y el neto (ingreso - egreso), combinando los movimientos vigentes de la caja de flujo (efectivo) y de la libreta de bancos (todas las cuentas de la moneda pedida): un recibo o movimiento de kardex pagado por banco no genera fila en la caja, así que sin esto quedaría afuera. Excluye los traspasos internos caja/banco (no son gasto/ingreso real). La moneda es obligatoria porque no se mezclan monedas. Los movimientos sin destino aparecen como "SIN DESTINO". Filtros opcionales: caja (solo afecta el lado efectivo), cuenta bancaria (solo afecta el lado banco) y rango de fechas.',
+      'Una fila por cuenta imputable (tipo D, ordenadas por código) con el total ingresado (ganado), el total egresado (gastado) y el neto (ingreso - egreso), combinando los movimientos vigentes de la caja de flujo (efectivo) y de la libreta de bancos (todas las cuentas de la moneda pedida): un recibo o movimiento de kardex pagado por banco no genera fila en la caja, así que sin esto quedaría afuera. Excluye los traspasos internos caja/banco (no son gasto/ingreso real). La moneda es obligatoria porque no se mezclan monedas. Los movimientos sin plan de cuentas aparecen al final como "SIN PLAN DE CUENTAS". `grupos` trae los subtotales de las cuentas de resumen (niveles 1-4) por las que suben esos movimientos, para mostrarlo como árbol. Filtros opcionales: caja (solo afecta el lado efectivo), cuenta bancaria (solo afecta el lado banco) y rango de fechas.',
   })
   @ApiQuery({ name: 'moneda', required: true, enum: ['BS', 'USD'] })
   @ApiQuery({ name: 'idCaja', required: false, type: Number })
@@ -51,7 +51,7 @@ export class ReporteContabilidadController {
   @ApiOperation({
     summary: 'Detalle de una cuenta del plan de cuentas',
     description:
-      'Movimientos de caja y de banco de una cuenta puntual del plan de cuentas (ej. id 4, venta de combustible), combinados y en orden cronológico (`origen`: CAJA o BANCO), con sus totales de ingreso, egreso y neto. Mismos filtros y exclusión de traspasos que el resumen.',
+      'Movimientos de caja y de banco de una cuenta del plan de cuentas (si es de resumen, de todas sus subcuentas; cada movimiento trae su `planCuentas`), más `kardex`: los kardex con líneas en esa cuenta (titular, cargos, abonos y saldo actual, en Bs; p. ej. con 110205 todos los kardex donde se dieron anticipos), combinados y en orden cronológico (`origen`: CAJA o BANCO), con sus totales de ingreso, egreso y neto. Mismos filtros y exclusión de traspasos que el resumen.',
   })
   @ApiParam({ name: 'id', description: 'Id del plan de cuentas.', example: 4 })
   @ApiQuery({ name: 'moneda', required: true, enum: ['BS', 'USD'] })

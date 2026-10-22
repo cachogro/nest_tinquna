@@ -31,3 +31,17 @@ export function validarMesEnCurso(fecha: string | Date, que: string): void {
     `${que}: la fecha ${iso.split('-').reverse().join('/')} es de ${nombreMes(iso)}, y solo se registran movimientos del mes en curso (${nombreMes(hoy)}). Para corregir otro mes, registrá una regularización en el mes actual.`,
   );
 }
+
+/**
+ * Un movimiento nuevo (o al que se le cambia la fecha) no puede quedar con
+ * fecha posterior a hoy: descuadra el saldo del día aunque sea del mismo mes.
+ * No aplica al anular, para poder anular uno cargado con fecha futura.
+ */
+export function validarFechaNoFutura(fecha: string | Date, que: string): void {
+  const iso = typeof fecha === 'string' ? fecha.slice(0, 10) : fecha.toISOString().slice(0, 10);
+  const hoy = hoyBolivia();
+  if (iso <= hoy) return;
+  throw new BadRequestException(
+    `${que}: la fecha ${iso.split('-').reverse().join('/')} es posterior a hoy (${hoy.split('-').reverse().join('/')}); no se registran movimientos con fecha futura.`,
+  );
+}

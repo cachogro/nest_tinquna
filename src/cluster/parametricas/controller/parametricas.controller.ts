@@ -102,8 +102,7 @@ import { CreateFormaPagoDto } from '../dto/forma-pago/create-forma-pago.dto';
 import { UpdateFormaPagoDto } from '../dto/forma-pago/update-forma-pago.dto';
 import { FormaPagoService } from '../services/forma-pago.service';
 import { CodificacionLote } from '../entities/codificacion-lote.entity';
-import { CreatePlanCuentasDto } from '../dto/plan-cuentas/create-plan-cuentas.dto';
-import { UpdatePlanCuentasDto } from '../dto/plan-cuentas/update-plan-cuentas.dto';
+import { GuardarPlanCuentasDto } from '../dto/plan-cuentas/update-plan-cuentas.dto';
 import { PlanCuentasService } from '../services/plan-cuentas.service';
 import { CreateCodificacionLoteDto } from '../dto/codificacion-lote/create-codificacion-lote.dto';
 import { UpdateCodificacionLoteDto } from '../dto/codificacion-lote/update-codificacion-lote.dto';
@@ -192,10 +191,7 @@ export class ParametricasController {
     @GetUser() user: Usuario,
   ): Promise<Codificacion> {
     if (body.id) {
-      return await this.codificacionService.update(
-        body as UpdateCodificacionDto,
-        user,
-      );
+      return await this.codificacionService.update(body, user);
     }
 
     return await this.codificacionService.create(body, user);
@@ -1558,36 +1554,50 @@ export class ParametricasController {
   @ApiOperation({
     summary: 'Registrar o actualizar una cuenta del plan de cuentas',
     description:
-      'Si no se envía el campo id se registra uno nuevo. Si se envía el id, se actualiza. `esEgreso`: TRUE = egreso, FALSE = ingreso.',
+      'Sin `id` registra una subcuenta de `idPadre`: el código se genera solo (código del padre + siguiente correlativo: 1 / 11 / 1101 / 110101 / 110101001), el nivel es el del padre + 1; el nivel 5 siempre es imputable y el nivel 4 lo es si se envía `tipo: "D"` (cuenta sin subcuentas, p. ej. 110205 ANTICIPOS PROVEEDORES MINERAL SACOS: la persona la da el kardex). Sin `idPadre` se crea una clase (nivel 1). `naturaleza` (D/H) se hereda del padre si no se envía. `categoria` solo aplica a las imputables; si no se envía se copia de una hermana. Con `id` actualiza nombre, naturaleza, categoria, idCuentaAitb y, en el nivel 4, `tipo` (a D si no tiene subcuentas, a R si no tiene movimientos); padre, código y nivel no cambian.',
   })
   @ApiBody({
     description: 'Datos de la cuenta del plan de cuentas.',
+    type: GuardarPlanCuentasDto,
     examples: {
       crear: {
-        summary: 'Registrar',
-        value: { nombre: 'COMBUSTIBLE GASOLINA', esEgreso: true },
+        summary: 'Registrar subcuenta',
+        value: { idPadre: 50, nombre: 'Juan Perez Mamani' },
       },
       actualizar: {
         summary: 'Actualizar',
-        value: { id: 1, nombre: 'COMBUSTIBLE GASOLINA', esEgreso: true },
+        value: {
+          id: 58,
+          nombre: 'Juan Perez Mamani',
+          naturaleza: 'D',
+          categoria: 'PRESTAMO_ANTICIPO',
+        },
       },
     },
   })
   @ApiCreatedResponse({ type: PlanCuentas })
-  @ApiBadRequestResponse({ description: 'Los datos enviados no son válidos.' })
+  @ApiBadRequestResponse({
+    description:
+      'Datos no válidos, padre de detalle o dado de baja, o el padre ya no admite más subcuentas.',
+  })
   @ApiConflictResponse({
-    description: 'Ya existe una cuenta del plan de cuentas con ese nombre.',
+    description:
+      'Ya existe una cuenta con ese nombre dentro de la misma cuenta padre.',
   })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   @ApiInternalServerErrorResponse({
     description: 'Error interno del servidor.',
   })
   async createPlanCuentas(
-    @Body() body: CreatePlanCuentasDto | UpdatePlanCuentasDto,
+    @Body() body: GuardarPlanCuentasDto,
     @GetUser() user: Usuario,
   ): Promise<PlanCuentas> {
-    if ('id' in body && body.id) {
-      return await this.planCuentasService.update(body, user);
+    if (body.id) {
+      // idPadre se ignora: al actualizar no cambia.
+      return await this.planCuentasService.update(
+        { ...body, id: body.id },
+        user,
+      );
     }
     return await this.planCuentasService.create(body, user);
   }
@@ -1596,7 +1606,8 @@ export class ParametricasController {
   @Auth(...RolesModules.configuraciones)
   @ApiOperation({
     summary: 'Cambiar estado de una cuenta del plan de cuentas',
-    description: 'Activa o desactiva (baja lógica) una cuenta del plan de cuentas.',
+    description:
+      'Activa o desactiva (baja lógica) una cuenta. En una cuenta de resumen el cambio se aplica a toda su rama (todas sus subcuentas). Para reactivar, la cuenta padre debe estar activa. Devuelve la cuenta y cuántas cuentas cambiaron.',
   })
   @ApiParam({ name: 'id', example: '1' })
   @ApiBody({
@@ -1605,14 +1616,25 @@ export class ParametricasController {
       properties: { activo: { type: 'boolean', example: false } },
     },
   })
-  @ApiOkResponse({ type: PlanCuentas })
-  @ApiNotFoundResponse({ description: 'No se encontró la cuenta del plan de cuentas.' })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        cuenta: { type: 'object' },
+        cuentasAfectadas: { type: 'number', example: 8 },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'La cuenta padre está dada de baja.' })
+  @ApiNotFoundResponse({
+    description: 'No se encontró la cuenta del plan de cuentas.',
+  })
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   async changeStatePlanCuentas(
     @Param('id', ParseIntPipe) id: number,
     @Body('activo', ParseBoolPipe) activo: boolean,
     @GetUser() user: Usuario,
-  ): Promise<PlanCuentas> {
+  ): Promise<{ cuenta: PlanCuentas; cuentasAfectadas: number }> {
     return await this.planCuentasService.cambiarEstado(id, activo, user);
   }
 
@@ -1621,7 +1643,7 @@ export class ParametricasController {
   @ApiOperation({
     summary: 'Obtener el plan de cuentas',
     description:
-      'Catálogo de categorías de ingreso/egreso de la caja de flujo ("PLAN DE CUENTAS" del Excel), cada una marcada como ingreso o egreso (`esEgreso`). Por defecto solo los activos; con `todos=true` incluye los inactivos (para la pantalla de administración).',
+      'Plan de cuentas contable, ordenado por código. Por defecto solo las cuentas imputables (tipo D: nivel 5, o nivel 4 sin subcuentas) activas: es el catálogo de caja, recibos, bancos, kardex, etc., cada una con su `categoria` y su cuenta `padre`. Se usan en cualquier dirección: si entra o sale dinero lo dice el movimiento. Con `todos=true` devuelve el árbol completo (niveles 1 a 5, inactivas incluidas) como lista plana que se arma con `idPadre` (`tipo` R = resumen, D = imputable; `naturaleza` D = deudora, H = acreedora).',
   })
   @ApiQuery({ name: 'todos', required: false, type: Boolean })
   @ApiResponse({ status: 200, type: [PlanCuentas] })

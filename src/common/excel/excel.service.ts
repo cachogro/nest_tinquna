@@ -221,6 +221,46 @@ export class ExcelService {
   }
 
   /**
+   * Impresión en hoja carta horizontal: todas las columnas en el ancho de
+   * una hoja (las filas siguen en las hojas que hagan falta), márgenes
+   * angostos, encabezado de la tabla repetido en cada hoja y texto ajustado
+   * dentro de la celda. Llamar al final, con los anchos ya definidos.
+   */
+  configurarImpresionCartaHorizontal(
+    worksheet: ExcelJS.Worksheet,
+    filaEncabezado: number,
+  ): void {
+    worksheet.pageSetup = {
+      ...worksheet.pageSetup,
+      paperSize: 1 as ExcelJS.PaperSize, // carta (Letter)
+      orientation: 'landscape',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      horizontalCentered: true,
+      printTitlesRow: `${filaEncabezado}:${filaEncabezado}`,
+      margins: {
+        left: 0.25,
+        right: 0.25,
+        top: 0.4,
+        bottom: 0.4,
+        header: 0.2,
+        footer: 0.2,
+      },
+    };
+    worksheet.headerFooter = {
+      oddFooter: '&LGenerado el &D &T&RPágina &P de &N',
+    };
+
+    worksheet.eachRow((row, numero) => {
+      if (numero < filaEncabezado) return;
+      row.eachCell((cell) => {
+        cell.alignment = { ...cell.alignment, wrapText: true };
+      });
+    });
+  }
+
+  /**
    * Devuelve el archivo como Buffer
    */
   async generate(

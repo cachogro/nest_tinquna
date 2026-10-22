@@ -28,7 +28,7 @@ import {
   recalcularSaldoKardex,
   siguienteNumeroLineaKardex,
 } from '../kardex-posteo.util';
-import { validarMesEnCurso } from '../mes-en-curso.util';
+import { validarFechaNoFutura, validarMesEnCurso } from '../mes-en-curso.util';
 import {
   origenDeMovimiento,
   origenesDeMovimientos,
@@ -36,6 +36,7 @@ import {
 } from '../origen-movimiento.util';
 import { KardexActividadService } from './kardex-actividad.service';
 import { ChequeService } from './cheque.service';
+import { obtenerCuentaImputable } from 'src/cluster/parametricas/plan-cuentas.util';
 
 /** Relaciones que se devuelven al crear/editar/cambiar estado un movimiento. */
 const RELACIONES_MOVIMIENTO = {
@@ -296,13 +297,9 @@ export class LibretaBancoService {
     if (!idPlanCuentas) {
       return null;
     }
-    const planCuentas = await this.planCuentasRepository.findOne({
-      where: { id: idPlanCuentas },
-    });
-    if (!planCuentas) {
-      throw new NotFoundException('El plan de cuentas indicado no existe.');
-    }
-    return planCuentas.id;
+        return (
+      await obtenerCuentaImputable(this.planCuentasRepository.manager, idPlanCuentas)
+    ).id;
   }
 
   /** Folio siguiente para la libreta de una cuenta dentro de una gestión. */
@@ -473,6 +470,7 @@ export class LibretaBancoService {
         `La cuenta bancaria "${cuenta.numeroCuenta}" se aperturó el ${apertura.split('-').reverse().join('/')}: no se pueden registrar movimientos con fecha anterior.`,
       );
     }
+    validarFechaNoFutura(datos.fecha, `Cuenta ${cuenta.numeroCuenta}`);
     validarMesEnCurso(datos.fecha, `Cuenta ${cuenta.numeroCuenta}`);
     const [gestion, mes] = this.gestionMesDeFecha(datos.fecha);
     const periodo = await this.obtenerOCrearPeriodoMensual(
@@ -795,6 +793,7 @@ export class LibretaBancoService {
   ): Promise<void> {
     // Se edita solo dentro del mes en curso (la fecha vieja y la nueva).
     validarMesEnCurso(mov.fecha, 'Movimiento de banco');
+    validarFechaNoFutura(campos.fecha, 'Movimiento de banco');
     validarMesEnCurso(campos.fecha, 'Movimiento de banco');
     const [gestion, mes] = this.gestionMesDeFecha(campos.fecha);
     let idPeriodoBanco = mov.idPeriodoBanco;

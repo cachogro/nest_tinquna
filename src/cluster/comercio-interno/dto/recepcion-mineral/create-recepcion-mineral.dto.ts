@@ -1,6 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsDefined,
+  IsInt,
   IsNotEmpty,
+  Max,
+  Min,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -58,31 +62,30 @@ export class CreateRecepcionMineralDto {
   })
   nombresApellidos?: string | null;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     description:
-      'Cantidad de sacos recibidos. Es opcional (por ejemplo, para RAM CARGAS) y se guarda como 0 si no se envía.',
+      'Cantidad de sacos recibidos. Obligatorio para toda codificación; 0 si no aplica (ej. RAM o cargas).',
     example: 120,
   })
-  @IsOptional()
-  @IsNumber(
-    {},
-    {
-      message: 'El número de sacos debe ser un número válido.',
-    },
-  )
-  @IsPositive({
-    message: 'El número de sacos debe ser mayor a cero.',
+  @IsDefined({
+    message: 'El número de sacos es obligatorio (0 si no aplica).',
   })
-  numeroSacos?: number;
+  @IsInt({
+    message: 'El número de sacos debe ser un número entero.',
+  })
+  @Min(0, {
+    message: 'El número de sacos no puede ser negativo.',
+  })
+  numeroSacos: number;
 
   @ApiProperty({
     description: 'Peso neto del mineral en kilogramos.',
     example: 2450.35897,
   })
   @IsNumber(
-    {},
+    { maxDecimalPlaces: 5 },
     {
-      message: 'El peso neto debe ser un número válido balanza L.',
+      message: 'La balanza L debe ser un número válido (hasta 5 decimales).',
     },
   )
   @IsPositive({
@@ -90,21 +93,21 @@ export class CreateRecepcionMineralDto {
   })
   balanzaL: number;
 
-  @ApiProperty({
-    description: 'Peso neto del mineral en kilogramos balanza t.',
+  @ApiPropertyOptional({
+    description: 'Peso neto del mineral en kilogramos balanza T (0 si no aplica).',
     example: 2450.35897,
   })
   @IsOptional()
   @IsNumber(
-    {},
+    { maxDecimalPlaces: 5 },
     {
-      message: 'El peso neto debe ser un número válido.',
+      message: 'La balanza T debe ser un número válido (hasta 5 decimales).',
     },
   )
-  @IsPositive({
-    message: 'El peso neto debe ser mayor a cero.',
+  @Min(0, {
+    message: 'El peso de balanza T no puede ser negativo.',
   })
-  balanzaT: number;
+  balanzaT?: number;
 
   @ApiPropertyOptional({
     description: 'Monto del anticipo entregado al proveedor.',
@@ -112,11 +115,14 @@ export class CreateRecepcionMineralDto {
   })
   @IsOptional()
   @IsNumber(
-    {},
+    { maxDecimalPlaces: 2 },
     {
-      message: 'El anticipo debe ser un número válido.',
+      message: 'El anticipo debe ser un número válido (hasta 2 decimales).',
     },
   )
+  @Min(0, {
+    message: 'El anticipo no puede ser negativo.',
+  })
   anticipo?: number;
 
   @ApiPropertyOptional({
@@ -125,11 +131,17 @@ export class CreateRecepcionMineralDto {
   })
   @IsOptional()
   @IsNumber(
-    {},
+    { maxDecimalPlaces: 5 },
     {
-      message: 'La Humedad debe ser un número válido.',
+      message: 'La humedad debe ser un número válido (hasta 5 decimales).',
     },
   )
+  @Min(0, {
+    message: 'La humedad no puede ser negativa.',
+  })
+  @Max(100, {
+    message: 'La humedad no puede superar 100%.',
+  })
   humedad?: number;
 
   @ApiProperty({

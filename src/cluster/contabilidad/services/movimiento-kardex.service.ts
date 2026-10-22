@@ -30,6 +30,8 @@ import {
   origenesDeLineasKardex,
   validarSinOrigen,
 } from '../origen-movimiento.util';
+import { validarFechaNoFutura } from '../mes-en-curso.util';
+import { obtenerCuentaImputable } from 'src/cluster/parametricas/plan-cuentas.util';
 
 const RELACIONES = {
   subcuenta: true,
@@ -245,14 +247,7 @@ export class MovimientoKardexService {
       }
     }
     if (dto.idPlanCuentas) {
-      const existe = await this.planCuentasRepository.findOne({
-        where: { id: dto.idPlanCuentas },
-      });
-      if (!existe) {
-        throw new NotFoundException(
-          'No existe el plan de cuentas seleccionado.',
-        );
-      }
+      await obtenerCuentaImputable(this.planCuentasRepository.manager, dto.idPlanCuentas);
     }
     if (dto.idCobrador) {
       const existe = await this.personaRepository.findOne({
@@ -391,6 +386,7 @@ export class MovimientoKardexService {
     dto: CreateMovimientoKardexDto,
     user: Usuario,
   ): Promise<MovimientoKardex> {
+    validarFechaNoFutura(dto.fecha, 'Movimiento de kardex');
     return dto.id ? this.actualizar(dto, user) : this.crear(dto, user);
   }
 

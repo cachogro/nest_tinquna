@@ -21,6 +21,7 @@ import { PersonaCiService } from './services/persona-ci.service';
 import { PersonaCi } from './entities/persona-ci.entity';
 import { ConfigModule } from '@nestjs/config';
 import { RecepcionMineralExcelService } from './reports/recepcion-mineral-excel.service';
+import { RecepcionMineralCompletoReporteService } from './reports/recepcion-mineral-completo-reporte.service';
 import { RecepcionMineralReportePdfService } from './reports/recepcion-mineral-pdf.service';
 import { CommonModule } from 'src/common/common.module';
 import { ReciboRecepcionMineralPdfService } from './services/recibo-pdf-recepcion-mineral.service';
@@ -33,6 +34,7 @@ import { ValorizacionMineralPdfService } from './services/valorizacion-mineral-p
 import { ValorizacionEntregadoService } from './services/valorizacion-entregado.service';
 import { ValorizacionMineralReportesService } from './reports/valorizacion-mineral-reportes.service';
 import { ValorizacionMineralReporteExcelService } from './reports/valorizacion-mineral-reporte-excel.service';
+import { ValorizacionMineralReportePdfService } from './reports/valorizacion-mineral-reporte-pdf.service';
 import { PromedioMineralReporteExcelService } from './reports/promedio-mineral-reporte-excel.service';
 
 @Module({
@@ -40,6 +42,7 @@ import { PromedioMineralReporteExcelService } from './reports/promedio-mineral-r
     ComercioInternoService,
     PersonaCiService,
     RecepcionMineralExcelService,
+    RecepcionMineralCompletoReporteService,
     RecepcionMineralReportePdfService,
     RecepcionMineralReportesService,
     ReciboRecepcionMineralPdfService,
@@ -49,6 +52,7 @@ import { PromedioMineralReporteExcelService } from './reports/promedio-mineral-r
     PromedioMineralService,
     ValorizacionMineralReportesService,
     ValorizacionMineralReporteExcelService,
+    ValorizacionMineralReportePdfService,
     PromedioMineralReporteExcelService,
   ],
   controllers: [

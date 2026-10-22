@@ -65,6 +65,20 @@ export class PromedioMineralController {
     res.end(buffer);
   }
 
+  @Get('promedio_mineral/reporte/resumen')
+  @Auth()
+  @ApiOperation({
+    summary: 'Resumen del reporte de promedios',
+    description:
+      'Mismos filtros y lotes que el Excel. Devuelve el rango resuelto, los ' +
+      'totales (lotes, valorizaciones, sacos, peso, efectivo invertido), la ley ' +
+      'ponderada por mineral y el desglose por estado de venta y por ' +
+      'codificación de lote, sin las filas.',
+  })
+  reporteResumen(@Query() filtros: FiltroReportePromedioDto) {
+    return this.reporteExcelService.resumen(filtros);
+  }
+
   @Get('promedio_mineral/disponibles')
   @Auth()
   @ApiOperation({

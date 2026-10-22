@@ -14,6 +14,7 @@ import { Auth, RoleProtected } from 'src/security/decorators';
 import { RolesModules } from 'src/security/enums/valid-roles';
 import { ValorizacionMineralReportesService } from '../reports/valorizacion-mineral-reportes.service';
 import { ValorizacionMineralReporteExcelService } from '../reports/valorizacion-mineral-reporte-excel.service';
+import { ValorizacionMineralReportePdfService } from '../reports/valorizacion-mineral-reporte-pdf.service';
 import { FiltroReporteValorizacionDto } from '../dto/reportes/filtro-reporte-valorizacion.dto';
 
 const QUERY_REPORTE = [
@@ -85,7 +86,44 @@ export class ReportesValorizacionMineralController {
   constructor(
     private readonly reportesService: ValorizacionMineralReportesService,
     private readonly excelService: ValorizacionMineralReporteExcelService,
+    private readonly pdfService: ValorizacionMineralReportePdfService,
   ) {}
+
+  @Get('pdf')
+  @Auth()
+  @ApiOperation({
+    summary: 'Reporte de valorizaciones (PDF)',
+    description:
+      'Mismos datos, filtros y columnas que el Excel, en carta horizontal con ' +
+      'fila de totales y numeración de páginas.',
+  })
+  @ApiQuery(QUERY_REPORTE[0])
+  @ApiQuery(QUERY_REPORTE[1])
+  @ApiQuery(QUERY_REPORTE[2])
+  @ApiQuery(QUERY_REPORTE[3])
+  @ApiQuery(QUERY_REPORTE[4])
+  @ApiQuery(QUERY_REPORTE[5])
+  @ApiQuery(QUERY_REPORTE[6])
+  @ApiQuery(QUERY_REPORTE[7])
+  @ApiOkResponse({ description: 'Archivo .pdf generado correctamente.' })
+  @ApiBadRequestResponse({
+    description: 'Combinación de filtros de fecha inválida.',
+  })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  async pdf(
+    @Query() filtros: FiltroReporteValorizacionDto,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.pdfService.generar(filtros);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename=reporte-valorizaciones.pdf',
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
 
   @Get()
   @Auth()
@@ -115,6 +153,32 @@ export class ReportesValorizacionMineralController {
   @ApiUnauthorizedResponse({ description: 'No autorizado.' })
   async reporte(@Query() filtros: FiltroReporteValorizacionDto) {
     return await this.reportesService.reporte(filtros);
+  }
+
+  @Get('resumen')
+  @Auth()
+  @ApiOperation({
+    summary: 'Resumen del reporte de valorizaciones',
+    description:
+      'Mismos filtros que el Excel. Devuelve solo los totales (cantidad, ' +
+      'pre-valorizadas/valorizadas, entregados, sacos, peso, montos) y el ' +
+      'desglose por codificación efectiva, sin las filas.',
+  })
+  @ApiQuery(QUERY_REPORTE[0])
+  @ApiQuery(QUERY_REPORTE[1])
+  @ApiQuery(QUERY_REPORTE[2])
+  @ApiQuery(QUERY_REPORTE[3])
+  @ApiQuery(QUERY_REPORTE[4])
+  @ApiQuery(QUERY_REPORTE[5])
+  @ApiQuery(QUERY_REPORTE[6])
+  @ApiQuery(QUERY_REPORTE[7])
+  @ApiOkResponse({ description: 'Resumen calculado correctamente.' })
+  @ApiBadRequestResponse({
+    description: 'Combinación de filtros de fecha inválida.',
+  })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  async resumen(@Query() filtros: FiltroReporteValorizacionDto) {
+    return await this.reportesService.resumen(filtros);
   }
 
   @Get('excel')

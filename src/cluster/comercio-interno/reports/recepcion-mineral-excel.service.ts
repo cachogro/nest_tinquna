@@ -46,7 +46,7 @@ export class RecepcionMineralExcelService {
     this.excelService.addHeader(
       worksheet,
       [
-        'ID',
+        'N°',
         'Código / Lote',
         'Proveedor',
         'N° Sacos',
@@ -116,6 +116,18 @@ export class RecepcionMineralExcelService {
         1: 6,
         2: 10,
       },
+      filaInicio,
+    );
+
+    // Proveedor y observación largos bajan de línea en vez de ensanchar la
+    // hoja (se imprime en carta horizontal).
+    [3, 8].forEach((col) => {
+      const columna = worksheet.getColumn(col);
+      columna.width = Math.min(columna.width ?? 12, 35);
+    });
+
+    this.excelService.configurarImpresionCartaHorizontal(
+      worksheet,
       filaInicio,
     );
 

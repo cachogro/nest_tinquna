@@ -52,7 +52,8 @@ import { MovimientoCajaService } from './movimiento-caja.service';
 import { LibretaBancoService } from './libreta-banco.service';
 import { KardexActividadService } from './kardex-actividad.service';
 import { aBolivianos, resolverTipoCambio, validarMonedaCuenta } from '../moneda.util';
-import { validarMesEnCurso } from '../mes-en-curso.util';
+import { validarFechaNoFutura, validarMesEnCurso } from '../mes-en-curso.util';
+import { obtenerCuentaImputable } from 'src/cluster/parametricas/plan-cuentas.util';
 
 // La caja de flujo (Caja id=1, "CAJA PRINCIPAL") es el registro maestro de
 // la empresa: todo recibo, además de postear en los kardex de sus detalles,
@@ -616,15 +617,9 @@ export class ReciboService {
     if (!idPlanCuentas) {
       return null;
     }
-    const planCuentas = await this.planCuentasRepository.findOne({
-      where: { id: idPlanCuentas },
-    });
-    if (!planCuentas) {
-      throw new NotFoundException(
-        'No existe el plan de cuentas seleccionado.',
-      );
-    }
-    return planCuentas.id;
+        return (
+      await obtenerCuentaImputable(this.planCuentasRepository.manager, idPlanCuentas)
+    ).id;
   }
 
   private async resolverFormaPagoOpcional(
@@ -1174,6 +1169,7 @@ export class ReciboService {
     dto: CreateReciboDto,
     user: Usuario,
   ): Promise<(manager: EntityManager) => Promise<Recibo>> {
+    validarFechaNoFutura(dto.fecha, 'El recibo');
     // En un pago con descuento los medios cubren solo lo entregado.
     const medios = await this.resolverMedios(
       dto.pagos,

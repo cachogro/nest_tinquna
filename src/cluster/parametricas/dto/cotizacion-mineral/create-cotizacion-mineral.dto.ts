@@ -3,6 +3,7 @@ import {
   IsDateString,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsPositive,
   Min,
 } from 'class-validator';
@@ -17,12 +18,28 @@ export class CreateCotizacionMineralDto {
   @Type(() => Number)
   @IsNumber(
     { maxDecimalPlaces: 5 },
-    { message: 'La cotización debe ser un número válido con máximo 5 decimales.' }
+    {
+      message:
+        'La cotización debe ser un número válido con máximo 5 decimales.',
+    },
   )
   @Min(0, { message: 'La cotización no puede ser negativa.' })
   cotizacionMineralDolares: number;
 
   @IsNotEmpty({ message: 'La fecha de vigencia final es obligatoria.' })
-  @IsDateString({}, { message: 'La fecha de vigencia final no tiene un formato válido.' })
+  @IsDateString(
+    {},
+    { message: 'La fecha de vigencia final no tiene un formato válido.' },
+  )
   fechaVigenciaFinal: Date;
+
+  // Inicio del rango. Hoy (u omitido) = la vigencia empieza al crearla; un
+  // día anterior = cotización pasada (migración del registro manual).
+  // Obligatorio si la vigencia final ya pasó.
+  @IsOptional()
+  @IsDateString(
+    {},
+    { message: 'La fecha de vigencia inicial no tiene un formato válido.' },
+  )
+  fechaVigenciaInicial?: Date;
 }

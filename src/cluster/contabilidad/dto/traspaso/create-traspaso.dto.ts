@@ -68,7 +68,7 @@ export class CreateTraspasoDto {
   @ApiPropertyOptional({
     example: 5,
     description:
-      'Id del plan de cuentas / categoría del ingreso (parametrica.plan_cuentas), igual que en los detalles de un recibo. Debe ser uno de EGRESO si tipo=DEPOSITO, o de INGRESO si tipo=RETIRO (según su `esEgreso`). Se refleja tanto en el movimiento de la caja de flujo como en el de la libreta de bancos que genera el traspaso; en ambos queda excluido del resumen de "cuánto se gastó/ingresó" por destino (`/contabilidad/reportes/plan-cuentas`), que es solo para gasto/ingreso real del negocio.',
+      'Id de la cuenta del plan de cuentas (parametrica.plan_cuentas), igual que en los detalles de un recibo. Debe ser una cuenta imputable (tipo D) activa (por ejemplo la del banco o la de caja). Se refleja tanto en el movimiento de la caja de flujo como en el de la libreta de bancos que genera el traspaso; en ambos queda excluido del resumen de "cuánto se gastó/ingresó" por destino (`/contabilidad/reportes/plan-cuentas`), que es solo para gasto/ingreso real del negocio.',
   })
   @IsOptional()
   @Type(() => Number)

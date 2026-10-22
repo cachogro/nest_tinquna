@@ -32,15 +32,13 @@ import { CreateValorizacionMineralDto } from '../dto/valorizacion/create-valoriz
 import { FiltrosValorizacionMineralDto } from '../dto/valorizacion/filtros-valorizacion-mineral.dto';
 import { ValorizacionesMineralPaginadasDto } from '../dto/valorizacion/valorizacion-mineral-paginado.dto';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
-
-// ============================
-// Estados de recepción habilitados para generar/editar una valorización
-// (parametrica.estado_registro): 2 = APROBADO, 6 = REMUESTREO
-// ============================
-const ESTADOS_RECEPCION_VALORIZABLES = [2, 6];
+import {
+  ESTADOS_RECEPCION_VALORIZABLES,
+  EstadoRecepcion,
+} from 'src/cluster/enum/estado-recepcion.enum';
 
 // Estado al que pasa la recepción una vez que la valorización queda VALORIZADA
-const ESTADO_RECEPCION_TRANZADO = 5;
+const ESTADO_RECEPCION_TRANZADO = EstadoRecepcion.TRANZADO;
 
 // ============================
 // Estados de la valorización (parametrica.estado_valorizacion)

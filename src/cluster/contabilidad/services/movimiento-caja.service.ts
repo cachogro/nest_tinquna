@@ -21,12 +21,13 @@ import { Kardex } from '../entities/kardex.entity';
 import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
 import { aBolivianos, resolverTipoCambio } from '../moneda.util';
 import { recalcularSaldoKardex } from '../kardex-posteo.util';
-import { validarMesEnCurso } from '../mes-en-curso.util';
+import { validarFechaNoFutura, validarMesEnCurso } from '../mes-en-curso.util';
 import {
   origenDeMovimiento,
   origenesDeMovimientos,
   validarSinOrigen,
 } from '../origen-movimiento.util';
+import { obtenerCuentaImputable } from 'src/cluster/parametricas/plan-cuentas.util';
 
 @Injectable()
 export class MovimientoCajaService {
@@ -113,13 +114,9 @@ export class MovimientoCajaService {
     if (!idPlanCuentas) {
       return null;
     }
-    const planCuentas = await this.planCuentasRepository.findOne({
-      where: { id: idPlanCuentas },
-    });
-    if (!planCuentas) {
-      throw new NotFoundException('El plan de cuentas indicado no existe.');
-    }
-    return planCuentas.id;
+        return (
+      await obtenerCuentaImputable(this.planCuentasRepository.manager, idPlanCuentas)
+    ).id;
   }
 
   /** Línea de kardex enlazada al movimiento (si la tiene), validando que su kardex siga abierto. */
@@ -375,6 +372,7 @@ export class MovimientoCajaService {
         `La caja "${caja.nombre}" se aperturó el ${apertura.split('-').reverse().join('/')} en ${datos.moneda}: no se pueden registrar movimientos con fecha anterior.`,
       );
     }
+    validarFechaNoFutura(datos.fecha, `Caja ${caja.nombre}`);
     validarMesEnCurso(datos.fecha, `Caja ${caja.nombre}`);
     const [gestion, mes] = this.gestionMesDeFecha(datos.fecha);
     const periodo = await this.obtenerOCrearPeriodoMensual(
@@ -615,6 +613,7 @@ export class MovimientoCajaService {
   ): Promise<void> {
     // Se edita solo dentro del mes en curso (la fecha vieja y la nueva).
     validarMesEnCurso(mov.fecha, 'Movimiento de caja');
+    validarFechaNoFutura(campos.fecha, 'Movimiento de caja');
     validarMesEnCurso(campos.fecha, 'Movimiento de caja');
     const [gestion, mes] = this.gestionMesDeFecha(campos.fecha);
     let idPeriodoCaja = mov.idPeriodoCaja;
@@ -736,7 +735,7 @@ export class MovimientoCajaService {
         'per.numeroDocumento',
       ])
       .leftJoin('m.planCuentas', 'dg')
-      .addSelect(['dg.id', 'dg.nombre'])
+      .addSelect(['dg.id', 'dg.codigo', 'dg.nombre'])
       .where('m.idCaja = :id', { id: caja.id })
       .andWhere('m.moneda = :moneda', { moneda: filtro.moneda });
 

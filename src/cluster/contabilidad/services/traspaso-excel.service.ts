@@ -1,3 +1,4 @@
+import { textoCuenta } from 'src/cluster/parametricas/plan-cuentas.util';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Worksheet } from 'exceljs';
 
@@ -21,7 +22,7 @@ const COLUMNAS: ColumnaContable[] = [
   { titulo: 'CONCEPTO', ancho: 36 },
   { titulo: 'CUENTA BANCARIA', ancho: 26 },
   { titulo: 'N° COMPROBANTE', ancho: 15, alineacion: 'center' },
-  { titulo: 'PLAN DE CUENTAS', ancho: 22 },
+  { titulo: 'PLAN DE CUENTAS', ancho: 36 },
   { titulo: 'MONEDA', ancho: 9, alineacion: 'center' },
   { titulo: 'DEPÓSITO (CAJA → BANCO)', ancho: 16, importe: true },
   { titulo: 'RETIRO (BANCO → CAJA)', ancho: 16, importe: true },
@@ -106,7 +107,7 @@ export class TraspasoExcelService {
         traspaso.concepto,
         this.cuenta(traspaso),
         traspaso.nroComprobante ?? '',
-        traspaso.planCuentas?.nombre ?? '',
+        textoCuenta(traspaso.planCuentas),
         SIMBOLO[traspaso.moneda] ?? traspaso.moneda,
         traspaso.tipo === 'DEPOSITO' ? monto : null,
         traspaso.tipo === 'RETIRO' ? monto : null,

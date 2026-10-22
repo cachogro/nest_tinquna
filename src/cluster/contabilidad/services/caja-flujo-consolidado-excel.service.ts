@@ -1,3 +1,4 @@
+import { textoCuenta } from 'src/cluster/parametricas/plan-cuentas.util';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, Not } from 'typeorm';
@@ -151,7 +152,7 @@ export class CajaFlujoConsolidadoExcelService {
         facturaRecibo: m.facturaRecibo ?? '',
         nroComprobante: m.nroComprobante ?? '',
         medio: m.formaPago?.nombre ?? 'EFECTIVO',
-        destino: m.planCuentas?.nombre ?? '',
+        destino: textoCuenta(m.planCuentas),
         ingreso: Number(m.ingreso),
         egreso: Number(m.egreso),
       })),
@@ -167,7 +168,7 @@ export class CajaFlujoConsolidadoExcelService {
         facturaRecibo: l.facturaRecibo ?? '',
         nroComprobante: l.nroTransaccion ?? '',
         medio: l.tipoTransaccion ?? '',
-        destino: l.planCuentas?.nombre ?? '',
+        destino: textoCuenta(l.planCuentas),
         ingreso: Number(l.haber),
         egreso: Number(l.debe),
       })),
@@ -253,7 +254,7 @@ export class CajaFlujoConsolidadoExcelService {
       { titulo: 'FACTURA Y/O RECIBO', ancho: 14, alineacion: 'center' },
       { titulo: 'Nº CPTE', ancho: 14, alineacion: 'center' },
       { titulo: 'MEDIO / N° DE CHEQUE', ancho: 14, alineacion: 'center' },
-      { titulo: 'PLAN DE CUENTAS', ancho: 28 },
+      { titulo: 'PLAN DE CUENTAS', ancho: 40 },
     ];
     const columnasImporte: ColumnaContable[] = cuentas.flatMap((c) => [
       { titulo: `INGRESO ${c.simbolo}`, ancho: 14, importe: true },

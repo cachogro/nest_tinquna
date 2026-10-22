@@ -20,6 +20,7 @@ import { ReponerFondoRendirDto } from '../dto/fondo-rendir/reponer-fondo-rendir.
 import { ReciboService } from './recibo.service';
 import { MovimientoKardexService } from './movimiento-kardex.service';
 import { KardexActividadService } from './kardex-actividad.service';
+import { obtenerCuentaImputable } from 'src/cluster/parametricas/plan-cuentas.util';
 
 const RELACIONES = {
   persona: true,
@@ -129,13 +130,9 @@ export class FondoRendirService {
     if (!idPlanCuentas) {
       return null;
     }
-    const destino = await this.planCuentasRepository.findOne({
-      where: { id: idPlanCuentas },
-    });
-    if (!destino) {
-      throw new NotFoundException('No existe el plan de cuentas seleccionado.');
-    }
-    return destino.id;
+        return (
+      await obtenerCuentaImputable(this.planCuentasRepository.manager, idPlanCuentas)
+    ).id;
   }
 
   /** Kardex ABIERTO del destinatario (PERSONAL/ASOCIADO por persona, ACTOR por actor), si tiene. */

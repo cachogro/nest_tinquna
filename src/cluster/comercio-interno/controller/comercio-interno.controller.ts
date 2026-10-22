@@ -41,9 +41,9 @@ import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltrosPersonaDto } from '../dto/persona-ci/filtros-persona-ci.dto';
 import { PersonasPaginadasDto } from '../dto/persona-ci/persona-paginacion.dto';
 import { FiltrosRegistroMineralDto } from '../dto/recepcion-mineral/filtros-registro-mineral.dto';
-import { CreateRecepcionMineralDto } from '../dto/recepcion-mineral/create-recepcion-mineral.dto';
 import { RegistrosMineralPaginadosDto } from '../dto/recepcion-mineral/registro-mineral-paginado.dto';
 import { RecepcionMineralExcelService } from '../reports/recepcion-mineral-excel.service';
+import { RecepcionMineralCompletoReporteService } from '../reports/recepcion-mineral-completo-reporte.service';
 import { RecepcionMineralReportePdfService } from '../reports/recepcion-mineral-pdf.service';
 import { ValorizacionMineralService } from '../services/valorizacion-mineral.service';
 import { ValorizacionMineralPdfService } from '../services/valorizacion-mineral-pdf.service';
@@ -63,6 +63,7 @@ export class ComercioInternoController {
     private readonly comercioInternoService: ComercioInternoService,
     private readonly personaCiService: PersonaCiService,
     private readonly recepcionMineralExcelService: RecepcionMineralExcelService,
+    private readonly recepcionMineralCompletoReporteService: RecepcionMineralCompletoReporteService,
     private readonly recepcionMineralReportePdfService: RecepcionMineralReportePdfService,
     private readonly valorizacionMineralService: ValorizacionMineralService,
     private readonly valorizacionMineralPdfService: ValorizacionMineralPdfService,
@@ -357,8 +358,10 @@ export class ComercioInternoController {
     description: 'Error interno del servidor.',
   })
   async createRM(
+    // Una clase concreta (no una unión de tipos): con la unión, Nest no sabe
+    // qué DTO aplicar y el ValidationPipe no validaba nada.
     @Body()
-    body: CreateRecepcionMineralDto | UpdateRecepcionMineralDto,
+    body: UpdateRecepcionMineralDto,
     @GetUser() user: Usuario,
   ): Promise<RecepcionMineral> {
     if ('id' in body && body.id) {
@@ -397,7 +400,7 @@ export class ComercioInternoController {
     type: RecepcionMineral,
   })
   @ApiBadRequestResponse({
-    description: 'La recepción ya fue liquidada.',
+    description: 'La recepción está tranzada o cancelada, o la transición de estado no está permitida.',
   })
   @ApiNotFoundResponse({
     description: 'La recepción o el estado no existen.',
@@ -645,6 +648,27 @@ export class ComercioInternoController {
     res.end(buffer);
   }
 
+  //--------------reporte resumen---------------------
+
+  @Get('recepcion_mineral/reporte_resumen')
+  @Auth()
+  @ApiOperation({
+    summary: 'Resumen del reporte de recepción de mineral',
+    description:
+      'Totales (cantidad, sacos, balanza L/T, anticipo) de TODAS las recepciones que cumplan los mismos filtros que el Excel/PDF, ' +
+      'más el desglose por código de mineral y por estado. No devuelve filas: es lo que la pantalla de reportes muestra antes de descargar.',
+  })
+  @ApiOkResponse({ description: 'Resumen calculado correctamente.' })
+  @ApiBadRequestResponse({
+    description: 'Combinación de filtros de fecha inválida.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  async resumenReporteRecepcion(@Query() filtros: FiltrosRegistroMineralDto) {
+    return await this.comercioInternoService.resumenRMReporte(filtros);
+  }
+
   //--------------reporte pdf---------------------
 
   @Get('recepcion_mineral/reporte_pdf')
@@ -756,6 +780,81 @@ export class ComercioInternoController {
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': 'attachment; filename=recepcion-mineral.pdf',
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  //--------------reporte completo (excel y pdf)---------------------
+
+  @Get('recepcion_mineral/reporte_completo_excel')
+  @Auth()
+  @ApiOperation({
+    summary: 'Exportar el reporte completo de recepción de mineral a Excel',
+    description:
+      'Todos los datos que se registran en la recepción (menos balanza T): comprobante RM, código, fecha, mineral, proveedor y documento, ' +
+      'actor productivo, sacos, peso bruto, humedad, anticipo y su recibo, recibido por, lugar de acopio, laboratorio, observaciones, estado y auditoría. ' +
+      'Mismos filtros y orden que recepcion_mineral/excel.',
+  })
+  @ApiOkResponse({ description: 'Archivo .xlsx generado correctamente.' })
+  @ApiBadRequestResponse({
+    description: 'Combinación de filtros de fecha inválida.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  async exportarReporteCompletoExcel(
+    @Query() filtros: FiltrosRegistroMineralDto,
+    @GetUser() user: Usuario,
+    @Res() res: Response,
+  ) {
+    const buffer =
+      await this.recepcionMineralCompletoReporteService.generarExcel(
+        filtros,
+        this.recepcionMineralCompletoReporteService.nombreGenerador(user),
+      );
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition':
+        'attachment; filename=recepcion-mineral-completo.xlsx',
+      'Content-Length': buffer.length,
+    });
+
+    res.end(buffer);
+  }
+
+  @Get('recepcion_mineral/reporte_completo_pdf')
+  @Auth()
+  @ApiOperation({
+    summary: 'Exportar el reporte completo de recepción de mineral a PDF',
+    description:
+      'Mismos datos que reporte_completo_excel, en tabla tamaño oficio horizontal. Mismos filtros y orden que recepcion_mineral/reporte_pdf.',
+  })
+  @ApiOkResponse({ description: 'Archivo .pdf generado correctamente.' })
+  @ApiBadRequestResponse({
+    description: 'Combinación de filtros de fecha inválida.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  async exportarReporteCompletoPdf(
+    @Query() filtros: FiltrosRegistroMineralDto,
+    @GetUser() user: Usuario,
+    @Res() res: Response,
+  ) {
+    const buffer =
+      await this.recepcionMineralCompletoReporteService.generarPdf(
+        filtros,
+        this.recepcionMineralCompletoReporteService.nombreGenerador(user),
+      );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition':
+        'attachment; filename=recepcion-mineral-completo.pdf',
       'Content-Length': buffer.length,
     });
 
