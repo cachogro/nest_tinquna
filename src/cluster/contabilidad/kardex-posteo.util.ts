@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { Kardex } from './entities/kardex.entity';
 import { MovimientoKardex } from './entities/movimiento-kardex.entity';
+import { PersonaCi } from '../comercio-interno/entities/persona-ci.entity';
 
 /** Contraparte con kardex propio: exactamente uno de los tres ids. */
 export interface ContraparteKardex {
@@ -10,18 +11,55 @@ export interface ContraparteKardex {
   idCliente?: string | null;
 }
 
+/**
+ * Dueño del kardex que le corresponde a una persona: ella misma o, si
+ * entrega mineral a nombre de su actor (`kardexEnActor`, ej. una
+ * corporación), el actor productivo. Lo que se le entrega o descuenta a esa
+ * persona se carga siempre al kardex ACTOR, nunca a nombre propio.
+ */
+export function titularKardexDePersona(
+  persona: Pick<PersonaCi, 'id' | 'kardexEnActor' | 'idActorProductivoMinero'>,
+): { idPersona: string | null; idActorProductivoMinero: string | null } {
+  if (persona.kardexEnActor && persona.idActorProductivoMinero) {
+    return {
+      idPersona: null,
+      idActorProductivoMinero: String(persona.idActorProductivoMinero),
+    };
+  }
+  return { idPersona: String(persona.id), idActorProductivoMinero: null };
+}
+
+/**
+ * Misma contraparte, pero con la persona cambiada por su actor cuando es
+ * `kardexEnActor` (ver titularKardexDePersona). Sin persona, la devuelve igual.
+ */
+export async function contraparteConTitular(
+  manager: EntityManager,
+  contraparte: ContraparteKardex,
+): Promise<ContraparteKardex> {
+  if (!contraparte.idPersona) return contraparte;
+  const persona = await manager.findOne(PersonaCi, {
+    where: { id: String(contraparte.idPersona) },
+    select: { id: true, kardexEnActor: true, idActorProductivoMinero: true },
+  });
+  if (!persona) return contraparte;
+  return { ...titularKardexDePersona(persona), idCliente: null };
+}
+
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
  * Kardex ABIERTO de la contraparte (mismo criterio que ReciboService): una
  * persona puede tener kardex PERSONAL o ASOCIADO (comparten `idPersona`),
  * un actor kardex ACTOR y un cliente kardex CLIENTE. Falla si no tiene uno
- * abierto. Devuelve null si no se indicó ninguna contraparte.
+ * abierto. Devuelve null si no se indicó ninguna contraparte. Una persona
+ * `kardexEnActor` se busca en el kardex de su actor.
  */
 export async function buscarKardexAbiertoContraparte(
   manager: EntityManager,
-  contraparte: ContraparteKardex,
+  contraparteIndicada: ContraparteKardex,
 ): Promise<Kardex | null> {
+  const contraparte = await contraparteConTitular(manager, contraparteIndicada);
   if (contraparte.idActorProductivoMinero) {
     const kardex = await manager.findOne(Kardex, {
       where: {

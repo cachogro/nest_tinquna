@@ -34,7 +34,10 @@ import {
   repartidorMediosPago,
   resolverMediosPago,
 } from '../medios-pago.util';
-import { validarNoSuperaDeuda } from '../kardex-posteo.util';
+import {
+  titularKardexDePersona,
+  validarNoSuperaDeuda,
+} from '../kardex-posteo.util';
 import { CreateReciboDto } from '../dto/recibo/create-recibo.dto';
 import { ProcesarReciboDto } from '../dto/recibo/procesar-recibo.dto';
 import { ReciboDetalleDto } from '../dto/recibo/recibo-detalle.dto';
@@ -505,11 +508,20 @@ export class ReciboService {
    * Busca el kardex abierto de una persona sin importar si es PERSONAL
    * (personal interno) o ASOCIADO (relacionada a otro actor, o suelta):
    * comparten la FK `idPersona`, el recibo no necesita saber la
-   * subclasificación, solo a qué persona va.
+   * subclasificación, solo a qué persona va. Si la persona entrega a nombre
+   * de su actor (`kardexEnActor`), va al kardex ACTOR de ese actor.
    */
   private async obtenerKardexAbiertoPersonal(
     idPersona: string,
   ): Promise<Kardex> {
+    const persona = await this.personaRepository.findOne({
+      where: { id: idPersona },
+      select: { id: true, kardexEnActor: true, idActorProductivoMinero: true },
+    });
+    const titular = persona ? titularKardexDePersona(persona) : null;
+    if (titular?.idActorProductivoMinero) {
+      return this.obtenerKardexAbiertoActor(titular.idActorProductivoMinero);
+    }
     const kardex = await this.kardexRepository.findOne({
       where: [
         { tipo: 'PERSONAL', idPersona, estado: 'ABIERTO' },

@@ -320,7 +320,8 @@ export class ValorizacionMineralService {
         (actual.leyAjustada ?? null) === (detalle.leyAjustada ?? null) &&
         (actual.precioUsdTm ?? null) === (detalle.precioUsdTm ?? null) &&
         (actual.factorPorsentaje ?? null) ===
-          (detalle.factorPorsentaje ?? null);
+          (detalle.factorPorsentaje ?? null) &&
+        (actual.pKlManual ?? null) === (detalle.pKlManual ?? null);
 
       if (sinCambios) {
         continue;
@@ -366,6 +367,7 @@ export class ValorizacionMineralService {
           leyAjustada: detalle.leyAjustada,
           precioUsdTm: detalle.precioUsdTm,
           factorPorsentaje: detalle.factorPorsentaje,
+          pKlManual: detalle.pKlManual ?? null,
           usuarioRegistro: user.usuario,
         }),
       );
@@ -577,6 +579,9 @@ export class ValorizacionMineralService {
       )
       .leftJoinAndSelect('detalle.mineral', 'mineral')
       .leftJoinAndSelect('detalle.cotizacionMineral', 'cotizacionMineral')
+      // Tramo de la tabla de escala usada: el front restaura esa tabla (por
+      // su día) si se eligió una distinta a la de la fecha de recepción.
+      .leftJoinAndSelect('detalle.escalaPrecio', 'escalaPrecio')
       .leftJoinAndSelect(
         'valorizacion.calculoAportes',
         'calculoAporte',
@@ -1044,6 +1049,9 @@ export class ValorizacionMineralService {
 
       .leftJoinAndSelect('recepcion.persona', 'persona')
 
+      // Para mostrar "a nombre de <corporación>" (persona.kardexEnActor).
+      .leftJoinAndSelect('persona.actorProductivoMinero', 'actorPersona')
+
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
 
       .leftJoinAndSelect(
@@ -1067,7 +1075,9 @@ export class ValorizacionMineralService {
         'valorizacion.pagos',
         'pago',
         "pago.estado <> 'ANULADO'",
-      );
+      )
+      // usuario_registro es select:false en Auditoria; el listado lo muestra.
+      .addSelect('valorizacion.usuarioRegistro');
 
     //---------------------------------------------------------
     // Búsqueda

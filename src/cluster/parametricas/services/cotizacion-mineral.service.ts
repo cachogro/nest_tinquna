@@ -13,6 +13,7 @@ import { Usuario } from 'src/security/entities/usuario.entity';
 import { FiltrosCotizacionDto } from '../dto/cotizacion-mineral/filtros-cotizacion.dto';
 import { CotizacionesPaginadasDto } from '../dto/cotizacion-mineral/cotizacion-paginacion.dto';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
+import { validarFechaMinimaPrecios } from '../precios-fecha-minima.util';
 
 // Bolivia no tiene horario de verano: el offset respecto a UTC es siempre -04:00.
 const OFFSET_BOLIVIA = '-04:00';
@@ -47,34 +48,25 @@ export class CotizacionMineralService {
       );
     }
 
-    // Vigencia final: fin del día (23:59:59.999) de la fecha elegida, en hora de Bolivia.
-    // Vigencia inicial: instante exacto de creación, salvo que el "desde" sea
-    // un día anterior a hoy (migración del registro manual): ahí rige desde
-    // el inicio (00:00) de ese día en Bolivia.
+    // Por ahora (migración desde el 01/10/2026) no se controlan vigencias:
+    // la cotización es "la del día" de su vigencia inicial (00:00 en Bolivia)
+    // y aplica hasta que se registre otra con fecha posterior (ver
+    // findVigenteByMineral). La vigencia final solo se guarda. Sin "desde",
+    // es la de hoy.
     const ahora = new Date();
+    const fechaVigenciaInicial = this.inicioDeDiaBolivia(
+      createDto.fechaVigenciaInicial ?? this.diaBolivia(ahora),
+    );
     const fechaVigenciaFinal = this.finDeDiaBolivia(
       createDto.fechaVigenciaFinal,
     );
 
-    let fechaVigenciaInicial = ahora;
-    if (createDto.fechaVigenciaInicial) {
-      const inicioDesde = this.inicioDeDiaBolivia(
-        createDto.fechaVigenciaInicial,
-      );
-      if (inicioDesde > ahora) {
-        throw new BadRequestException(
-          'La fecha de vigencia inicial no puede ser posterior a hoy.',
-        );
-      }
-      if (this.finDeDiaBolivia(createDto.fechaVigenciaInicial) < ahora) {
-        fechaVigenciaInicial = inicioDesde;
-      }
-    } else if (fechaVigenciaFinal < ahora) {
+    validarFechaMinimaPrecios(this.diaBolivia(fechaVigenciaInicial));
+    if (fechaVigenciaInicial > ahora) {
       throw new BadRequestException(
-        'Para registrar una cotización pasada indica también la fecha de vigencia inicial.',
+        'La fecha de la cotización no puede ser posterior a hoy.',
       );
     }
-
     if (fechaVigenciaInicial > fechaVigenciaFinal) {
       throw new BadRequestException(
         'La fecha de vigencia inicial no puede ser posterior a la final.',
@@ -101,22 +93,15 @@ export class CotizacionMineralService {
         .orderBy('cotizacion.id', 'DESC')
         .getMany();
 
-      // Un mineral no puede tener dos cotizaciones activas para el mismo día.
-      const cruzada = cotizacionesMineral.find(
-        (c) =>
-          c.activo &&
-          c.fechaVigenciaInicial <= fechaVigenciaFinal &&
-          c.fechaVigenciaFinal >= fechaVigenciaInicial,
+      // Una sola cotización activa por mineral y día (el de su vigencia
+      // inicial). Los rangos sí pueden cruzarse: manda la de fecha mayor.
+      const dia = this.diaBolivia(fechaVigenciaInicial);
+      const mismoDia = cotizacionesMineral.find(
+        (c) => c.activo && this.diaBolivia(c.fechaVigenciaInicial) === dia,
       );
-
-      if (cruzada) {
-        const esVigente =
-          cruzada.fechaVigenciaInicial <= ahora &&
-          cruzada.fechaVigenciaFinal >= ahora;
+      if (mismoDia) {
         throw new BadRequestException(
-          esVigente
-            ? 'El mineral ya tiene una cotización vigente.'
-            : 'El mineral ya tiene una cotización registrada que se cruza con ese rango de fechas.',
+          `El mineral ya tiene una cotización registrada para el ${this.diaBoliviaTexto(dia)} (${mismoDia.cotizacionMineralDolares} USD). Edítala en vez de registrar otra.`,
         );
       }
 
@@ -248,23 +233,35 @@ export class CotizacionMineralService {
   }
 
   /**
-   * Cotización vigente de un mineral: activa y cuyo rango de vigencia
-   * contiene el instante exacto de la petición (NOW() de la BD).
+   * Cotización que aplica a un mineral en una fecha (YYYY-MM-DD, hora de
+   * Bolivia; sin fecha, hoy): la activa más reciente cuya vigencia inicial
+   * no pase del fin de ese día. La vigencia final no se controla por ahora
+   * (migración): una cotización rige hasta que se registre otra posterior.
    */
-  async findVigenteByMineral(idMineral: number): Promise<CotizacionMineral> {
+  async findVigenteByMineral(
+    idMineral: number,
+    fecha?: string,
+  ): Promise<CotizacionMineral> {
+    const limite = fecha ? this.finDeDiaBolivia(fecha) : new Date();
+    if (isNaN(limite.getTime())) {
+      throw new BadRequestException('La fecha indicada no es válida.');
+    }
+
     const cotizacion = await this.cotizacionRepository
       .createQueryBuilder('cotizacion')
       .leftJoinAndSelect('cotizacion.mineral', 'mineral')
       .where('cotizacion.idMineral = :idMineral', { idMineral })
       .andWhere('cotizacion.activo = true')
-      .andWhere(
-        'NOW() BETWEEN cotizacion.fechaVigenciaInicial AND cotizacion.fechaVigenciaFinal',
-      )
+      .andWhere('cotizacion.fechaVigenciaInicial <= :limite', { limite })
+      .orderBy('cotizacion.fechaVigenciaInicial', 'DESC')
+      .addOrderBy('cotizacion.id', 'DESC')
       .getOne();
 
     if (!cotizacion) {
       throw new NotFoundException(
-        'El mineral no tiene una cotización vigente en este momento.',
+        fecha
+          ? `El mineral no tiene una cotización registrada al ${this.diaBoliviaTexto(fecha)} o antes.`
+          : 'El mineral no tiene una cotización registrada.',
       );
     }
 
@@ -301,20 +298,15 @@ export class CotizacionMineralService {
       throw new NotFoundException('No se encontró la cotización solicitada.');
     }
 
-    const ahora = new Date();
-    if (new Date(cotizacion.fechaVigenciaFinal) < ahora) {
-      throw new BadRequestException(
-        'No es posible modificar una cotización que ya no se encuentra vigente.',
-      );
-    }
-
+    // Sin control de vigencias por ahora (migración): se puede corregir
+    // cualquier cotización activa, también las de días pasados.
     if (updateDto.fechaVigenciaFinal) {
       const nuevaFechaVigenciaFinal = this.finDeDiaBolivia(
         updateDto.fechaVigenciaFinal,
       );
-      if (nuevaFechaVigenciaFinal < ahora) {
+      if (nuevaFechaVigenciaFinal < new Date(cotizacion.fechaVigenciaInicial)) {
         throw new BadRequestException(
-          'La fecha de vigencia final no puede ser menor a la fecha actual.',
+          'La fecha de vigencia final no puede ser anterior a la inicial.',
         );
       }
       cotizacion.fechaVigenciaFinal = nuevaFechaVigenciaFinal;
@@ -338,6 +330,18 @@ export class CotizacionMineralService {
         : String(fecha).split('T')[0];
 
     return new Date(`${fechaStr}T23:59:59.999${OFFSET_BOLIVIA}`);
+  }
+
+  /** Día calendario en Bolivia ("YYYY-MM-DD") de un instante. */
+  private diaBolivia(instante: Date | string): string {
+    const bolivia = new Date(new Date(instante).getTime() - 4 * 3600 * 1000);
+    return bolivia.toISOString().slice(0, 10);
+  }
+
+  /** "YYYY-MM-DD" -> "dd/mm/aaaa", para los mensajes. */
+  private diaBoliviaTexto(dia: string): string {
+    const [anio, mes, d] = String(dia).slice(0, 10).split('-');
+    return `${d}/${mes}/${anio}`;
   }
 
   /** Inicio (00:00:00.000) de la fecha calendario en hora de Bolivia. */

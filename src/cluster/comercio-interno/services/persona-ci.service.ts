@@ -18,6 +18,7 @@ import { PersonasPaginadasDto } from '../dto/persona-ci/persona-paginacion.dto';
 import { ActorProductivoMinero } from 'src/cluster/parametricas/entities/actor-productivo-minero.entity';
 import { aplicarOrden } from 'src/common/utils/query-orden.util';
 import { paginarConJoinMultiple } from 'src/common/utils/paginar-relacion-multiple.util';
+import { Kardex } from 'src/cluster/contabilidad/entities/kardex.entity';
 
 @Injectable()
 export class PersonaCiService {
@@ -85,8 +86,42 @@ export class PersonaCiService {
     }
   }
 
-  // En persona-ci.service.ts
-
+  /**
+   * Valor final de `kardexEnActor`. Solo vale con un actor que no sea la
+   * empresa; si no viene se conserva el que tenía (al quitar el actor se
+   * apaga solo). Al encenderlo, la persona no puede tener un kardex propio
+   * abierto: a partir de ahí todo va al kardex del actor.
+   */
+  private async resolverKardexEnActor(
+    indicado: boolean | undefined,
+    anterior: boolean,
+    idActorProductivoMinero: string | null | undefined,
+    idPersona?: string,
+  ): Promise<boolean> {
+    const actorValido =
+      !!idActorProductivoMinero &&
+      String(idActorProductivoMinero) !== this.ID_ACTOR_EMPRESA;
+    if (indicado && !actorValido) {
+      throw new BadRequestException(
+        'Para cargar todo al kardex del actor, la persona debe pertenecer a un actor productivo (que no sea la empresa).',
+      );
+    }
+    const valor = (indicado ?? anterior) && actorValido;
+    if (valor && !anterior && idPersona) {
+      const propio = await this.dataSource.manager.findOne(Kardex, {
+        where: [
+          { tipo: 'PERSONAL', idPersona, estado: 'ABIERTO' },
+          { tipo: 'ASOCIADO', idPersona, estado: 'ABIERTO' },
+        ],
+      });
+      if (propio) {
+        throw new ConflictException(
+          `La persona tiene el kardex ${propio.codigo} abierto (saldo ${propio.saldoActual}). Ciérralo antes de cargar todo al kardex del actor.`,
+        );
+      }
+    }
+    return valor;
+  }
 
   async create(
     createPersonaDto: CreatePersonaCiDto,
@@ -97,8 +132,14 @@ export class PersonaCiService {
       idTipoDocumento,
       numeroDocumento,
       idActorProductivoMinero, // extraer
+      kardexEnActor: kardexEnActorIndicado,
       ...personaDto
     } = createPersonaDto;
+    const kardexEnActor = await this.resolverKardexEnActor(
+      kardexEnActorIndicado,
+      false,
+      idActorProductivoMinero,
+    );
 
     // Validar documento duplicado
     if (numeroDocumento) {
@@ -146,6 +187,7 @@ export class PersonaCiService {
         idTipoDocumento,
         numeroDocumento,
         idActorProductivoMinero, // agregar
+        kardexEnActor,
         usuarioRegistro: user.usuario, // auditoría
         fechaRegistro: new Date(),
       });
@@ -190,6 +232,7 @@ export class PersonaCiService {
       idTipoDocumento,
       numeroDocumento,
       idActorProductivoMinero, // extraer
+      kardexEnActor: kardexEnActorIndicado,
       ...personaDto
     } = updatePersonaDto;
 
@@ -199,6 +242,15 @@ export class PersonaCiService {
     if (!persona) {
       throw new NotFoundException(`No existe una persona con el id ${id}.`);
     }
+    // Sin idActorProductivoMinero en el request (undefined) el actor no cambia.
+    const kardexEnActor = await this.resolverKardexEnActor(
+      kardexEnActorIndicado,
+      persona.kardexEnActor,
+      idActorProductivoMinero === undefined
+        ? persona.idActorProductivoMinero
+        : idActorProductivoMinero,
+      id,
+    );
 
     // Validar documento duplicado (excluyendo el mismo)
     if (numeroDocumento) {
@@ -246,6 +298,7 @@ export class PersonaCiService {
         idTipoDocumento,
         numeroDocumento,
         idActorProductivoMinero, // actualizar
+        kardexEnActor,
         usuarioUltimaModificacion: user.usuario,
         fechaUltimaModificacion: new Date(),
       });

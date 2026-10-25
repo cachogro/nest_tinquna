@@ -117,4 +117,14 @@ export class CreateValorizacionMineralDetalleDto {
   @IsOptional()
   @IsNumber()
   factorPorsentaje?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'P/KL tecleado a mano (AC). null = se usa el calculado (precio por kilo truncado).',
+    example: 135,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  pKlManual?: number | null;
 }

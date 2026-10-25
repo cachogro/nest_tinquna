@@ -215,4 +215,16 @@ export class ValorizacionDetalleMineral extends Auditoria {
     transformer: new ColumnNumericTransformer(),
   })
   factorPorsentaje?: number;
+
+  /** P/KL tecleado a mano (AC, etapa de migración). NULL = se usa el
+   *  calculado (precio por kilo truncado). */
+  @Column({
+    name: 'p_kl_manual',
+    type: 'numeric',
+    precision: 14,
+    scale: 2,
+    nullable: true,
+    transformer: new ColumnNumericTransformer(),
+  })
+  pKlManual?: number | null;
 }

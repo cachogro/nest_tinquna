@@ -29,6 +29,10 @@ import {
   KardexDestinoDto,
 } from '../dto/pago-valorizacion/create-pago-valorizacion.dto';
 import { resolverPersonaAutorizo } from '../persona-autorizo.util';
+import {
+  contraparteConTitular,
+  titularKardexDePersona,
+} from '../kardex-posteo.util';
 import { validarMonedaCuenta } from '../moneda.util';
 import {
   MedioPagoResuelto,
@@ -126,7 +130,7 @@ export class PagoValorizacionService {
   private async obtenerValorizacion(id: string): Promise<ValorizacionMineral> {
     const valorizacion = await this.valorizacionRepository.findOne({
       where: { id: String(id) },
-      relations: { recepcionMineral: { persona: true } },
+      relations: { recepcionMineral: { persona: { actorProductivoMinero: true } } },
     });
     if (!valorizacion) {
       throw new NotFoundException('No se encontró la valorización indicada.');
@@ -140,11 +144,59 @@ export class PagoValorizacionService {
     );
   }
 
-  /** Kardex ABIERTO del dueño indicado (persona, actor o cliente). */
+  /**
+   * Proveedor de la recepción visto desde el kardex: quien entrega a nombre
+   * de su actor (`kardexEnActor`) se reemplaza por el actor, y su nombre
+   * queda en `entregadoPor`.
+   */
+  private titularProveedor(recepcion: RecepcionMineral | undefined): {
+    idPersona: string | null;
+    idActorProductivoMinero: string | null;
+    nombre: string;
+    entregadoPor: string | null;
+  } {
+    const proveedor = proveedorDeRecepcion(recepcion);
+    const nombre = [proveedor?.nombres, proveedor?.apellidoPaterno, proveedor?.apellidoMaterno]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    const persona = recepcion?.persona;
+    if (persona) {
+      const titular = titularKardexDePersona(persona);
+      if (titular.idActorProductivoMinero) {
+        return {
+          ...titular,
+          nombre: persona.actorProductivoMinero?.nombre ?? nombre,
+          entregadoPor: nombre || null,
+        };
+      }
+    }
+    return {
+      idPersona: recepcion?.idPersona ?? null,
+      idActorProductivoMinero: recepcion?.idActorProductivoMinero ?? null,
+      nombre,
+      entregadoPor: null,
+    };
+  }
+
+  /** Kardex ABIERTO del dueño indicado (persona, actor o cliente). Una
+   *  persona `kardexEnActor` usa el kardex de su actor. */
   private async kardexAbiertoDe(
-    destino: KardexDestinoDto,
+    destinoIndicado: KardexDestinoDto,
     paraQue: string,
   ): Promise<Kardex> {
+    let destino = destinoIndicado;
+    if (destino.destino === 'PERSONAL' && destino.idPersona) {
+      const titular = await contraparteConTitular(this.dataSource.manager, {
+        idPersona: destino.idPersona,
+      });
+      if (titular.idActorProductivoMinero) {
+        destino = {
+          destino: 'ACTOR',
+          idActorProductivoMinero: titular.idActorProductivoMinero,
+        };
+      }
+    }
     const relations = {
       persona: true,
       actorProductivoMinero: true,
@@ -286,7 +338,6 @@ export class PagoValorizacionService {
   async preparar(idValorizacion: string) {
     const valorizacion = await this.obtenerValorizacion(idValorizacion);
     const recepcion = valorizacion.recepcionMineral;
-    const proveedor = proveedorDeRecepcion(recepcion);
     const montos = this.montos(valorizacion);
 
     const delAnticipo =
@@ -302,14 +353,7 @@ export class PagoValorizacionService {
       idValorizacionMineral: valorizacion.id,
       codigoOperacion: this.codigoDe(valorizacion),
       valorizada: valorizacion.idEstadoValorizacion === ESTADO_VALORIZACION_VALORIZADO,
-      proveedor: {
-        idPersona: recepcion?.idPersona ?? null,
-        idActorProductivoMinero: recepcion?.idActorProductivoMinero ?? null,
-        nombre: [proveedor?.nombres, proveedor?.apellidoPaterno, proveedor?.apellidoMaterno]
-          .filter(Boolean)
-          .join(' ')
-          .trim(),
-      },
+      proveedor: this.titularProveedor(recepcion),
       liquidoPagable: montos.liquido,
       montoAPagar: montos.aPagar,
       anticipo: montos.anticipo,
@@ -640,17 +684,12 @@ export class PagoValorizacionService {
         nombre: this.nombreKardex(kardex).toUpperCase() || null,
       };
     }
-    const proveedor = proveedorDeRecepcion(recepcion);
+    const proveedor = this.titularProveedor(recepcion);
     return {
-      idPersona: recepcion?.idPersona ?? null,
-      idActorProductivoMinero: recepcion?.idActorProductivoMinero ?? null,
+      idPersona: proveedor.idPersona,
+      idActorProductivoMinero: proveedor.idActorProductivoMinero,
       idCliente: null,
-      nombre:
-        [proveedor?.nombres, proveedor?.apellidoPaterno, proveedor?.apellidoMaterno]
-          .filter(Boolean)
-          .join(' ')
-          .trim()
-          .toUpperCase() || null,
+      nombre: proveedor.nombre.toUpperCase() || null,
     };
   }
 

@@ -214,6 +214,13 @@ export class ReciboRecepcionMineralPdfService {
       ['Código:', recepcion.codigoOperacion ?? ''],
       ['Recibí de:', proveedor],
       ['C.I.:', recepcion.persona?.numeroDocumento ?? ''],
+      // Entrega a nombre de su actor (corporación): a quién se le carga.
+      ...(recepcion.persona?.kardexEnActor &&
+      recepcion.persona.actorProductivoMinero?.nombre
+        ? ([['A nombre de:', recepcion.persona.actorProductivoMinero.nombre]] as Array<
+            [string, string]
+          >)
+        : []),
       ['Fecha y hora:', this.formatearFechaRecepcion(recepcion.fechaRecepcion)],
       ['N° Sacos:', `${recepcion.numeroSacos ?? 0}`],
       ['Balanza (Kg):', `${Math.round(Number(recepcion.balanzaL ?? 0))}`],

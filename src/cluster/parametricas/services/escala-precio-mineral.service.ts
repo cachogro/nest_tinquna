@@ -10,6 +10,7 @@ import { Mineral } from '../entities/mineral.entity';
 import { CreateEscalaPrecioMineralDto } from '../dto/escala-precio-mineral/create-escala-precio-mineral.dto';
 import { UpdateEscalaPrecioMineralDto } from '../dto/escala-precio-mineral/update-escala-precio-mineral.dto';
 import { Usuario } from 'src/security/entities/usuario.entity';
+import { validarFechaMinimaPrecios } from '../precios-fecha-minima.util';
 
 // Bolivia no tiene horario de verano: el offset respecto a UTC es siempre -04:00.
 const OFFSET_BOLIVIA = '-04:00';
@@ -33,9 +34,9 @@ export class EscalaPrecioMineralService {
    * un solo valor para toda la carga; cada fila solo aporta
    * ley/precioPunto/precioTm).
    *
-   * Si la nueva vigencia se solapa con tramos activos existentes del mismo
-   * mineral (sin importar la ley), esos tramos se desactivan (activo=false)
-   * por completo y quedan reemplazados por la tabla nueva.
+   * Si el mineral ya tiene una tabla activa que empieza el mismo día, esa
+   * tabla se desactiva (activo=false) completa y queda reemplazada por la
+   * nueva. Las tablas de otros días no se tocan.
    */
   async create(
     createDto: CreateEscalaPrecioMineralDto,
@@ -50,6 +51,8 @@ export class EscalaPrecioMineralService {
         'No existe el mineral seleccionado o se encuentra inactivo.',
       );
     }
+
+    validarFechaMinimaPrecios(this.diaBolivia(createDto.fechaVigenciaInicial));
 
     if (
       createDto.fechaVigenciaFinal &&
@@ -80,29 +83,15 @@ export class EscalaPrecioMineralService {
         .andWhere('escala.activo = true')
         .getMany();
 
-      const inicioNuevo = new Date(createDto.fechaVigenciaInicial);
-      const finNuevo = createDto.fechaVigenciaFinal
-        ? new Date(createDto.fechaVigenciaFinal)
-        : null;
-
-      // Cualquier tramo activo del mineral cuya vigencia se solape con la
-      // nueva (sin importar la ley) queda reemplazado: se desactiva por completo.
-      const tramosASuperar = tramosExistentes.filter((t) => {
-        const inicioExistente = new Date(t.fechaVigenciaInicial);
-        const finExistente = t.fechaVigenciaFinal
-          ? new Date(t.fechaVigenciaFinal)
-          : null;
-
-        const empiezaAntesDeQueTermineElExistente =
-          !finExistente || inicioNuevo <= finExistente;
-        const terminaDespuesDeQueEmpieceElExistente =
-          !finNuevo || finNuevo >= inicioExistente;
-
-        return (
-          empiezaAntesDeQueTermineElExistente &&
-          terminaDespuesDeQueEmpieceElExistente
-        );
-      });
+      // Sin control de vigencias por ahora (migración): una tabla aplica
+      // desde su día de vigencia inicial hasta que haya otra con fecha
+      // posterior (ver findVigenteByMineral). Solo se reemplaza la tabla que
+      // empieza el MISMO día; las de otros días quedan intactas, para poder
+      // seguir valorizando las recepciones de esas fechas.
+      const diaNuevo = this.diaBolivia(createDto.fechaVigenciaInicial);
+      const tramosASuperar = tramosExistentes.filter(
+        (t) => this.diaBolivia(t.fechaVigenciaInicial) === diaNuevo,
+      );
 
       if (tramosASuperar.length) {
         for (const tramo of tramosASuperar) {
@@ -155,24 +144,21 @@ export class EscalaPrecioMineralService {
       );
     }
 
-    const ahora = new Date();
     const tramosPorId = new Map(tramos.map((t) => [t.id, t]));
 
+    // Sin control de vigencias por ahora (migración): se puede corregir
+    // cualquier tramo activo, también los de tablas de días pasados.
     for (const fila of updateDto.filas) {
       const tramo = tramosPorId.get(fila.id)!;
-
-      if (tramo.fechaVigenciaFinal && new Date(tramo.fechaVigenciaFinal) < ahora) {
-        throw new BadRequestException(
-          `El tramo con id ${fila.id} ya no se encuentra vigente y no puede modificarse.`,
-        );
-      }
 
       tramo.usuarioUltimaModificacion = user.usuario;
       if (fila.ley !== undefined) tramo.ley = fila.ley;
       if (fila.precioPunto !== undefined) tramo.precioPunto = fila.precioPunto;
       if (fila.precioTm !== undefined) tramo.precioTm = fila.precioTm;
-      if (fila.fechaVigenciaInicial !== undefined)
+      if (fila.fechaVigenciaInicial !== undefined) {
+        validarFechaMinimaPrecios(this.diaBolivia(fila.fechaVigenciaInicial));
         tramo.fechaVigenciaInicial = new Date(fila.fechaVigenciaInicial);
+      }
       if (fila.fechaVigenciaFinal !== undefined)
         tramo.fechaVigenciaFinal = new Date(fila.fechaVigenciaFinal);
 
@@ -190,39 +176,101 @@ export class EscalaPrecioMineralService {
   }
 
   /**
-   * Tabla de un mineral vigente en un instante dado (una fila por tramo de
-   * ley, ordenada por ley). Si no se pasa "fecha", usa el instante actual.
+   * Tabla de precios que aplica a un mineral en una fecha (YYYY-MM-DD, hora
+   * de Bolivia; sin fecha, hoy): la activa más reciente cuya vigencia
+   * inicial no pase del fin de ese día, con todos sus tramos (los que
+   * empiezan ese mismo día), ordenados por ley. La vigencia final no se
+   * controla por ahora (migración): rige hasta que se registre otra tabla
+   * con fecha posterior.
    */
   async findVigenteByMineral(
     idMineral: number,
     fecha?: string,
   ): Promise<EscalaPrecioMineral[]> {
-    const instante = fecha ? this.inicioDeDiaBolivia(fecha) : new Date();
+    const limite = fecha ? this.finDeDiaBolivia(fecha) : new Date();
 
-    if (isNaN(instante.getTime())) {
+    if (isNaN(limite.getTime())) {
       throw new BadRequestException('La fecha indicada no es válida.');
     }
 
-    const filas = await this.escalaPrecioRepository
+    const ultima = await this.escalaPrecioRepository
       .createQueryBuilder('escala')
       .where('escala.idMineral = :idMineral', { idMineral })
       .andWhere('escala.activo = true')
-      .andWhere(
-        ':instante >= escala.fechaVigenciaInicial AND (escala.fechaVigenciaFinal IS NULL OR :instante <= escala.fechaVigenciaFinal)',
-        { instante },
-      )
-      .orderBy('escala.ley', 'ASC')
-      .getMany();
+      .andWhere('escala.fechaVigenciaInicial <= :limite', { limite })
+      .orderBy('escala.fechaVigenciaInicial', 'DESC')
+      .getOne();
 
-    if (!filas.length) {
+    if (!ultima) {
       throw new NotFoundException(
         fecha
-          ? 'El mineral no tenía una tabla de precios vigente en la fecha indicada.'
-          : 'El mineral no tiene una tabla de precios vigente en este momento.',
+          ? 'El mineral no tiene una tabla de precios registrada a la fecha indicada o antes.'
+          : 'El mineral no tiene una tabla de precios registrada.',
       );
     }
 
-    return filas;
+    // Todos los tramos de esa tabla: los activos que empiezan el mismo día.
+    const dia = this.diaBolivia(ultima.fechaVigenciaInicial);
+    return await this.escalaPrecioRepository
+      .createQueryBuilder('escala')
+      .where('escala.idMineral = :idMineral', { idMineral })
+      .andWhere('escala.activo = true')
+      .andWhere('escala.fechaVigenciaInicial >= :desde', {
+        desde: this.inicioDeDiaBolivia(dia),
+      })
+      .andWhere('escala.fechaVigenciaInicial <= :hasta', {
+        hasta: this.finDeDiaBolivia(dia),
+      })
+      .orderBy('escala.ley', 'ASC')
+      .getMany();
+  }
+
+  /**
+   * Tablas activas registradas de un mineral, una por día de vigencia
+   * inicial (de la más nueva a la más vieja), con su cantidad de tramos.
+   * Para elegir con qué tabla valorizar (ej. la actual en vez de la de la
+   * fecha de recepción). Los tramos de cada una se piden con
+   * findVigenteByMineral(idMineral, dia).
+   */
+  async listarTablasByMineral(idMineral: number): Promise<
+    Array<{
+      dia: string;
+      fechaVigenciaInicial: Date;
+      fechaVigenciaFinal: Date | null;
+      tramos: number;
+    }>
+  > {
+    const filas = await this.escalaPrecioRepository
+      .createQueryBuilder('escala')
+      .select(
+        "to_char(escala.fechaVigenciaInicial AT TIME ZONE 'America/La_Paz', 'YYYY-MM-DD')",
+        'dia',
+      )
+      .addSelect('MIN(escala.fechaVigenciaInicial)', 'fechaVigenciaInicial')
+      .addSelect('MAX(escala.fechaVigenciaFinal)', 'fechaVigenciaFinal')
+      .addSelect('COUNT(*)', 'tramos')
+      .where('escala.idMineral = :idMineral', { idMineral })
+      .andWhere('escala.activo = true')
+      .groupBy('dia')
+      .orderBy('dia', 'DESC')
+      .getRawMany<{
+        dia: string;
+        fechaVigenciaInicial: Date;
+        fechaVigenciaFinal: Date | null;
+        tramos: string;
+      }>();
+    return filas.map((f) => ({ ...f, tramos: Number(f.tramos) }));
+  }
+
+  /** Día calendario en Bolivia ("YYYY-MM-DD") de un instante o fecha ISO. */
+  private diaBolivia(instante: Date | string): string {
+    const bolivia = new Date(new Date(instante).getTime() - 4 * 3600 * 1000);
+    return bolivia.toISOString().slice(0, 10);
+  }
+
+  /** Fin (23:59:59.999) de la fecha calendario en hora de Bolivia. */
+  private finDeDiaBolivia(fecha: string): Date {
+    return new Date(`${String(fecha).slice(0, 10)}T23:59:59.999${OFFSET_BOLIVIA}`);
   }
 
   /**

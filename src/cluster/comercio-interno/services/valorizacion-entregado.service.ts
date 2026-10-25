@@ -94,6 +94,7 @@ export class ValorizacionEntregadoService {
       .createQueryBuilder('valorizacion')
       .leftJoinAndSelect('valorizacion.recepcionMineral', 'recepcion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('persona.actorProductivoMinero', 'actorPersona')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect(
         'valorizacion.estadoValorizacion',

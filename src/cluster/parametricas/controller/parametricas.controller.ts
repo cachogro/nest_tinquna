@@ -599,14 +599,20 @@ export class ParametricasController {
   @Get('cotizacion/vigente/:idMineral')
   @Auth()
   @ApiOperation({
-    summary: 'Obtener la cotización vigente de un mineral',
+    summary: 'Obtener la cotización que aplica a un mineral en una fecha',
     description:
-      'Devuelve la cotización actualmente vigente (activa, dentro de su rango de fechas comparado contra el instante exacto de la petición) para el mineral indicado. Se usa para validar antes de operar con un mineral (ej. valorización) que su cotización no haya vencido.',
+      'Devuelve la cotización activa más reciente del mineral cuya fecha "desde" (vigencia inicial) no sea posterior a la fecha indicada (o a hoy, si no se envía). La vigencia final NO se controla por ahora (migración desde el 01/10/2026): una cotización sigue aplicando hasta que se registre otra posterior. La valorización envía la fecha de recepción.',
   })
   @ApiParam({
     name: 'idMineral',
     description: 'Identificador del mineral.',
     example: 1,
+  })
+  @ApiQuery({
+    name: 'fecha',
+    required: false,
+    description: 'Fecha de referencia YYYY-MM-DD (hora de Bolivia). Sin ella, hoy.',
+    example: '2026-10-01',
   })
   @ApiOkResponse({
     description: 'Cotización vigente obtenida correctamente.',
@@ -623,8 +629,12 @@ export class ParametricasController {
   })
   async findCotizacionVigenteByMineral(
     @Param('idMineral', ParseIntPipe) idMineral: number,
+    @Query('fecha') fecha?: string,
   ): Promise<CotizacionMineral> {
-    return await this.cotizacionMineralService.findVigenteByMineral(idMineral);
+    return await this.cotizacionMineralService.findVigenteByMineral(
+      idMineral,
+      fecha,
+    );
   }
 
   //------------------ escala de precio por ley (Zn, Ag, Pb...) ----------------------
@@ -729,16 +739,36 @@ export class ParametricasController {
     );
   }
 
+  @Get('escala-precio/tablas/:idMineral')
+  @Auth()
+  @ApiOperation({
+    summary: 'Listar las tablas de precios por ley registradas de un mineral',
+    description:
+      'Una fila por tabla activa (día de vigencia inicial, de la más nueva a la más vieja) con su cantidad de tramos. ' +
+      'Sirve para elegir con qué tabla valorizar; los tramos se piden a escala-precio/vigente/:idMineral?fecha=<dia>.',
+  })
+  @ApiParam({ name: 'idMineral', description: 'Identificador del mineral.', example: 2 })
+  @ApiUnauthorizedResponse({
+    description: 'No autorizado. Token no proporcionado o inválido.',
+  })
+  async listarTablasEscalaPrecio(
+    @Param('idMineral', ParseIntPipe) idMineral: number,
+  ) {
+    return await this.escalaPrecioMineralService.listarTablasByMineral(
+      idMineral,
+    );
+  }
+
   @Get('escala-precio/vigente/:idMineral')
   @Auth()
   @ApiOperation({
     summary: 'Obtener la tabla de precios por ley vigente de un mineral',
     description:
-      'Devuelve todos los tramos de ley cuya vigencia cubre un instante ' +
-      'dado, para el mineral indicado, ordenados por ley. Si no se envía ' +
-      '"fecha", usa el instante actual (equivale a la tabla vigente hoy). ' +
-      'Si se envía "fecha", devuelve la tabla que estaba vigente ese día ' +
-      '(útil para consultar la cotización histórica de un rango/mes pasado).',
+      'Devuelve los tramos de la tabla activa más reciente del mineral cuya ' +
+      'fecha "desde" no sea posterior a la fecha indicada (o a hoy), ' +
+      'ordenados por ley. La vigencia final NO se controla por ahora ' +
+      '(migración): una tabla sigue aplicando hasta que se registre otra ' +
+      'con fecha posterior. La valorización envía la fecha de recepción.',
   })
   @ApiParam({
     name: 'idMineral',

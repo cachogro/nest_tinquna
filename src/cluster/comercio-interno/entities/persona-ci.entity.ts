@@ -101,6 +101,17 @@ export class PersonaCi extends Auditoria {
   })
   actorProductivoMinero?: ActorProductivoMinero;
 
+  // Entrega mineral a nombre de su actor (ej. una corporación): no tiene
+  // kardex propio y todo lo suyo (anticipos, pagos) va al kardex ACTOR de
+  // idActorProductivoMinero (ver titularKardexDePersona).
+  @Column({
+    name: 'kardex_en_actor',
+    type: 'boolean',
+    nullable: false,
+    default: false,
+  })
+  kardexEnActor: boolean;
+
   // --- Datos laborales: obligatorios solo cuando la persona es personal de la
   //     empresa (idActorProductivoMinero = 1). Nulos para proveedores y demás. ---
   @Column({

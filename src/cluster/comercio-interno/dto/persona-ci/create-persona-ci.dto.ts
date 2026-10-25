@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsNotEmpty,
@@ -101,6 +102,15 @@ export class CreatePersonaCiDto {
   @IsOptional()
   @IsString()
   idActorProductivoMinero?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'true: entrega mineral a nombre de su actor productivo (ej. una corporación). No puede tener kardex propio; sus anticipos y pagos van al kardex del actor. Requiere idActorProductivoMinero distinto de la empresa (1).',
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'kardexEnActor debe ser verdadero o falso.' })
+  kardexEnActor?: boolean;
 
   // --- Datos laborales ---
   // Obligatorios (salvo fechaFinLabores) cuando idActorProductivoMinero = '1',

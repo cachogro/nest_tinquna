@@ -179,6 +179,11 @@ export class KardexService {
       if (!persona.activo) {
         throw new BadRequestException('La persona está inactiva.');
       }
+      if (persona.kardexEnActor) {
+        throw new BadRequestException(
+          'Esta persona entrega a nombre de su actor productivo: no tiene kardex propio, todo se carga al kardex del actor.',
+        );
+      }
 
       const esPersonalInterno =
         persona.idActorProductivoMinero != null &&

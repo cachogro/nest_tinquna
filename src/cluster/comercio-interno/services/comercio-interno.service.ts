@@ -167,6 +167,7 @@ export class ComercioInternoService {
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('persona.actorProductivoMinero', 'actorPersona')
       .leftJoinAndSelect('recepcion.actorProductivoMinero', 'actorProveedor')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.estado', 'estado')
@@ -639,14 +640,13 @@ export class ComercioInternoService {
 
   /**
    * Reporte completo de recepción (Excel/PDF): los mismos filtros y orden que
-   * el reporte normal, más el actor productivo de la persona y la fecha de
+   * el reporte normal (que ya trae el actor productivo de la persona), más la fecha de
    * registro, para poder mostrar todos los datos de la recepción.
    */
   async findAllRMReporteCompleto(
     filtros: FiltrosRegistroMineralDto,
   ): Promise<RecepcionMineral[]> {
     const query = this.buildRecepcionMineralQuery(filtros)
-      .leftJoinAndSelect('persona.actorProductivoMinero', 'actorPersona')
       .addSelect('recepcion.fechaRegistro');
 
     return await query.getMany();
@@ -728,6 +728,7 @@ export class ComercioInternoService {
     const query = this.recepcionRepository
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('persona.actorProductivoMinero', 'actorPersona')
       .leftJoinAndSelect('recepcion.actorProductivoMinero', 'actorProveedor')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
@@ -839,6 +840,7 @@ export class ComercioInternoService {
       .createQueryBuilder('recepcion')
       .leftJoinAndSelect('recepcion.codificacion', 'codificacion')
       .leftJoinAndSelect('recepcion.persona', 'persona')
+      .leftJoinAndSelect('persona.actorProductivoMinero', 'actorPersona')
       .leftJoinAndSelect('recepcion.actorProductivoMinero', 'actorProveedor')
       .leftJoinAndSelect('recepcion.personalInterno', 'personalInterno')
       .leftJoinAndSelect('recepcion.estado', 'estado')

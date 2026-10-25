@@ -1,4 +1,5 @@
 import { proveedorDeRecepcion } from 'src/cluster/comercio-interno/recepcion-proveedor.util';
+import { PersonaCi } from '../entities/persona-ci.entity';
 import { Injectable } from '@nestjs/common';
 const PDFDocument = require('pdfkit-table');
 import { join } from 'path';
@@ -168,7 +169,7 @@ export class ValorizacionMineralPdfService {
         .filter((descripcion) => !!descripcion)
         .join(', ') || '--';
 
-    const nombreCliente = this.nombreCompleto(persona);
+    const nombreCliente = this.nombreCliente(persona);
 
     const col1 = Math.round(ancho * 0.1);
     const col2 = Math.round(ancho * 0.4);
@@ -697,7 +698,7 @@ export class ValorizacionMineralPdfService {
         .filter((descripcion) => !!descripcion)
         .join(', ') || '--';
 
-    const nombreCliente = this.nombreCompleto(persona);
+    const nombreCliente = this.nombreCliente(persona);
 
     const col1 = Math.round(ancho * 0.1);
     const col2 = Math.round(ancho * 0.4);
@@ -1441,7 +1442,7 @@ export class ValorizacionMineralPdfService {
         .filter((descripcion) => !!descripcion)
         .join(', ') || '--';
 
-    const nombreCliente = this.nombreCompleto(persona);
+    const nombreCliente = this.nombreCliente(persona);
 
     const col1 = Math.round(ancho * 0.1);
     const col2 = Math.round(ancho * 0.4);
@@ -1924,6 +1925,19 @@ export class ValorizacionMineralPdfService {
       .moveTo(x, y)
       .lineTo(x + ancho, y)
       .stroke();
+  }
+
+  /**
+   * Cliente del encabezado: si la persona entrega a nombre de su actor
+   * (`kardexEnActor`, ej. una corporación), el cliente es el actor y la
+   * persona queda entre paréntesis. Las firmas siguen con la persona.
+   */
+  private nombreCliente(persona?: PersonaCi): string {
+    const nombre = this.nombreCompleto(persona);
+    const actor = persona?.kardexEnActor
+      ? persona.actorProductivoMinero?.nombre
+      : undefined;
+    return actor ? `${actor} (ENTREGÓ: ${nombre})` : nombre;
   }
 
   private nombreCompleto(persona?: {
