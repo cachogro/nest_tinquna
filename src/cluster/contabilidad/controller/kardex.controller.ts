@@ -39,6 +39,7 @@ import { FormatoReporteDto } from '../dto/reporte/formato-reporte.dto';
 import { Kardex } from '../entities/kardex.entity';
 import { AbrirKardexDto } from '../dto/kardex/abrir-kardex.dto';
 import { CerrarKardexDto } from '../dto/kardex/cerrar-kardex.dto';
+import { ModificarSaldoInicialKardexDto } from '../dto/kardex/modificar-saldo-inicial-kardex.dto';
 import { FiltrosKardexDto } from '../dto/kardex/filtros-kardex.dto';
 import { FiltroDeudasTotalesDto } from '../dto/kardex/filtro-deudas-totales.dto';
 import { KardexPaginadoDto } from '../dto/kardex/kardex-paginado.dto';
@@ -129,6 +130,33 @@ export class KardexController {
     @GetUser() user: Usuario,
   ): Promise<Kardex> {
     return await this.kardexService.abrir(body, user);
+  }
+
+  @Patch('kardex/:id/saldo-inicial')
+  @Auth()
+  @ApiOperation({
+    summary: 'Modificar el saldo de apertura de un kardex',
+    description:
+      'Corrige el saldo / deuda con el que se abrió el kardex N° 1 de un titular y recalcula todo: el saldo de cada línea activa y el `saldoActual`; si el kardex ya se cerró, también su `saldoCierre` y, en cadena, el `saldoInicial`, las líneas y el cierre de los kardex siguientes (N° 2, N° 3...) hasta el abierto. El saldo inicial de los N° 2+ no se edita: sale del cierre del anterior.',
+  })
+  @ApiParam({ name: 'id', description: 'Id del kardex N° 1.', example: '3' })
+  @ApiBody({ type: ModificarSaldoInicialKardexDto })
+  @ApiOkResponse({
+    description: 'Saldo de apertura modificado; se devuelve el kardex recalculado.',
+    type: Kardex,
+  })
+  @ApiBadRequestResponse({
+    description: 'El kardex no es el N° 1, está anulado, o el saldo es inválido.',
+  })
+  @ApiNotFoundResponse({ description: 'No se encontró el kardex.' })
+  @ApiUnauthorizedResponse({ description: 'No autorizado.' })
+  @ApiInternalServerErrorResponse({ description: 'Error interno del servidor.' })
+  async modificarSaldoInicial(
+    @Param('id') id: string,
+    @Body() body: ModificarSaldoInicialKardexDto,
+    @GetUser() user: Usuario,
+  ): Promise<Kardex> {
+    return await this.kardexService.modificarSaldoInicial(id, body, user);
   }
 
   @Patch('kardex/:id/cerrar')

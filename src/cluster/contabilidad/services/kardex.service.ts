@@ -16,7 +16,9 @@ import { Kardex, TipoKardex } from '../entities/kardex.entity';
 import { generarCodigoKardex } from '../kardex-codigo.util';
 import { AbrirKardexDto } from '../dto/kardex/abrir-kardex.dto';
 import { CerrarKardexDto } from '../dto/kardex/cerrar-kardex.dto';
+import { ModificarSaldoInicialKardexDto } from '../dto/kardex/modificar-saldo-inicial-kardex.dto';
 import { MovimientoKardex } from '../entities/movimiento-kardex.entity';
+import { recalcularSaldoKardex } from '../kardex-posteo.util';
 import { FiltrosKardexDto } from '../dto/kardex/filtros-kardex.dto';
 import { KardexPaginadoDto } from '../dto/kardex/kardex-paginado.dto';
 import { KardexActividadService } from './kardex-actividad.service';
@@ -360,6 +362,70 @@ export class KardexService {
         }),
       };
     });
+  }
+
+  /**
+   * Corrige el saldo / deuda de apertura del kardex N° 1 y recalcula en
+   * cadena: el saldo de cada línea, el `saldoActual`, y si el kardex ya se
+   * cerró su `saldoCierre`, que pasa a ser el `saldoInicial` del siguiente
+   * (N° 2, N° 3...) hasta llegar al abierto. Los N° 2+ no se editan: su
+   * saldo inicial sale siempre del cierre del anterior.
+   */
+  async modificarSaldoInicial(
+    id: string,
+    dto: ModificarSaldoInicialKardexDto,
+    user: Usuario,
+  ): Promise<Kardex> {
+    const kardex = await this.kardexRepository.findOne({ where: { id } });
+    if (!kardex) {
+      throw new NotFoundException('No se encontró el kardex.');
+    }
+    if (kardex.idKardexAnterior || kardex.numero > 1) {
+      throw new BadRequestException(
+        `El saldo inicial del kardex ${kardex.codigo} N°${kardex.numero} es el saldo de cierre del N°${kardex.numero - 1}: modificá la apertura del kardex N° 1.`,
+      );
+    }
+    if (kardex.activo === false) {
+      throw new BadRequestException(
+        `El kardex ${kardex.codigo} está anulado: no se puede modificar su apertura.`,
+      );
+    }
+
+    const saldoInicial = Math.round((Number(dto.saldoInicial) + Number.EPSILON) * 100) / 100;
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(Kardex, kardex.id, {
+        saldoInicial,
+        usuarioUltimaModificacion: user.usuario,
+      });
+
+      let actual: Kardex | null = kardex;
+      while (actual) {
+        await recalcularSaldoKardex(manager, actual.id);
+        if (actual.estado !== 'CERRADO') break;
+
+        const { saldoActual } = await manager.findOneOrFail(Kardex, {
+          where: { id: actual.id },
+          select: { id: true, saldoActual: true },
+        });
+        await manager.update(Kardex, actual.id, {
+          saldoCierre: saldoActual,
+          usuarioUltimaModificacion: user.usuario,
+        });
+
+        actual = await manager.findOne(Kardex, {
+          where: { idKardexAnterior: actual.id },
+        });
+        if (actual) {
+          await manager.update(Kardex, actual.id, {
+            saldoInicial: saldoActual,
+            usuarioUltimaModificacion: user.usuario,
+          });
+        }
+      }
+    });
+
+    return this.buscarPorId(kardex.id);
   }
 
   async reabrir(id: string, user: Usuario): Promise<Kardex> {
